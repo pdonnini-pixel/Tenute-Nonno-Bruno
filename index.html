@@ -4900,20 +4900,21 @@ function Ordini({
   logAction
 }) {
   const [tab, setTab] = useState("tutti");
-  const [modal, setModal] = useState(null);
-  const [form, setForm] = useState({});
-  const [cvModal, setCvModal] = useState(null);
   const [highlightId, setHighlightId] = useState(null);
   useEffect(() => {
     if (window._tnbNav && window._tnbNav.targetId) {
-      setHighlightId(window._tnbNav.targetId);
+      const tid = window._tnbNav.targetId;
       window._tnbNav = null;
+      setHighlightId(tid);
       setTimeout(() => {
-        const el = document.getElementById("ordine-" + highlightId);
+        const el = document.getElementById("ord-" + tid);
         if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 200);
+      }, 300);
     }
   }, []);
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [cvModal, setCvModal] = useState(null);
   const [cvForm, setCvForm] = useState({});
   const [pdfInvioModal, setPdfInvioModal] = useState(null);
   const oggi = todayStr();
@@ -9982,7 +9983,6 @@ function AlertsPage({
       cta: "Vai a Ordini",
       modulo: "ordini",
       targetId: o.id,
-      clienteId: o.clienteId,
       icon: "🤝",
       color: C.rosso
     };
@@ -9999,7 +9999,6 @@ function AlertsPage({
       cta: "Vai a Ordini",
       modulo: "ordini",
       targetId: o.id,
-      clienteId: o.clienteId,
       icon: "✍️",
       color: C.arancio
     };
@@ -10016,7 +10015,6 @@ function AlertsPage({
       cta: "Vai a Ordini",
       modulo: "ordini",
       targetId: o.id,
-      clienteId: o.clienteId,
       icon: "💶",
       color: C.arancio
     };
@@ -10051,7 +10049,6 @@ function AlertsPage({
       cta: "Vai a Ordini",
       modulo: "ordini",
       targetId: o.id,
-      clienteId: o.clienteId,
       icon: "⏰",
       color: C.giallo
     };
@@ -10167,7 +10164,7 @@ function AlertsPage({
       ch: `${a.cta} →`,
       sz: "sm",
       v: "sec",
-      onClick: () => { if (a.targetId) { window._tnbNav = { targetId: a.targetId }; } setModulo(a.modulo); },
+      onClick: () => { if(a.targetId){ window._tnbNav = {targetId: a.targetId}; } setModulo(a.modulo); },
       style: {
         flexShrink: 0,
         color: a.color,
