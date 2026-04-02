@@ -3046,12 +3046,17 @@ const STATO_FUNNEL = {
   }
 };
 const CANALE = {
-  campagna_m: "Campagna M.",
-  irene: "Irene",
-  nb: "Clienti NB",
-  ecommerce: "E-commerce",
-  diretto: "Diretto",
-  lucia: "Lucia"
+  fiera: "Fiera / Evento",
+  call_diretta: "Call diretta",
+  visita: "Visita in loco",
+  linkedin: "LinkedIn / Social",
+  passaparola: "Passaparola",
+  email_in: "Email inbound",
+  web: "Sito web",
+  campagna_m: "Campagna marketing",
+  irene: "Rete Irene",
+  nb: "Rete NB",
+  altro: "Altro"
 };
 
 // ─── LISTINO COMMERCIALE (da brochure 2026) ───────────────────────────────────
@@ -4022,6 +4027,7 @@ function Pipeline({
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [detailId, setDetailId] = useState(null);
+  useEffect(() => { setTimeout(() => { if(window._tnbNav && window._tnbNav.targetId){ setDetailId(window._tnbNav.targetId); window._tnbNav=null; } }, 80); }, []);
   const addCall = id => {
     setDati(d => ({
       ...d,
@@ -4388,7 +4394,26 @@ function Pipeline({
       })),
       req: true,
       full: true
-    })), /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement(Inp, {
+      label: "Referente",
+      v: form.referente || "",
+      on: v => setForm(f => ({...f, referente: v})),
+      ph: "es. Mario Rossi"
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Email",
+      v: form.email || "",
+      on: v => setForm(f => ({...f, email: v})),
+      ph: "info@locale.it"
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Telefono",
+      v: form.telefono || "",
+      on: v => setForm(f => ({...f, telefono: v}))
+    }), /*#__PURE__*/React.createElement(Sel, {
+      label: "Tipo attività",
+      v: form.tipo || "",
+      on: v => setForm(f => ({...f, tipo: v})),
+      opts: ["HoReCa","Retail","GDO","Catering","Enoteca","Albergo","Privato","Altro"].map(t=>({v:t,l:t}))
+    }), /*#__PURE__*/React.createElement("div", {
       style: {
         gridColumn: "span 2"
       }
@@ -4401,7 +4426,7 @@ function Pipeline({
       })),
       full: true
     })), /*#__PURE__*/React.createElement(Sel, {
-      label: "Canale arrivo",
+      label: "📍 Da dove arriva",
       v: form.canale || "",
       on: v => setForm(f => ({
         ...f,
@@ -4433,14 +4458,18 @@ function Pipeline({
       label: "Entro il",
       type: "date",
       v: form.nextData || "",
-      on: v => setForm(f => ({
-        ...f,
-        nextData: v
-      }))
+      on: v => setForm(f => ({...f, nextData: v}))
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "📲 Richiama il",
+      type: "date",
+      v: form.nextCall?.data || "",
+      on: v => setForm(f => ({...f, nextCall:{...(f.nextCall||{}), data:v}}))
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Nota richiamata",
+      v: form.nextCall?.nota || "",
+      on: v => setForm(f => ({...f, nextCall:{...(f.nextCall||{}), nota:v}}))
     }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        gridColumn: "span 2"
-      }
+      style: { gridColumn: "span 2" }
     }, /*#__PURE__*/React.createElement(Inp, {
       label: "Note",
       v: form.note || "",
@@ -4450,6 +4479,28 @@ function Pipeline({
       })),
       rows: 2
     })), /*#__PURE__*/React.createElement("div", {
+      style: { gridColumn: "span 2", background: "#f0f8ff", borderRadius: 8, padding: "10px 14px", border: "1px solid #bee3f8" }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#1565c0", marginBottom: 6 } }, "📧 Mail di presentazione"),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "#5f5e5a", marginBottom: 8 } },
+        form.email ? "A: " + form.email : "Inserisci l email sopra per abilitare"
+      ),
+      /*#__PURE__*/React.createElement(Btn, {
+        ch: "Salva e invia mail",
+        sz: "sm",
+        style: { opacity: form.email ? 1 : 0.4 },
+        onClick: () => {
+          if(!form.email) return;
+          saveProspect();
+          var nome = form.referente || form.ragioneSociale || "";
+          var canaleLabel = CANALE[form.canale] || "";
+          var ogg = "Tenute Nonno Bruno - Olio EVO Biologico Toscano";
+          var corpo = "Gentile " + nome + ",\n\nLa ringraziamo per il tempo dedicatoci" + (canaleLabel ? " (" + canaleLabel + ")" : "") + ".\n\nCome anticipato, produciamo olio EVO biologico sulle colline di Fattucchia, Bagno a Ripoli (FI).\n\nVarieta: Frantoio, Moraiolo, Leccino. Raccolta manuale, frangitura a freddo, cert. biologica.\n\nFormati: 100ml, 250ml, 500ml, Latte 3L e 5L\n\nRimaniamo a disposizione per un incontro.\n\nCordiali saluti,\nIrene Paggetti - Tenute Nonno Bruno\nirene.paggetti@tenutenonnobruno.it  338 1427611";
+          window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(form.email) + "&su=" + encodeURIComponent(ogg) + "&body=" + encodeURIComponent(corpo), "_blank");
+          if(logAction) logAction("Mail pres.", "pipeline", form.ragioneSociale);
+        }
+      })
+    ), /*#__PURE__*/React.createElement("div", {
       style: {
         gridColumn: "span 2",
         display: "flex",
@@ -7725,7 +7776,8 @@ function App() {
     dati: dati,
     setDati: setDatiSave,
     currentUser: currentUser,
-    logAction: logAction
+    logAction: logAction,
+    setModulo: setModulo
   }), modulo === "report" && /*#__PURE__*/React.createElement(ReportPeriodo, {
     dati: dati
   }), modulo === "log" && /*#__PURE__*/React.createElement(ActivityLog, {
@@ -9084,7 +9136,8 @@ function OggiAzioni({
   dati,
   setDati,
   currentUser,
-  logAction
+  logAction,
+  setModulo
 }) {
   const [days, setDays] = useState(3);
   const [selectedClient, setSelectedClient] = useState(null);
@@ -9129,7 +9182,14 @@ function OggiAzioni({
       gg: giorniAlla(o.data)
     };
   });
-  const tutti = [...azioniFU, ...azioniCV, ...daFirmare, ...daPagare];
+  const azioniRichiama = dati.prospect.filter(p => p.nextCall && p.nextCall.data && p.nextCall.data <= finoStr && STATO_FUNNEL[p.stato]?.l && p.stato !== "acquisito" && p.stato !== "non_interessato").map(p => ({
+    tipo: "richiama",
+    data: p.nextCall.data,
+    prospect: p,
+    nota: p.nextCall.nota || "",
+    gg: giorniAlla(p.nextCall.data)
+  })).sort((a,b) => a.data.localeCompare(b.data));
+  const tutti = [...azioniFU, ...azioniRichiama, ...azioniCV, ...daFirmare, ...daPagare];
   const scadute = tutti.filter(a => a.gg !== null && a.gg < 0);
   const oggi_ = tutti.filter(a => a.gg === 0);
   const prossimi = tutti.filter(a => a.gg !== null && a.gg > 0 && a.gg <= days);
@@ -9149,13 +9209,13 @@ function OggiAzioni({
         marginBottom: 8,
         cursor: "pointer"
       },
-      onClick: () => setSelectedClient(a.cliente)
+      onClick: () => { if(a.tipo==="richiama"&&a.prospect){ window._tnbNav={targetId:a.prospect.id}; if(setModulo) setModulo("pipeline"); } else if(a.cliente){ setSelectedClient(a.cliente); } }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 22,
         flexShrink: 0
       }
-    }, a.tipo === "followup" ? "📞" : a.tipo === "cv" ? "🤝" : a.tipo === "firma" ? "✍️" : "💶"), /*#__PURE__*/React.createElement("div", {
+    }, a.tipo === "followup" ? "📞" : a.tipo === "richiama" ? "📲" : a.tipo === "cv" ? "🤝" : a.tipo === "firma" ? "✍️" : "💶"), /*#__PURE__*/React.createElement("div", {
       style: {
         flex: 1
       }
@@ -9185,12 +9245,12 @@ function OggiAzioni({
         fontSize: 11,
         color: C.grigio400
       }
-    }, a.tipo === "followup" ? "Follow-up" : a.tipo === "cv" ? "Scad. C.Vendita" : a.tipo === "firma" ? "Da firmare" : "Da riscuotere")), /*#__PURE__*/React.createElement("div", {
+    }, a.tipo === "followup" ? "Follow-up cliente" : a.tipo === "richiama" ? "Richiamare prospect" : a.tipo === "cv" ? "Scad. C.Vendita" : a.tipo === "firma" ? "Da firmare" : "Da riscuotere")), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
         color: C.grigio600
       }
-    }, a.tipo === "followup" && (a.nota || "Ricontattare"), a.tipo === "cv" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "firma" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "pagamento" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`)), /*#__PURE__*/React.createElement("div", {
+    }, (a.tipo === "followup" || a.tipo === "richiama") && (a.nota || (a.tipo==="richiama"?(a.prospect?.ragioneSociale||"Prospect"):"Ricontattare")), a.tipo === "cv" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "firma" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "pagamento" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`)), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11,
         color: C.grigio400,
