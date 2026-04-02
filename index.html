@@ -4060,7 +4060,9 @@ function Pipeline({
     }));
     if (logAction) logAction("Eliminazione prospect", "pipeline", p?.ragioneSociale || id);
   };
-  const stati = ["da_contattare", "in_trattativa", "interessato", "acquisito", "non_interessato", "in_sospeso"];
+  const stati = ["da_contattare","in_trattativa","interessato","acquisito","non_interessato","in_sospeso"];
+  const CANALI_LABEL = {fiera:"Fiera",call_diretta:"Call",contatto_aziendale:"Aziendale",web:"Web",passaparola:"Passaparola",email:"Email",visita:"Visita",altro:"Altro"};
+  const convertToCliente = (p) => { if(!window.confirm("Convertire "+p.ragioneSociale+" in cliente?")) return; setDati(d=>({...d,clienti:[...d.clienti,{id:uid(),ragioneSociale:p.ragioneSociale,insegna:p.insegna||p.ragioneSociale,referente:p.referente||"",email:p.email||"",telefono:p.telefono||"",indirizzo:p.indirizzo||"",tipo:p.tipo||"horeca",canale:p.canale||"irene",piva:p.piva||""}],prospect:d.prospect.map(x=>x.id===p.id?{...x,stato:"acquisito"}:x)})); if(logAction) logAction("Prospect->Cliente","pipeline",p.ragioneSociale); };
   const filtered = dati.prospect.filter(p => !filter || p.ragioneSociale.toLowerCase().includes(filter.toLowerCase()) || p.indirizzo?.toLowerCase().includes(filter.toLowerCase()));
   const detail = dati.prospect.find(p => p.id === detailId);
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
@@ -5608,7 +5610,7 @@ function Magazzino({
       color: "#7a5900",
       fontSize: 13
     }
-  }, /*#__PURE__*/React.createElement(I.alert, null), " ", /*#__PURE__*/React.createElement("strong", null, "Disponibile sotto soglia:"), " ", sotto.map(m => `${m.formato} ${m.annata} (${giacenzaDisp(m)}/${m.soglia} pz)`).join(" · ")), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(I.alert, null), " ", /*#__PURE__*/React.createElement("strong", null, "Disponibile sotto soglia:"), " ", sotto.map(m => `${m.prodotto!=="Olio Fata Morgana"?m.prodotto+" ":""}${m.formato} ${m.annata} (${giacenzaDisp(m)}/${m.soglia} pz)`).join(" · ")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       display: "none",
@@ -6927,12 +6929,18 @@ function CostiMargini({
   }), tab === "extra" && /*#__PURE__*/React.createElement(Card, { ch: /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 13, marginBottom: 12 } }, "Voci di costo aggiuntive"),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.grigio600, marginBottom: 16 } }, "Aggiungi lavorazioni straordinarie, consulenze, spese non ricorrenti da includere nell'analisi costi."),
-    (cfg.vociExtra || []).map((v, i) => { const sku = v.skuId ? dati.magazzino.find(m=>m.id===v.skuId) : null; return /*#__PURE__*/React.createElement("div", { key: i, style: { display: "flex", gap: 8, marginBottom: 8, alignItems: "center", padding: "8px 10px", background: C.grigio50, borderRadius: 8 } },
-      /*#__PURE__*/React.createElement("div", { style: { flex: 1, fontSize: 13, fontWeight: 600 } }, v.desc),
-      sku && /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, background: "#e8f5e9", color: "#2e7d32", borderRadius: 10, padding: "2px 8px" } }, sku.prodotto+" "+sku.formato),
-      !sku && /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio400 } }, "tutti i prodotti"),
-      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.rosso, fontWeight: 700 } }, "-"+fmt(v.importo)),
-      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400 } }, v.data||""),
+    (cfg.vociExtra || []).map((v, i) => { const skus = (v.skuIds||[]).length>0 ? (v.skuIds||[]).map(id=>dati.magazzino.find(m=>m.id===id)).filter(Boolean) : []; const costoUnit = skus.length>1 ? v.importo/skus.length : v.importo; return /*#__PURE__*/React.createElement("div", { key: i, style: { display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-start", padding: "8px 10px", background: C.grigio50, borderRadius: 8 } },
+      /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 4 } }, v.desc),
+        skus.length>0 ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 4, flexWrap: "wrap" } },
+          skus.map(m => /*#__PURE__*/React.createElement("span", { key: m.id, style: { fontSize: 11, background: "#e8f5e9", color: "#2e7d32", borderRadius: 10, padding: "2px 8px" } }, m.prodotto+" "+m.formato, skus.length>1 && " (-"+fmt(costoUnit)+")"))
+        ) : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio400 } }, "tutti i prodotti")
+      ),
+      /*#__PURE__*/React.createElement("div", { style: { textAlign: "right" } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.rosso, fontWeight: 700 } }, "-"+fmt(v.importo)),
+        skus.length>1 && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400 } }, "(÷"+skus.length+" = -"+fmt(costoUnit)+" cad.)"),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400 } }, v.data||"")
+      ),
       /*#__PURE__*/React.createElement(Btn, { ch: "✕", sz: "sm", v: "sec", onClick: () => setDati(d => ({...d, costiConfig: {...d.costiConfig, vociExtra: (d.costiConfig.vociExtra||[]).filter((_,j)=>j!==i)}})) })
     ); }),
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 12 } },
@@ -6940,13 +6948,14 @@ function CostiMargini({
       /*#__PURE__*/React.createElement(Inp, { label: "Importo €", type: "number", v: cfg._exImp||"", on: v => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exImp:Number(v)}})) }),
       /*#__PURE__*/React.createElement(Inp, { label: "Data", type: "date", v: cfg._exData||"", on: v => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exData:v}})) }),
       /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } },
-        /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, fontWeight: 600, color: C.grigio600 } }, "Assegna a"),
-        /*#__PURE__*/React.createElement("select", { value: cfg._exSku||"", onChange: e => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exSku:e.target.value}})), style: { border: `1px solid ${C.grigio200}`, borderRadius: 6, padding: "5px 8px", fontSize: 12 } },
-          /*#__PURE__*/React.createElement("option", { value: "" }, "Tutti i prodotti"),
+        /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, fontWeight: 600, color: C.grigio600 } }, "Assegna a (multi)"),
+        /*#__PURE__*/React.createElement("select", { multiple: true, value: cfg._exSkus||[], onChange: e => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exSkus:Array.from(e.target.selectedOptions,o=>o.value)}})), style: { border: `1px solid ${C.grigio200}`, borderRadius: 6, padding: "4px", fontSize: 11, height: 72 } },
+          /*#__PURE__*/React.createElement("option", { value: "" }, "— Tutti i prodotti —"),
           dati.magazzino.map(m => /*#__PURE__*/React.createElement("option", { key: m.id, value: m.id }, m.prodotto+" "+m.formato+" "+m.annata))
-        )
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400 } }, "Ctrl+click per selezionare più prodotti")
       ),
-      /*#__PURE__*/React.createElement(Btn, { ch: "Aggiungi", sz: "sm", onClick: () => { if(!cfg._exDesc||!cfg._exImp) return; setDati(d => ({...d, costiConfig: {...d.costiConfig, vociExtra: [...(d.costiConfig.vociExtra||[]), {desc:d.costiConfig._exDesc, importo:d.costiConfig._exImp, data:d.costiConfig._exData, skuId:d.costiConfig._exSku||null}], _exDesc:"", _exImp:"", _exData:"", _exSku:""}})); } })
+      /*#__PURE__*/React.createElement(Btn, { ch: "Aggiungi", sz: "sm", onClick: () => { if(!cfg._exDesc||!cfg._exImp) return; setDati(d => ({...d, costiConfig: {...d.costiConfig, vociExtra: [...(d.costiConfig.vociExtra||[]), {desc:d.costiConfig._exDesc, importo:d.costiConfig._exImp, data:d.costiConfig._exData, skuIds:(d.costiConfig._exSkus||[]).filter(x=>x)}], _exDesc:"", _exImp:"", _exData:"", _exSkus:[]}})); } })
     )
   ) }), tab === "config" && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -10459,6 +10468,117 @@ const CONTRATTO_TIPI = {
     color: C.blu
   }
 };
+function PreventiviTab(p2){
+  var dati=p2.dati,setDati=p2.setDati,logAction=p2.logAction;
+  var _s=useState({clienteId:"",righe:[],spedizione:"firenze",modalitaPagamento:"bonifico_anticipato",note:""});
+  var fPv=_s[0],setFPv=_s[1];
+  var FMT_PV=["100 ml","250 ml","500 ml","3 L (latta)","5 L (latta)","Olio 20 ml","Aceto 20 ml"];
+  var addR=function(){setFPv(function(f){return{...f,righe:[...f.righe,{formato:"500 ml",qta:1,prezzoUnitario:0,annata:"2025"}]};});};
+  var remR=function(i){setFPv(function(f){return{...f,righe:f.righe.filter(function(_,j){return j!==i;})};});};
+  var updR=function(i,k,v){setFPv(function(f){return{...f,righe:f.righe.map(function(r,j){return j!==i?r:{...r,[k]:v};})};});};
+  var tot=fPv.righe.reduce(function(s,r){return s+(r.qta||0)*(r.prezzoUnitario||0);},0);
+  var sped=fPv.spedizione==="fuori"?15:fPv.spedizione==="fuori_regione"?30:0;
+  var iva=Math.round(tot*0.04*100)/100;
+  var getD=function(fmt2,ann){var s=dati.magazzino.find(function(m){return m.formato===fmt2&&m.annata===ann;});return s?(s.giacenza&&s.giacenza.disponibile||0):null;};
+  var genPDF=function(){
+    var cl=dati.clienti.find(function(c){return c.id===fPv.clienteId;})||{};
+    try{
+      var doc=new window.jspdf.jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+      doc.setFillColor(46,58,28);doc.rect(0,0,210,22,"F");
+      doc.setTextColor(240,212,131);doc.setFontSize(14);doc.setFont("helvetica","bold");
+      doc.text("Tenute Nonno Bruno",15,10);
+      doc.setFontSize(8);doc.setFont("helvetica","normal");
+      doc.text("Olio EVO Biologico - Fattucchia, Bagno a Ripoli (FI)",15,16);
+      doc.setTextColor(46,44,40);doc.setFontSize(12);doc.setFont("helvetica","bold");
+      doc.text("PREVENTIVO",15,32);
+      doc.setFontSize(9);doc.setFont("helvetica","normal");
+      doc.text("Data: "+new Date().toLocaleDateString("it-IT"),15,40);
+      doc.text("Cliente: "+(cl.insegna||cl.ragioneSociale||"--"),15,46);
+      if(cl.piva)doc.text("P.IVA: "+cl.piva,15,52);
+      var y=62;
+      doc.setFont("helvetica","bold");doc.setFontSize(8);
+      doc.text("PRODOTTO",15,y);doc.text("QTA",95,y);doc.text("P.UNIT.",130,y);doc.text("TOTALE",165,y);
+      doc.line(15,y+2,195,y+2);y+=8;doc.setFont("helvetica","normal");
+      fPv.righe.forEach(function(r){
+        var t=(r.qta||0)*(r.prezzoUnitario||0);
+        doc.text("Olio Fata Morgana "+r.formato+" Raccolta "+r.annata,15,y);
+        doc.text(String(r.qta),95,y);doc.text("EUR "+Number(r.prezzoUnitario).toFixed(2),130,y);
+        doc.text("EUR "+t.toFixed(2),165,y);y+=6;
+      });
+      y+=4;doc.line(15,y,195,y);y+=6;
+      if(sped>0){doc.text("Spedizione:",130,y);doc.text("EUR "+sped.toFixed(2),165,y);y+=6;}
+      doc.text("Imponibile:",130,y);doc.text("EUR "+tot.toFixed(2),165,y);y+=6;
+      doc.text("IVA 4%:",130,y);doc.text("EUR "+iva.toFixed(2),165,y);y+=6;
+      doc.setFont("helvetica","bold");doc.text("TOTALE:",130,y);doc.text("EUR "+(tot+iva+sped).toFixed(2),165,y);y+=10;
+      doc.setFont("helvetica","normal");doc.setFontSize(8);
+      if(fPv.note)doc.text("Note: "+fPv.note,15,y);
+      doc.setFontSize(7);doc.setTextColor(160,157,149);
+      doc.text("Tenute Nonno Bruno - tenutenonnobruno.it - P.IVA IT07267640485",15,287);
+      var nome=(cl.insegna||cl.ragioneSociale||"prev").replace(/[^a-z0-9]/gi,"_").toLowerCase();
+      doc.save("preventivo_"+nome+"_"+todayStr()+".pdf");
+      if(logAction)logAction("Preventivo generato","preventivi",cl.ragioneSociale||"");
+    }catch(e){alert("Errore PDF: "+e.message);}
+  };
+  var SS={border:"1px solid #e0ddd8",borderRadius:"6px",padding:"6px 8px",fontSize:"12px",background:"#fff"};
+  var hasW=fPv.righe.some(function(r){var d=getD(r.formato,r.annata);return d!==null&&r.qta>d;});
+  var elems=[];
+  elems.push(React.createElement(Card,{key:"hdr",ch:React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"14px"}},
+    React.createElement("div",{style:{gridColumn:"span 3"}},
+      React.createElement("label",{style:{fontSize:"11px",fontWeight:600,color:"#6b6862"}},"Cliente"),
+      React.createElement("select",{value:fPv.clienteId,onChange:function(e){setFPv(function(f){return{...f,clienteId:e.target.value};});},style:Object.assign({},SS,{width:"100%",fontSize:"13px",marginTop:"4px"})},
+        [React.createElement("option",{key:"",value:""},"Seleziona cliente...")].concat(
+          [...dati.clienti].sort(function(a,b){return(a.insegna||a.ragioneSociale||"").localeCompare(b.insegna||b.ragioneSociale||"");}).map(function(c){return React.createElement("option",{key:c.id,value:c.id},c.insegna||c.ragioneSociale);})
+        )
+      )
+    ),
+    React.createElement("div",null,
+      React.createElement("label",{style:{fontSize:"11px",fontWeight:600,color:"#6b6862"}},"Spedizione"),
+      React.createElement("select",{value:fPv.spedizione,onChange:function(e){setFPv(function(f){return{...f,spedizione:e.target.value};});},style:Object.assign({},SS,{width:"100%",marginTop:"4px"})},
+        [["firenze","Firenze (gratis)"],["fuori","Fuori prov. +EUR15"],["fuori_regione","Fuori Toscana +EUR30"]].map(function(x){return React.createElement("option",{key:x[0],value:x[0]},x[1]);})
+      )
+    ),
+    React.createElement("div",null,
+      React.createElement("label",{style:{fontSize:"11px",fontWeight:600,color:"#6b6862"}},"Pagamento"),
+      React.createElement("select",{value:fPv.modalitaPagamento,onChange:function(e){setFPv(function(f){return{...f,modalitaPagamento:e.target.value};});},style:Object.assign({},SS,{width:"100%",marginTop:"4px"})},
+        [["bonifico_anticipato","Bonifico anticipato"],["rimessa_diretta","Rimessa diretta"],["30_gg","30 giorni"],["60_gg","60 giorni"]].map(function(x){return React.createElement("option",{key:x[0],value:x[0]},x[1]);})
+      )
+    ),
+    React.createElement("div",null,
+      React.createElement("label",{style:{fontSize:"11px",fontWeight:600,color:"#6b6862"}},"Note"),
+      React.createElement("input",{value:fPv.note,onChange:function(e){setFPv(function(f){return{...f,note:e.target.value};});},placeholder:"Note al preventivo",style:Object.assign({},SS,{width:"100%",marginTop:"4px"})})
+    )
+  )}));
+  var righe_elems=fPv.righe.map(function(r,i){
+    var d=getD(r.formato,r.annata);var w=d!==null&&r.qta>d;
+    return React.createElement("div",{key:i,style:{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr auto",gap:"8px",marginBottom:"8px",alignItems:"flex-end"}},
+      React.createElement("div",null,React.createElement("label",{style:{fontSize:"10px",color:"#6b6862",fontWeight:600}},"Formato"),React.createElement("select",{value:r.formato,onChange:function(e){updR(i,"formato",e.target.value);},style:Object.assign({},SS,{width:"100%"})},FMT_PV.map(function(f){return React.createElement("option",{key:f,value:f},f);}))),
+      React.createElement("div",null,React.createElement("label",{style:{fontSize:"10px",color:"#6b6862",fontWeight:600}},"Annata"),React.createElement("select",{value:r.annata,onChange:function(e){updR(i,"annata",e.target.value);},style:Object.assign({},SS,{width:"100%"})},["2025","2024"].map(function(a){return React.createElement("option",{key:a,value:a},a);}))),
+      React.createElement("div",null,React.createElement("label",{style:{fontSize:"10px",color:w?"#c62828":"#6b6862",fontWeight:600}},"Qta"+(d!==null?" ("+d+")":"")),React.createElement("input",{type:"number",value:r.qta,onChange:function(e){updR(i,"qta",Number(e.target.value));},style:{width:"100%",border:"1.5px solid "+(w?"#c62828":"#e0ddd8"),borderRadius:"6px",padding:"5px 8px",fontSize:"12px"}})),
+      React.createElement("div",null,React.createElement("label",{style:{fontSize:"10px",color:"#6b6862",fontWeight:600}},"EUR/pz"),React.createElement("input",{type:"number",step:"0.01",value:r.prezzoUnitario,onChange:function(e){updR(i,"prezzoUnitario",Number(e.target.value));},style:Object.assign({},SS,{width:"100%"})})),
+      React.createElement("button",{onClick:function(){remR(i);},style:{background:"#f0ede8",border:"none",borderRadius:"6px",padding:"5px 8px",cursor:"pointer"}},"x")
+    );
+  });
+  elems.push(React.createElement(Card,{key:"prod",style:{marginTop:"12px"},ch:React.createElement("div",null,
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}},
+      React.createElement("div",{style:{fontWeight:700,fontSize:"13px"}},"Prodotti"),
+      React.createElement("button",{onClick:addR,style:{background:"#2e3a1c",color:"#fff",border:"none",borderRadius:"6px",padding:"6px 14px",fontSize:"12px",cursor:"pointer"}},"+Aggiungi riga")
+    ),
+    fPv.righe.length===0?React.createElement("div",{style:{color:"#a09d95",fontSize:"12px",padding:"20px 0",textAlign:"center"}},"Nessuna riga"):null,
+    righe_elems,
+    fPv.righe.length>0?React.createElement("div",{style:{borderTop:"1px solid #e8e6e0",paddingTop:"12px",marginTop:"8px",display:"flex",justifyContent:"flex-end",gap:"16px",fontSize:"13px"}},
+      React.createElement("span",null,"Imponibile: ",React.createElement("strong",null,fmt(tot))),
+      sped>0?React.createElement("span",null,"Sped: +EUR"+sped):null,
+      React.createElement("span",null,"IVA 4%: +"+fmt(iva)),
+      React.createElement("span",{style:{fontWeight:700}},"TOTALE: "+fmt(tot+iva+sped))
+    ):null
+  )}));
+  elems.push(React.createElement("div",{key:"actions",style:{display:"flex",gap:"8px",marginTop:"12px",justifyContent:"flex-end",alignItems:"center"}},
+    hasW?React.createElement("span",{style:{color:"#c62828",fontSize:"12px",flex:1}},"Attenzione: disponibilita insufficiente"):null,
+    !fPv.clienteId?React.createElement("span",{style:{color:"#e65100",fontSize:"12px",flex:1}},"Seleziona un cliente"):null,
+    React.createElement("button",{onClick:genPDF,style:{background:fPv.clienteId&&fPv.righe.length>0?"#2e3a1c":"#ccc",color:"#fff",border:"none",borderRadius:"8px",padding:"9px 20px",fontSize:"13px",fontWeight:600,cursor:fPv.clienteId&&fPv.righe.length>0?"pointer":"not-allowed"}},"Genera PDF Preventivo")
+  ));
+  return React.createElement("div",null,elems);
+}
 function ContrattiModule({
   dati,
   setDati,
@@ -10641,20 +10761,11 @@ Data: ___/___/______                      Data: ___/___/______
       }
     })
   }), /*#__PURE__*/React.createElement(Tab, {
-    tabs: [{
-      k: "lista",
-      l: "Tutti i contratti",
-      n: contratti.length
-    }, {
-      k: "bozze",
-      l: "Bozze"
-    }, {
-      k: "attivi",
-      l: "Attivi/Firmati"
-    }],
+    tabs: [{k:"lista",l:"Tutti i contratti",n:contratti.length},{k:"preventivi",l:"Preventivi"},{k:"bozze",l:"Bozze"},{k:"attivi",l:"Attivi/Firmati"}],
     active: tab,
     onSelect: setTab
-  }), contratti.length === 0 && tab === "lista" && /*#__PURE__*/React.createElement("div", {
+  }), tab === "preventivi" && /*#__PURE__*/React.createElement(PreventiviTab, { dati: dati, setDati: setDati, logAction: logAction }),
+  contratti.length === 0 && tab === "lista" && /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: 48,
