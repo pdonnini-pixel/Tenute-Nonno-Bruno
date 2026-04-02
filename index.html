@@ -5001,7 +5001,10 @@ function Ordini({
     cv: allOrdini.filter(o => o.modalita === "conto_vendita"),
     da_pagare: allOrdini.filter(o => o.statoPagamento === "da_pagare" || o.statoPagamento === "parziale")
   };
-  const lista = navTarget ? allOrdini.filter(o => o.id === navTarget) : (views[tab] || allOrdini);
+  const lista = navTarget
+    ? allOrdini.filter(o => o.id === navTarget)
+    : (views[tab] || allOrdini);
+  const handleSetTab = (k) => { setNavTarget(null); setTab(k); };
   const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "20 ml"];
   const ANNATE = ["2025", "2024"];
   const renderOrdine = o => {
@@ -5165,8 +5168,8 @@ function Ordini({
       l: "⚠ Da pagare",
       n: views.da_pagare.length
     }],
-    active: tab,
-    onSelect: setTab
+    active: navTarget ? '__nav__' : tab,
+    onSelect: handleSetTab
   }), /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(Tbl, {
       cols: ["N° Ordine", "Cliente", "Tipo", "Prodotti", "Totale", "Pagamento", "Date", "Azioni"],
