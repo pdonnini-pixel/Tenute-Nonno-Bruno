@@ -4491,6 +4491,12 @@ function Clienti({
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [detailId, setDetailId] = useState(null);
+  useEffect(() => {
+    if (window._tnbNav && window._tnbNav.targetId) {
+      setDetailId(window._tnbNav.targetId);
+      window._tnbNav = null;
+    }
+  }, []);
   const saveCliente = () => {
     if (!form.ragioneSociale) return;
     const isNew = !form.id;
@@ -4897,6 +4903,17 @@ function Ordini({
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [cvModal, setCvModal] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
+  useEffect(() => {
+    if (window._tnbNav && window._tnbNav.targetId) {
+      setHighlightId(window._tnbNav.targetId);
+      window._tnbNav = null;
+      setTimeout(() => {
+        const el = document.getElementById("ordine-" + highlightId);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 200);
+    }
+  }, []);
   const [cvForm, setCvForm] = useState({});
   const [pdfInvioModal, setPdfInvioModal] = useState(null);
   const oggi = todayStr();
@@ -9964,6 +9981,8 @@ function AlertsPage({
       desc: `Ordine ${o.numero} scaduto ${gg} giorni fa — ${fmt(totOrdine(o))}`,
       cta: "Vai a Ordini",
       modulo: "ordini",
+      targetId: o.id,
+      clienteId: o.clienteId,
       icon: "🤝",
       color: C.rosso
     };
@@ -9979,6 +9998,8 @@ function AlertsPage({
       desc: `Ordine ${o.numero} — ${fmt(totOrdine(o))}`,
       cta: "Vai a Ordini",
       modulo: "ordini",
+      targetId: o.id,
+      clienteId: o.clienteId,
       icon: "✍️",
       color: C.arancio
     };
@@ -9994,6 +10015,8 @@ function AlertsPage({
       desc: `Ordine ${o.numero} — ${fmt(totOrdine(o))}`,
       cta: "Vai a Ordini",
       modulo: "ordini",
+      targetId: o.id,
+      clienteId: o.clienteId,
       icon: "💶",
       color: C.arancio
     };
@@ -10007,6 +10030,7 @@ function AlertsPage({
     desc: `Scaduto il ${fmtD(c.followUp.scadenza)}${c.followUp.nota ? " — " + c.followUp.nota : ""}`,
     cta: "Apri Cliente",
     modulo: "clienti",
+    targetId: c.id,
     icon: "📞",
     color: C.viola
   })),
@@ -10026,6 +10050,8 @@ function AlertsPage({
       desc: `Ordine ${o.numero} scade tra ${gg} giorni (${fmtD(o.scadenzaCV)})`,
       cta: "Vai a Ordini",
       modulo: "ordini",
+      targetId: o.id,
+      clienteId: o.clienteId,
       icon: "⏰",
       color: C.giallo
     };
@@ -10141,7 +10167,7 @@ function AlertsPage({
       ch: `${a.cta} →`,
       sz: "sm",
       v: "sec",
-      onClick: () => setModulo(a.modulo),
+      onClick: () => { if (a.targetId) { window._tnbNav = { targetId: a.targetId }; } setModulo(a.modulo); },
       style: {
         flexShrink: 0,
         color: a.color,
