@@ -2720,7 +2720,7 @@ const costoOlioPerLitro = cfg => {
   return cOlive + cFr;
 };
 const costoFormato = (formato, cfg) => {
-  const ml = formato === "100 ml" ? 0.1 : formato === "250 ml" ? 0.25 : formato === "500 ml" ? 0.5 : formato === "20 ml" ? 0.02 : formato === "3 L (latta)" ? 3 : 5;
+  const ml = formato === "100 ml" ? 0.1 : formato === "250 ml" ? 0.25 : formato === "500 ml" ? 0.5 : (formato === "20 ml" || formato === "Olio 20 ml" || formato === "Aceto 20 ml") ? 0.02 : formato === "3 L (latta)" ? 3 : 5;
   const cOlio = costoOlioPerLitro(cfg) * ml;
   const v = cfg.voci[formato] || {
     bottiglia: 1,
@@ -4999,7 +4999,7 @@ function Ordini({
   const gruppiClienti = React.useMemo(() => { const listaBase = navTarget ? allOrdini.filter(o => o.id === navTarget) : (views[tab] || allOrdini); const map = {}; listaBase.forEach(o => { const cid = o.clienteId || '__nessuno__'; if (!map[cid]) map[cid] = { cliente: dati.clienti.find(c => c.id === cid), ordini: [] }; map[cid].ordini.push(o); }); return Object.values(map).sort((a,b) => (a.cliente?.insegna||a.cliente?.ragioneSociale||'').localeCompare(b.cliente?.insegna||b.cliente?.ragioneSociale||'')); }, [lista, tab, navTarget]);
   const renderGruppoCliente = (gruppo) => { const cl = gruppo.cliente; const cid = cl?.id || '__nessuno__'; const isOpen = !!expandedClients[cid]; const ordini = gruppo.ordini; const totale = ordini.reduce((s,o) => s + totOrdine(o), 0); const nDaPagare = ordini.filter(o => o.statoPagamento==='da_pagare'||o.statoPagamento==='parziale').length; const nDaFirmare = ordini.filter(o => o.stato==='da_firmare').length; const nCvScadute = ordini.filter(o => o.modalita==='conto_vendita'&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato').length; return React.createElement(React.Fragment, {key:cid}, React.createElement('tr',{onClick:()=>toggleClient(cid),style:{cursor:'pointer',background:isOpen?'#f0f4e8':((nDaPagare+nDaFirmare+nCvScadute>0)?'#fffbf0':'#fafaf8'),borderBottom:'1.5px solid #e8e6e0'}}, React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,color:'#2e3a1c'}},React.createElement('span',{style:{marginRight:8,fontSize:12}},isOpen?'▼':'▶'),cl?.insegna||cl?.ragioneSociale||'—'), React.createElement('td',{style:{padding:'10px 12px'}},React.createElement('span',{style:{background:'#e8f5e9',color:'#2e7d32',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11}},ordini.length+(ordini.length===1?' ordine':' ordini'))), React.createElement('td',{style:{padding:'10px 12px'}},nDaPagare>0&&React.createElement('span',{style:{background:'#fff3e0',color:'#e65100',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'💶 '+nDaPagare+' da pagare'),nDaFirmare>0&&React.createElement('span',{style:{background:'#e3f2fd',color:'#1565c0',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'✍️ '+nDaFirmare+' da firmare'),nCvScadute>0&&React.createElement('span',{style:{background:'#ffebee',color:'#c62828',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'⚠️ '+nCvScadute+' CV scadute')), React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,textAlign:'right'}},fmt(totale)), React.createElement('td',{style:{padding:'10px 12px',fontSize:11,color:'#888'},colSpan:4},ordini.map(o=>o.numero).join(' · '))), isOpen&&ordini.map(o=>React.createElement('tr',{key:o.id,style:{background:'#f7f9f3'}},React.createElement('td',{colSpan:8,style:{padding:0}},React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},React.createElement('tbody',null,renderOrdine(o))))))); };
 
-  const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "20 ml"];
+  const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml", "Aceto 20 ml"];
   const ANNATE = ["2025", "2024"];
   const renderOrdine = o => {
     const isCV = o.modalita === "conto_vendita";
@@ -5146,20 +5146,7 @@ function Ordini({
         setModal("new");
       }
     })
-  }), /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginBottom:8,alignItems:"center",justifyContent:"space-between"}},
-    /*#__PURE__*/React.createElement(Tab,{tabs:[{k:"tutti",l:"Tutti",n:allOrdini.length},{k:"vendita",l:"Vendita"},{k:"cv",l:"Conto Vendita"},{k:"da_pagare",l:"⚠ Da pagare",n:views.da_pagare.length}],active:navTarget?"__nav__":tab,onSelect:handleSetTab}),
-    /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:4}},
-      /*#__PURE__*/React.createElement(Btn,{ch:"👤 Per cliente",sz:"sm",style:{background:viewMode==="gruppo"?"#2e3a1c":"#e8e6e0",color:viewMode==="gruppo"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("gruppo")}),
-      /*#__PURE__*/React.createElement(Btn,{ch:"☰ Lista",sz:"sm",style:{background:viewMode==="lista"?"#2e3a1c":"#e8e6e0",color:viewMode==="lista"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("lista")})
-    )
-  ),
-  viewMode==="gruppo"&&/*#__PURE__*/React.createElement("div",{style:{background:"#fff",borderRadius:10,border:"0.5px solid #e8e6e0",overflow:"hidden"}},
-    /*#__PURE__*/React.createElement("table",{style:{width:"100%",borderCollapse:"collapse"}},
-      /*#__PURE__*/React.createElement("thead",null,/*#__PURE__*/React.createElement("tr",{style:{background:"#f4f3ef"}},["Cliente","Ordini","Alert","Totale","N° Ordini"].map(h=>/*#__PURE__*/React.createElement("th",{key:h,style:{padding:"8px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:"#5f5e5a"}},h)))),
-      /*#__PURE__*/React.createElement("tbody",null,gruppiClienti.map(renderGruppoCliente))
-    )
-  ),
-  viewMode==="lista"&&/*#__PURE__*/React.createElement(Card,{ch:/*#__PURE__*/React.createElement(Tbl,{cols:["N° Ordine","Cliente","Tipo","Prodotti","Totale","Pagamento","Date","Azioni"],data:lista,renderRow:renderOrdine})}), pdfInvioModal && /*#__PURE__*/React.createElement(Modal, {
+  }), /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginBottom:8,alignItems:"center",justifyContent:"space-between"}},/*#__PURE__*/React.createElement(Tab,{tabs:[{k:"tutti",l:"Tutti",n:allOrdini.length},{k:"vendita",l:"Vendita"},{k:"cv",l:"Conto Vendita"},{k:"da_pagare",l:"⚠ Da pagare",n:views.da_pagare.length}],active:navTarget?"__nav__":tab,onSelect:handleSetTab}),/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:4}},/*#__PURE__*/React.createElement(Btn,{ch:"👤 Per cliente",sz:"sm",style:{background:viewMode==="gruppo"?"#2e3a1c":"#e8e6e0",color:viewMode==="gruppo"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("gruppo")}),/*#__PURE__*/React.createElement(Btn,{ch:"☰ Lista",sz:"sm",style:{background:viewMode==="lista"?"#2e3a1c":"#e8e6e0",color:viewMode==="lista"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("lista")}))),viewMode==="gruppo"&&/*#__PURE__*/React.createElement("div",{style:{background:"#fff",borderRadius:10,border:"0.5px solid #e8e6e0",overflow:"hidden"}},/*#__PURE__*/React.createElement("table",{style:{width:"100%",borderCollapse:"collapse"}},/*#__PURE__*/React.createElement("thead",null,/*#__PURE__*/React.createElement("tr",{style:{background:"#f4f3ef"}},["Cliente","Ordini","Alert","Totale","N° Ordini"].map(h=>/*#__PURE__*/React.createElement("th",{key:h,style:{padding:"8px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:"#5f5e5a"}},h)))),/*#__PURE__*/React.createElement("tbody",null,gruppiClienti.map(renderGruppoCliente)))),viewMode==="lista"&&/*#__PURE__*/React.createElement(Card,{ch:/*#__PURE__*/React.createElement(Tbl,{cols:["N° Ordine","Cliente","Tipo","Prodotti","Totale","Pagamento","Date","Azioni"],data:lista,renderRow:renderOrdine})}), pdfInvioModal && /*#__PURE__*/React.createElement(Modal, {
     title: "PDF Generato - Invia al Cliente",
     onClose: () => setPdfInvioModal(null),
     ch: /*#__PURE__*/React.createElement("div", {style:{display:"flex",flexDirection:"column",gap:16}},
@@ -5486,6 +5473,9 @@ function Magazzino({
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [expandedId, setExpandedId] = useState(null);
+  const [editSogliaId, setEditSogliaId] = useState(null);
+  const [sogliaVal, setSogliaVal] = useState("");
+  const saveSoglia = (mId) => { setDati(d => ({...d, magazzino: d.magazzino.map(x => x.id===mId ? {...x, soglia: Number(sogliaVal)} : x)})); setEditSogliaId(null); };
   const TIPI_MOV = [{
     v: "carico",
     l: "📥 Carico (nuova produzione)"
@@ -5724,13 +5714,20 @@ function Magazzino({
           padding: "1px 6px",
           fontWeight: 700
         }
-      }, "\u26A0 SOTTO SOGLIA")), m.note && /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 11,
-          color: C.grigio400,
-          marginTop: 2,
-          fontStyle: "italic"
-        }
+      }, "⚠ SOTTO SOGLIA")),
+      /*#__PURE__*/React.createElement("span", {
+        onClick: e => { e.stopPropagation(); setEditSogliaId(editSogliaId===m.id?null:m.id); setSogliaVal(String(m.soglia||0)); },
+        style: { fontSize: 10, background: editSogliaId===m.id?"#e3f2fd":C.grigio100, color: C.grigio600, borderRadius: 4, padding: "1px 6px", cursor: "pointer", fontWeight: 600, marginLeft: 4 }
+      }, "soglia: ", m.soglia),
+      editSogliaId===m.id && /*#__PURE__*/React.createElement("span", {
+        onClick: e => e.stopPropagation(),
+        style: { display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }
+      },
+        /*#__PURE__*/React.createElement("input", { type: "number", value: sogliaVal, onChange: e => setSogliaVal(e.target.value), onClick: e => e.stopPropagation(), style: { width: 55, fontSize: 11, border: `1px solid ${C.blu}`, borderRadius: 4, padding: "2px 4px" } }),
+        /*#__PURE__*/React.createElement(Btn, { ch: "✓", sz: "sm", onClick: e => { e.stopPropagation(); saveSoglia(m.id); } })
+      ),
+      m.note && /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 11, color: C.grigio400, marginTop: 2, fontStyle: "italic" }
       }, m.note)), /*#__PURE__*/React.createElement("div", {
         style: {
           display: "flex",
@@ -6134,7 +6131,7 @@ function Magazzino({
         formato: v
       })),
       req: true,
-      opts: ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "20 ml"]
+      opts: ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml", "Aceto 20 ml"]
     }), /*#__PURE__*/React.createElement(Sel, {
       label: "Annata",
       v: form.annata || "2025",
@@ -6905,7 +6902,7 @@ function CostiMargini({
     }).sort((a, b) => b.totMargine - a.totMargine);
   }, [dati.ordini, dati.clienti, cfg]);
   const formattiAnalisi = useMemo(() => {
-    const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)"];
+    const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml"];
     return FORMATI.map(fmt => {
       const sku = dati.magazzino.find(m => m.formato === fmt && m.annata === "2025");
       const prezzoL = sku?.prezzoListino || 0;
@@ -6930,17 +6927,26 @@ function CostiMargini({
   }), tab === "extra" && /*#__PURE__*/React.createElement(Card, { ch: /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 13, marginBottom: 12 } }, "Voci di costo aggiuntive"),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.grigio600, marginBottom: 16 } }, "Aggiungi lavorazioni straordinarie, consulenze, spese non ricorrenti da includere nell'analisi costi."),
-    (cfg.vociExtra || []).map((v, i) => /*#__PURE__*/React.createElement("div", { key: i, style: { display: "flex", gap: 8, marginBottom: 8, alignItems: "center" } },
+    (cfg.vociExtra || []).map((v, i) => { const sku = v.skuId ? dati.magazzino.find(m=>m.id===v.skuId) : null; return /*#__PURE__*/React.createElement("div", { key: i, style: { display: "flex", gap: 8, marginBottom: 8, alignItems: "center", padding: "8px 10px", background: C.grigio50, borderRadius: 8 } },
       /*#__PURE__*/React.createElement("div", { style: { flex: 1, fontSize: 13, fontWeight: 600 } }, v.desc),
-      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.rosso } }, "-"+fmt(v.importo)),
+      sku && /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, background: "#e8f5e9", color: "#2e7d32", borderRadius: 10, padding: "2px 8px" } }, sku.prodotto+" "+sku.formato),
+      !sku && /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio400 } }, "tutti i prodotti"),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.rosso, fontWeight: 700 } }, "-"+fmt(v.importo)),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400 } }, v.data||""),
       /*#__PURE__*/React.createElement(Btn, { ch: "✕", sz: "sm", v: "sec", onClick: () => setDati(d => ({...d, costiConfig: {...d.costiConfig, vociExtra: (d.costiConfig.vociExtra||[]).filter((_,j)=>j!==i)}})) })
-    )),
+    ); }),
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 12 } },
       /*#__PURE__*/React.createElement(Inp, { label: "Descrizione", v: cfg._exDesc||"", on: v => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exDesc:v}})), ph: "es. Lavorazione straordinaria" }),
       /*#__PURE__*/React.createElement(Inp, { label: "Importo €", type: "number", v: cfg._exImp||"", on: v => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exImp:Number(v)}})) }),
       /*#__PURE__*/React.createElement(Inp, { label: "Data", type: "date", v: cfg._exData||"", on: v => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exData:v}})) }),
-      /*#__PURE__*/React.createElement(Btn, { ch: "Aggiungi", sz: "sm", onClick: () => { if(!cfg._exDesc||!cfg._exImp) return; setDati(d => ({...d, costiConfig: {...d.costiConfig, vociExtra: [...(d.costiConfig.vociExtra||[]), {desc:d.costiConfig._exDesc, importo:d.costiConfig._exImp, data:d.costiConfig._exData}], _exDesc:"", _exImp:"", _exData:""}})); } })
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } },
+        /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, fontWeight: 600, color: C.grigio600 } }, "Assegna a"),
+        /*#__PURE__*/React.createElement("select", { value: cfg._exSku||"", onChange: e => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exSku:e.target.value}})), style: { border: `1px solid ${C.grigio200}`, borderRadius: 6, padding: "5px 8px", fontSize: 12 } },
+          /*#__PURE__*/React.createElement("option", { value: "" }, "Tutti i prodotti"),
+          dati.magazzino.map(m => /*#__PURE__*/React.createElement("option", { key: m.id, value: m.id }, m.prodotto+" "+m.formato+" "+m.annata))
+        )
+      ),
+      /*#__PURE__*/React.createElement(Btn, { ch: "Aggiungi", sz: "sm", onClick: () => { if(!cfg._exDesc||!cfg._exImp) return; setDati(d => ({...d, costiConfig: {...d.costiConfig, vociExtra: [...(d.costiConfig.vociExtra||[]), {desc:d.costiConfig._exDesc, importo:d.costiConfig._exImp, data:d.costiConfig._exData, skuId:d.costiConfig._exSku||null}], _exDesc:"", _exImp:"", _exData:"", _exSku:""}})); } })
     )
   ) }), tab === "config" && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -10619,7 +10625,7 @@ Data: ___/___/______                      Data: ___/___/______
       c: C.rosso
     }
   };
-  const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)"];
+  const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml"];
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83D\uDCDD Contratti",
     action: /*#__PURE__*/React.createElement(Btn, {
