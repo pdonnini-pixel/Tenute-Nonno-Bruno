@@ -3733,6 +3733,63 @@ function Dashboard({
     className: "ani-fade"
   }, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83D\uDCCA Business Intelligence"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      display: "none",
+      gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))",
+      gap: 12,
+      marginBottom: 0
+    }
+  }, /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83E\uDED2",
+    val: fmt(totVendita),
+    label: "Fatturato Vendite",
+    sub: `${dati.ordini.filter(o => o.modalita === "vendita").length} ordini`,
+    color: C.oliva,
+    onClick: () => setModulo("ordini")
+  }), /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83E\uDD1D",
+    val: fmt(cvEsposizione),
+    label: "Esposizione CV",
+    sub: `${dati.ordini.filter(o => o.modalita === "conto_vendita").length} contratti`,
+    color: C.viola,
+    onClick: () => setModulo("ordini")
+  }), /*#__PURE__*/React.createElement(KPI, {
+    icon: "\u26A0\uFE0F",
+    val: fmt(daRiscuotere),
+    label: "Da Riscuotere",
+    sub: `${dati.ordini.filter(o => o.statoPagamento === "da_pagare").length} ordini`,
+    color: daRiscuotere > 500 ? C.rosso : C.arancio,
+    onClick: () => setModulo("ordini")
+  }), /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83C\uDFAF",
+    val: dati.prospect.filter(p => p.stato !== "acquisito").length,
+    label: "Prospect Attivi",
+    sub: `${dati.prospect.filter(p => p.stato === "interessato").length} interessati`,
+    color: C.blu,
+    onClick: () => setModulo("pipeline")
+  }), /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83D\uDC65",
+    val: dati.clienti.length,
+    label: "Clienti Acquisiti",
+    sub: `${dati.clienti.filter(c => c.tipo === "horeca").length} HoReCa`,
+    color: C.cyan,
+    onClick: () => setModulo("clienti")
+  }), sottosoglia.length > 0 && /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83D\uDCE6",
+    val: sottosoglia.length,
+    label: "Sotto Soglia",
+    sub: sottosoglia.map(s => s.formato).join(", "),
+    color: C.rosso,
+    onClick: () => setModulo("magazzino")
+  }), cvScadute > 0 && /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83D\uDD14",
+    val: cvScadute,
+    label: "CV Scadute",
+    sub: "Rendicontazione urgente",
+    color: C.rosso,
+    onClick: () => setModulo("ordini")
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
@@ -5280,7 +5337,1185 @@ function Ordini({
         flexDirection: "column",
         gap: 14
       }
-    }),   }), /*#__PURE__*/React.createElement(Tab, {
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 14
+      }
+    }, /*#__PURE__*/React.createElement(Sel, {
+      label: "Cliente",
+      v: form.clienteId || "",
+      on: v => setForm(f => ({
+        ...f,
+        clienteId: v
+      })),
+      req: true,
+      opts: dati.clienti.map(c => ({
+        v: c.id,
+        l: c.insegna || c.ragioneSociale
+      }))
+    }), /*#__PURE__*/React.createElement(Sel, {
+      label: "Modalit\xE0",
+      v: form.modalita || "",
+      on: v => setForm(f => ({
+        ...f,
+        modalita: v
+      })),
+      opts: [{
+        v: "vendita",
+        l: "Vendita"
+      }, {
+        v: "conto_vendita",
+        l: "Conto Vendita"
+      }]
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Data",
+      type: "date",
+      v: form.data || "",
+      on: v => setForm(f => ({
+        ...f,
+        data: v
+      }))
+    }), /*#__PURE__*/React.createElement(Sel, {
+      label: "Stato ordine",
+      v: form.stato || "",
+      on: v => setForm(f => ({
+        ...f,
+        stato: v
+      })),
+      opts: Object.entries(STATO_ORDINE).map(([k, v]) => ({
+        v: k,
+        l: v.l
+      }))
+    }), /*#__PURE__*/React.createElement(Sel, {
+      label: "Modalit\xE0 pagamento",
+      v: form.modalitaPagamento || "",
+      on: v => setForm(f => ({
+        ...f,
+        modalitaPagamento: v
+      })),
+      opts: ["bonifico", "contanti", "rimessa_diretta", "altro"]
+    }), /*#__PURE__*/React.createElement(Sel, {
+      label: "Stato pagamento",
+      v: form.statoPagamento || "",
+      on: v => setForm(f => ({
+        ...f,
+        statoPagamento: v
+      })),
+      opts: Object.entries(STATO_PAG).map(([k, v]) => ({
+        v: k,
+        l: v.l
+      }))
+    }), form.modalita === "conto_vendita" && /*#__PURE__*/React.createElement(Inp, {
+      label: "Scadenza CV",
+      type: "date",
+      v: form.scadenzaCV || "",
+      on: v => setForm(f => ({
+        ...f,
+        scadenzaCV: v
+      }))
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: C.grigio600,
+        letterSpacing: .5
+      }
+    }, "RIGHE ORDINE"), /*#__PURE__*/React.createElement(Btn, {
+      ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Riga"),
+      sz: "sm",
+      v: "sec",
+      onClick: addRiga
+    })), (form.righe || []).map((r, i) => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      style: {
+        display: "grid",
+        gridTemplateColumns: "2fr 1fr 80px 90px 80px 28px",
+        gap: 8,
+        marginBottom: 8,
+        alignItems: "end"
+      }
+    }, /*#__PURE__*/React.createElement(Sel, {
+      v: r.formato,
+      on: v => updRiga(i, "formato", v),
+      opts: FORMATI
+    }), /*#__PURE__*/React.createElement(Sel, {
+      v: r.annata,
+      on: v => updRiga(i, "annata", v),
+      opts: ANNATE
+    }), /*#__PURE__*/React.createElement(Inp, {
+      type: "number",
+      v: r.qta,
+      on: v => updRiga(i, "qta", v),
+      ph: "Q.t\xE0"
+    }), /*#__PURE__*/React.createElement(Inp, {
+      type: "number",
+      v: r.prezzoUnitario,
+      on: v => updRiga(i, "prezzoUnitario", v),
+      ph: "\u20AC/pz"
+    }), /*#__PURE__*/React.createElement(Inp, {
+      type: "number",
+      v: r.omaggio || 0,
+      on: v => updRiga(i, "omaggio", v),
+      ph: "Omagg."
+    }), /*#__PURE__*/React.createElement(Btn, {
+      ch: /*#__PURE__*/React.createElement(I.del, null),
+      v: "gh",
+      sz: "sm",
+      onClick: () => setForm(f => ({
+        ...f,
+        righe: f.righe.filter((_, j) => j !== i)
+      }))
+    }))), (form.righe || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: "right",
+        fontWeight: 700,
+        fontSize: 14,
+        color: C.olivaScuro,
+        marginTop: 4
+      }
+    }, "Totale: ", fmt((form.righe || []).reduce((s, r) => s + (r.qta || 0) * (r.prezzoUnitario || 0), 0)), " + IVA 4%")), /*#__PURE__*/React.createElement(Inp, {
+      label: "Note",
+      v: form.note || "",
+      on: v => setForm(f => ({
+        ...f,
+        note: v
+      })),
+      rows: 2
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "flex-end",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      ch: "Annulla",
+      v: "sec",
+      onClick: () => setModal(null)
+    }), /*#__PURE__*/React.createElement(Btn, {
+      ch: "Salva ordine",
+      onClick: saveOrdine
+    })))
+  }));
+}
+
+// ─── MAGAZZINO ────────────────────────────────────────────────────────────────
+function Magazzino({
+  dati,
+  setDati,
+  readonly,
+  logAction
+}) {
+  const [tab, setTab] = useState("giacenze");
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [expandedId, setExpandedId] = useState(null);
+  const TIPI_MOV = [{
+    v: "carico",
+    l: "📥 Carico (nuova produzione)"
+  }, {
+    v: "imbottigliamento_ok",
+    l: "🫙 Imbottigliamento completato"
+  }, {
+    v: "etichettatura_ok",
+    l: "🏷 Etichettatura completata"
+  }, {
+    v: "preparazione_ok",
+    l: "📦 Preparazione completata → disponibile"
+  }, {
+    v: "riserva",
+    l: "🔒 Riserva per ordine firmato"
+  }, {
+    v: "riserva_annullata",
+    l: "↩️ Annulla riserva → disponibile"
+  }, {
+    v: "affido_spedizioniere",
+    l: "🚛 Affidato allo spedizioniere"
+  }, {
+    v: "consegnato",
+    l: "✅ Consegnato al cliente"
+  }, {
+    v: "scarico_manuale",
+    l: "⚠️ Scarico manuale / perdita"
+  }];
+  const saveMov = () => {
+    if (!form.magId || !form.tipo || !form.qta) return;
+    const sku = dati.magazzino.find(m => m.id === form.magId);
+    const newMov = {
+      ...form,
+      id: uid(),
+      qta: Number(form.qta),
+      data: form.data || todayStr()
+    };
+    setDati(d => ({
+      ...d,
+      movimenti: [newMov, ...(d.movimenti || [])],
+      magazzino: applicaMovimento(d.magazzino, form.magId, form.tipo, form.qta)
+    }));
+    if (logAction) logAction(`Mov. magazzino: ${TIPI_MOV.find(t => t.v === form.tipo)?.l || form.tipo}`, "magazzino", `${sku?.prodotto} ${sku?.formato} ${sku?.annata} — ${form.qta} pz`);
+    setModal(null);
+    setForm({});
+  };
+  const saveSku = () => {
+    if (!form.formato || !form.prodotto) return;
+    const isNew = !form.id;
+    const sku = {
+      ...form,
+      id: form.id || uid(),
+      giacenza: form.giacenza || {
+        disponibile: 0,
+        in_imbottigliamento: 0,
+        da_etichettare: 0,
+        in_preparazione: 0,
+        da_preparare: 0,
+        riservato: 0,
+        in_transito: 0
+      }
+    };
+    setDati(d => ({
+      ...d,
+      magazzino: isNew ? [...d.magazzino, sku] : d.magazzino.map(m => m.id === sku.id ? sku : m)
+    }));
+    if (logAction) logAction(isNew ? "Nuovo SKU" : "Modifica SKU", "magazzino", `${sku.prodotto} ${sku.formato} ${sku.annata}`);
+    setModal(null);
+  };
+  const valTot = dati.magazzino.reduce((s, m) => s + giacenzaDisp(m) * (m.prezzoListino || 0), 0);
+  const valFisico = dati.magazzino.reduce((s, m) => s + giacenzaFisica(m) * (m.prezzoListino || 0), 0);
+  const sotto = dati.magazzino.filter(m => giacenzaDisp(m) <= m.soglia);
+  const movimentiOrdinati = [...(dati.movimenti || [])].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
+    title: /*#__PURE__*/React.createElement(React.Fragment, null, "\uD83D\uDCE6 Magazzino ", readonly && /*#__PURE__*/React.createElement("span", {
+      style: {
+        marginLeft: 10,
+        fontSize: 11,
+        background: "#e3f2fd",
+        color: "#1565c0",
+        borderRadius: 6,
+        padding: "2px 8px",
+        fontWeight: 700
+      }
+    }, "SOLA LETTURA")),
+    action: !readonly && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      ch: "\u26A1 Movimento",
+      v: "sec",
+      sz: "sm",
+      onClick: () => {
+        setForm({
+          tipo: "riserva",
+          data: todayStr()
+        });
+        setModal("mov");
+      }
+    }), /*#__PURE__*/React.createElement(Btn, {
+      ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " SKU"),
+      sz: "sm",
+      onClick: () => {
+        setForm({
+          giacenza: {
+            disponibile: 0,
+            in_imbottigliamento: 0,
+            da_etichettare: 0,
+            in_preparazione: 0,
+            da_preparare: 0,
+            riservato: 0,
+            in_transito: 0
+          }
+        });
+        setModal("sku");
+      }
+    }))
+  }), sotto.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#fff8e1",
+      border: `1px solid ${C.oro}`,
+      borderRadius: 8,
+      padding: "10px 16px",
+      marginBottom: 14,
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      color: "#7a5900",
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement(I.alert, null), " ", /*#__PURE__*/React.createElement("strong", null, "Disponibile sotto soglia:"), " ", sotto.map(m => `${m.formato} ${m.annata} (${giacenzaDisp(m)} pz)`).join(" · ")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      display: "none",
+      gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))",
+      gap: 10,
+      marginBottom: 0
+    }
+  }, /*#__PURE__*/React.createElement(KPI, {
+    icon: "\u2705",
+    val: dati.magazzino.reduce((s, m) => s + giacenzaDisp(m), 0) + " pz",
+    label: "Disponibile",
+    color: C.verde
+  }), /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83D\uDD12",
+    val: dati.magazzino.reduce((s, m) => s + (m.giacenza?.riservato || 0), 0) + " pz",
+    label: "Riservato",
+    color: C.blu
+  }), /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83D\uDE9B",
+    val: dati.magazzino.reduce((s, m) => s + (m.giacenza?.in_transito || 0), 0) + " pz",
+    label: "In transito",
+    color: C.cyan
+  }), /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83D\uDCE6",
+    val: dati.magazzino.reduce((s, m) => s + (m.giacenza?.in_preparazione || 0) + (m.giacenza?.da_preparare || 0), 0) + " pz",
+    label: "In preparazione",
+    color: C.viola
+  }), /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83E\uDED9",
+    val: dati.magazzino.reduce((s, m) => s + (m.giacenza?.in_imbottigliamento || 0), 0) + " pz",
+    label: "In imbottigliamento",
+    color: C.arancio
+  }), /*#__PURE__*/React.createElement(KPI, {
+    icon: "\uD83D\uDCB6",
+    val: fmt(valTot),
+    label: "Valore disponibile",
+    color: C.oliva
+  })), /*#__PURE__*/React.createElement(Tab, {
+    tabs: [{
+      k: "giacenze",
+      l: "Giacenze per SKU"
+    }, {
+      k: "movimenti",
+      l: `Movimenti (${(dati.movimenti || []).length})`
+    }],
+    active: tab,
+    onSelect: setTab
+  }), tab === "giacenze" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 10
+    }
+  }, dati.magazzino.map(m => {
+    const g = m.giacenza || {};
+    const tot = giacenzaTot(m);
+    const disp = giacenzaDisp(m);
+    const isExpanded = expandedId === m.id;
+    const hasAlert = disp <= m.soglia;
+    return /*#__PURE__*/React.createElement(Card, {
+      key: m.id,
+      style: {
+        border: `1.5px solid ${hasAlert ? C.rosso + "44" : C.grigio200}`
+      },
+      ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
+          cursor: "pointer"
+        },
+        onClick: () => setExpandedId(isExpanded ? null : m.id)
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          flexWrap: "wrap"
+        }
+      }, /*#__PURE__*/React.createElement("strong", {
+        style: {
+          fontSize: 13,
+          color: C.olivaScuro
+        }
+      }, m.prodotto, " ", m.formato), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11,
+          background: C.grigio100,
+          borderRadius: 4,
+          padding: "1px 7px",
+          fontWeight: 700
+        }
+      }, "Raccolta ", m.annata), hasAlert && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 10,
+          background: C.rosso,
+          color: "#fff",
+          borderRadius: 4,
+          padding: "1px 6px",
+          fontWeight: 700
+        }
+      }, "\u26A0 SOTTO SOGLIA")), m.note && /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          color: C.grigio400,
+          marginTop: 2,
+          fontStyle: "italic"
+        }
+      }, m.note)), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          gap: 6,
+          alignItems: "center",
+          flexWrap: "wrap"
+        }
+      }, STATI_MAG_ORDINE.filter(s => (g[s] || 0) > 0).map(s => /*#__PURE__*/React.createElement("div", {
+        key: s,
+        style: {
+          textAlign: "center",
+          minWidth: 50
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 15,
+          fontWeight: 700,
+          color: STATI_MAG[s]?.c
+        }
+      }, g[s] || 0), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 9,
+          color: C.grigio400,
+          whiteSpace: "nowrap"
+        }
+      }, STATI_MAG[s]?.emoji, " ", STATI_MAG[s]?.l?.split(" ")[0]))), /*#__PURE__*/React.createElement("div", {
+        style: {
+          textAlign: "center",
+          minWidth: 50,
+          paddingLeft: 8,
+          borderLeft: `1px solid ${C.grigio200}`
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 15,
+          fontWeight: 700,
+          color: C.grigio600
+        }
+      }, tot), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 9,
+          color: C.grigio400
+        }
+      }, "TOTALE"))), !readonly && /*#__PURE__*/React.createElement(Btn, {
+        ch: "\u26A1",
+        sz: "sm",
+        v: "sec",
+        onClick: e => {
+          e.stopPropagation();
+          setForm({
+            tipo: "riserva",
+            magId: m.id,
+            data: todayStr()
+          });
+          setModal("mov");
+        },
+        style: {
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: C.grigio400,
+          fontSize: 12
+        }
+      }, isExpanded ? "▲" : "▼")), isExpanded && /*#__PURE__*/React.createElement("div", {
+        style: {
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: `1px solid ${C.grigio100}`
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          marginBottom: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          height: 12,
+          borderRadius: 6,
+          overflow: "hidden",
+          gap: 1
+        }
+      }, STATI_MAG_ORDINE.filter(s => (g[s] || 0) > 0).map(s => /*#__PURE__*/React.createElement("div", {
+        key: s,
+        style: {
+          flex: g[s] || 0,
+          background: STATI_MAG[s]?.c,
+          minWidth: 4
+        },
+        title: `${STATI_MAG[s]?.l}: ${g[s]}`
+      }))), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          gap: 10,
+          marginTop: 6,
+          flexWrap: "wrap"
+        }
+      }, STATI_MAG_ORDINE.filter(s => (g[s] || 0) > 0).map(s => /*#__PURE__*/React.createElement("span", {
+        key: s,
+        style: {
+          fontSize: 11,
+          display: "flex",
+          alignItems: "center",
+          gap: 4
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: STATI_MAG[s]?.c,
+          display: "inline-block"
+        }
+      }), /*#__PURE__*/React.createElement("strong", {
+        style: {
+          color: STATI_MAG[s]?.c
+        }
+      }, g[s] || 0), " ", STATI_MAG[s]?.l)))), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))",
+          gap: 8,
+          marginBottom: 12
+        }
+      }, STATI_MAG_ORDINE.map(s => /*#__PURE__*/React.createElement("div", {
+        key: s,
+        style: {
+          background: (g[s] || 0) > 0 ? STATI_MAG[s]?.c + "11" : C.grigio50,
+          borderRadius: 8,
+          padding: "8px 10px",
+          border: `1px solid ${(g[s] || 0) > 0 ? STATI_MAG[s]?.c + "44" : C.grigio200}`
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: C.grigio400,
+          fontWeight: 700
+        }
+      }, STATI_MAG[s]?.emoji, " ", STATI_MAG[s]?.l?.toUpperCase()), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 20,
+          fontWeight: 700,
+          color: (g[s] || 0) > 0 ? STATI_MAG[s]?.c : C.grigio300,
+          marginTop: 2
+        }
+      }, g[s] || 0), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: C.grigio400
+        }
+      }, "pezzi")))), !readonly && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          fontWeight: 700,
+          color: C.grigio600,
+          marginBottom: 6,
+          letterSpacing: .5
+        }
+      }, "AVANZA STATO RAPIDO"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          gap: 6,
+          flexWrap: "wrap"
+        }
+      }, [{
+        tipo: "imbottigliamento_ok",
+        label: "Imbottigl. → Disponibile",
+        vis: (g.in_imbottigliamento || 0) > 0
+      }, {
+        tipo: "etichettatura_ok",
+        label: "Etichett. → Disponibile",
+        vis: (g.da_etichettare || 0) > 0
+      }, {
+        tipo: "preparazione_ok",
+        label: "Prep. → Disponibile",
+        vis: (g.in_preparazione || 0) > 0
+      }, {
+        tipo: "riserva",
+        label: "Riserva per ordine",
+        vis: (g.disponibile || 0) > 0
+      }, {
+        tipo: "affido_spedizioniere",
+        label: "→ Spedizioniere",
+        vis: (g.riservato || 0) + (g.in_preparazione || 0) > 0
+      }, {
+        tipo: "consegnato",
+        label: "→ Consegnato",
+        vis: (g.in_transito || 0) > 0
+      }].filter(a => a.vis).map(a => /*#__PURE__*/React.createElement(Btn, {
+        key: a.tipo,
+        ch: a.label,
+        sz: "sm",
+        v: "sec",
+        onClick: () => {
+          const qtaMap = {
+            "imbottigliamento_ok": g.in_imbottigliamento || 0,
+            "etichettatura_ok": g.da_etichettare || 0,
+            "preparazione_ok": g.in_preparazione || 0,
+            "consegnato": g.in_transito || 0
+          };
+          setForm({
+            tipo: a.tipo,
+            magId: m.id,
+            data: todayStr(),
+            qta: qtaMap[a.tipo] || ""
+          });
+          setModal("mov");
+        },
+        style: {
+          color: C.olivaChiaro
+        }
+      })))), !readonly && /*#__PURE__*/React.createElement("div", {
+        style: {
+          marginTop: 10,
+          display: "flex",
+          justifyContent: "flex-end"
+        }
+      }, /*#__PURE__*/React.createElement(Btn, {
+        ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.edit, null), " Modifica SKU"),
+        v: "sec",
+        sz: "sm",
+        onClick: e => {
+          e.stopPropagation();
+          setForm({
+            ...m
+          });
+          setModal("sku");
+        }
+      }))))
+    });
+  })), tab === "movimenti" && /*#__PURE__*/React.createElement(Card, {
+    ch: /*#__PURE__*/React.createElement(Tbl, {
+      cols: ["Data", "Tipo", "SKU", "Qtà", "Nota"],
+      data: movimentiOrdinati,
+      renderRow: mov => {
+        const sku = dati.magazzino.find(s => s.id === mov.magId);
+        const tipoInfo = TIPI_MOV.find(t => t.v === mov.tipo);
+        return /*#__PURE__*/React.createElement(TR, {
+          key: mov.id,
+          ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TD, {
+            ch: fmtD(mov.data)
+          }), /*#__PURE__*/React.createElement(TD, {
+            ch: /*#__PURE__*/React.createElement("span", {
+              style: {
+                fontSize: 11,
+                fontWeight: 600
+              }
+            }, tipoInfo?.l || mov.tipo)
+          }), /*#__PURE__*/React.createElement(TD, {
+            ch: sku ? /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, sku.formato), " ", /*#__PURE__*/React.createElement("span", {
+              style: {
+                color: C.grigio400
+              }
+            }, "R.", sku.annata)) : "—"
+          }), /*#__PURE__*/React.createElement(TD, {
+            ch: /*#__PURE__*/React.createElement("strong", {
+              style: {
+                color: C.olivaScuro
+              }
+            }, mov.qta, " pz")
+          }), /*#__PURE__*/React.createElement(TD, {
+            ch: /*#__PURE__*/React.createElement("span", {
+              style: {
+                fontSize: 11,
+                color: C.grigio600
+              }
+            }, mov.nota || "—")
+          }))
+        });
+      }
+    })
+  }), modal === "mov" && /*#__PURE__*/React.createElement(Modal, {
+    title: "Registra Movimento",
+    onClose: () => setModal(null),
+    ch: /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 14
+      }
+    }, /*#__PURE__*/React.createElement(Sel, {
+      label: "SKU",
+      v: form.magId || "",
+      on: v => setForm(f => ({
+        ...f,
+        magId: v
+      })),
+      req: true,
+      opts: dati.magazzino.map(m => ({
+        v: m.id,
+        l: `${m.prodotto} ${m.formato} R.${m.annata}`
+      }))
+    }), form.magId && (() => {
+      const sku = dati.magazzino.find(m => m.id === form.magId);
+      const g = sku?.giacenza || {};
+      return /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          gap: 6,
+          flexWrap: "wrap",
+          background: C.grigio50,
+          borderRadius: 8,
+          padding: "8px 10px"
+        }
+      }, STATI_MAG_ORDINE.filter(s => (g[s] || 0) > 0).map(s => /*#__PURE__*/React.createElement("span", {
+        key: s,
+        style: {
+          fontSize: 11,
+          color: STATI_MAG[s]?.c,
+          fontWeight: 700
+        }
+      }, STATI_MAG[s]?.emoji, g[s], " ", STATI_MAG[s]?.l?.split(" ")[0])));
+    })(), /*#__PURE__*/React.createElement(Sel, {
+      label: "Tipo movimento",
+      v: form.tipo || "",
+      on: v => setForm(f => ({
+        ...f,
+        tipo: v
+      })),
+      req: true,
+      opts: TIPI_MOV
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 12
+      }
+    }, /*#__PURE__*/React.createElement(Inp, {
+      label: "Quantit\xE0 (pz)",
+      type: "number",
+      v: form.qta || "",
+      on: v => setForm(f => ({
+        ...f,
+        qta: v
+      })),
+      req: true
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Data",
+      type: "date",
+      v: form.data || todayStr(),
+      on: v => setForm(f => ({
+        ...f,
+        data: v
+      }))
+    })), /*#__PURE__*/React.createElement(Inp, {
+      label: "Nota (ordine collegato, spedizioniere...)",
+      v: form.nota || "",
+      on: v => setForm(f => ({
+        ...f,
+        nota: v
+      })),
+      ph: "es. Ordine 1006/2026 \u2014 GLS consegna prevista 28/03"
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "flex-end",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      ch: "Annulla",
+      v: "sec",
+      onClick: () => setModal(null)
+    }), /*#__PURE__*/React.createElement(Btn, {
+      ch: "Registra movimento",
+      onClick: saveMov
+    })))
+  }), modal === "sku" && /*#__PURE__*/React.createElement(Modal, {
+    title: form.id ? "Modifica SKU" : "Nuovo SKU",
+    onClose: () => setModal(null),
+    wide: true,
+    ch: /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        gridColumn: "span 2"
+      }
+    }, /*#__PURE__*/React.createElement(Inp, {
+      label: "Prodotto",
+      v: form.prodotto || "",
+      on: v => setForm(f => ({
+        ...f,
+        prodotto: v
+      })),
+      req: true,
+      full: true
+    })), /*#__PURE__*/React.createElement(Sel, {
+      label: "Formato",
+      v: form.formato || "",
+      on: v => setForm(f => ({
+        ...f,
+        formato: v
+      })),
+      req: true,
+      opts: ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "20 ml"]
+    }), /*#__PURE__*/React.createElement(Sel, {
+      label: "Annata",
+      v: form.annata || "2025",
+      on: v => setForm(f => ({
+        ...f,
+        annata: v
+      })),
+      opts: ["2025", "2024", "2023"]
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Prezzo listino B2B (\u20AC)",
+      type: "number",
+      v: form.prezzoListino || "",
+      on: v => setForm(f => ({
+        ...f,
+        prezzoListino: Number(v)
+      }))
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Soglia alert disponibile",
+      type: "number",
+      v: form.soglia || "",
+      on: v => setForm(f => ({
+        ...f,
+        soglia: Number(v)
+      }))
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: C.grigio600,
+        marginBottom: 8,
+        letterSpacing: .5
+      }
+    }, "GIACENZA PER STATO"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))",
+        gap: 8
+      }
+    }, STATI_MAG_ORDINE.map(s => /*#__PURE__*/React.createElement("div", {
+      key: s
+    }, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 10,
+        fontWeight: 700,
+        color: STATI_MAG[s]?.c
+      }
+    }, STATI_MAG[s]?.emoji, " ", STATI_MAG[s]?.l?.toUpperCase()), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      value: (form.giacenza || {})[s] || 0,
+      onChange: e => setForm(f => ({
+        ...f,
+        giacenza: {
+          ...(f.giacenza || {}),
+          [s]: Number(e.target.value)
+        }
+      })),
+      style: {
+        width: "100%",
+        border: `1.5px solid ${STATI_MAG[s]?.c}44`,
+        borderRadius: 6,
+        padding: "6px 8px",
+        fontSize: 13,
+        marginTop: 2,
+        outline: "none"
+      }
+    }))))), /*#__PURE__*/React.createElement(Inp, {
+      label: "Note",
+      v: form.note || "",
+      on: v => setForm(f => ({
+        ...f,
+        note: v
+      })),
+      rows: 2
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "flex-end",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      ch: "Annulla",
+      v: "sec",
+      onClick: () => setModal(null)
+    }), /*#__PURE__*/React.createElement(Btn, {
+      ch: "Salva SKU",
+      onClick: saveSku
+    })))
+  }));
+}
+function Produzione({
+  dati,
+  setDati
+}) {
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const save = () => {
+    if (!form.annata) return;
+    setDati(d => ({
+      ...d,
+      lotti: form.id ? d.lotti.map(l => l.id === form.id ? form : l) : [...d.lotti, {
+        ...form,
+        id: uid()
+      }]
+    }));
+    setModal(null);
+  };
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
+    title: "\uD83C\uDF3F Produzione \u2014 Lotti",
+    action: /*#__PURE__*/React.createElement(Btn, {
+      ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Nuova annata"),
+      sz: "sm",
+      onClick: () => {
+        setForm({});
+        setModal("new");
+      }
+    })
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))",
+      gap: 16
+    }
+  }, [...dati.lotti].sort((a, b) => b.annata.localeCompare(a.annata)).map(l => /*#__PURE__*/React.createElement(Card, {
+    key: l.id,
+    ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontFamily: "'Playfair Display',serif",
+        fontSize: 26,
+        fontWeight: 700,
+        color: C.olivaScuro
+      }
+    }, "Raccolta ", l.annata), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.grigio400,
+        marginTop: 2
+      }
+    }, l.varieta)), /*#__PURE__*/React.createElement(Btn, {
+      ch: /*#__PURE__*/React.createElement(I.edit, null),
+      v: "gh",
+      sz: "sm",
+      onClick: () => {
+        setForm(l);
+        setModal("new");
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 10,
+        marginBottom: 12
+      }
+    }, [["Olive", `${l.qtaOlive?.toLocaleString()} kg`], ["Olio prodotto", `${l.qtaOlio?.toLocaleString()} L`], ["Resa", l.resa], ["Raccolta", fmtD(l.dataRaccolta)], ["Frangitura", fmtD(l.dataFrangitura)]].map(([k, v]) => /*#__PURE__*/React.createElement("div", {
+      key: k,
+      style: {
+        background: C.grigio50,
+        borderRadius: 8,
+        padding: "10px 12px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: C.grigio400,
+        fontWeight: 700,
+        letterSpacing: .5
+      }
+    }, k.toUpperCase()), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 15,
+        fontWeight: 700,
+        color: C.grigio800,
+        marginTop: 2
+      }
+    }, v || "—")))), l.note && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.grigio600,
+        fontStyle: "italic",
+        borderTop: `1px solid ${C.grigio200}`,
+        paddingTop: 10
+      }
+    }, l.note))
+  }))), modal && /*#__PURE__*/React.createElement(Modal, {
+    title: form.id ? `Modifica ${form.annata}` : "Nuova Annata",
+    onClose: () => setModal(null),
+    ch: /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 14
+      }
+    }, /*#__PURE__*/React.createElement(Inp, {
+      label: "Annata",
+      v: form.annata || "",
+      on: v => setForm(f => ({
+        ...f,
+        annata: v
+      })),
+      req: true,
+      ph: "es. 2026"
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Variet\xE0",
+      v: form.varieta || "",
+      on: v => setForm(f => ({
+        ...f,
+        varieta: v
+      })),
+      ph: "Frantoio, Moraiolo, Leccino"
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Olive raccolte (kg)",
+      type: "number",
+      v: form.qtaOlive || "",
+      on: v => setForm(f => ({
+        ...f,
+        qtaOlive: Number(v)
+      }))
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Olio prodotto (L)",
+      type: "number",
+      v: form.qtaOlio || "",
+      on: v => setForm(f => ({
+        ...f,
+        qtaOlio: Number(v)
+      }))
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Resa %",
+      v: form.resa || "",
+      on: v => setForm(f => ({
+        ...f,
+        resa: v
+      })),
+      ph: "es. 14.5%"
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Data raccolta",
+      type: "date",
+      v: form.dataRaccolta || "",
+      on: v => setForm(f => ({
+        ...f,
+        dataRaccolta: v
+      }))
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Data frangitura",
+      type: "date",
+      v: form.dataFrangitura || "",
+      on: v => setForm(f => ({
+        ...f,
+        dataFrangitura: v
+      }))
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        gridColumn: "span 2"
+      }
+    }, /*#__PURE__*/React.createElement(Inp, {
+      label: "Note campagna",
+      v: form.note || "",
+      on: v => setForm(f => ({
+        ...f,
+        note: v
+      })),
+      rows: 2
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        gridColumn: "span 2",
+        display: "flex",
+        justifyContent: "flex-end",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      ch: "Annulla",
+      v: "sec",
+      onClick: () => setModal(null)
+    }), /*#__PURE__*/React.createElement(Btn, {
+      ch: "Salva",
+      onClick: save
+    })))
+  }));
+}
+
+// ─── FORNITORI ────────────────────────────────────────────────────────────────
+function Fornitori({
+  dati,
+  setDati
+}) {
+  const [tab, setTab] = useState("ana");
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const nF = id => dati.fornitori.find(f => f.id === id)?.nome || "—";
+  const saveF = () => {
+    if (!form.nome) return;
+    setDati(d => ({
+      ...d,
+      fornitori: form.id ? d.fornitori.map(f => f.id === form.id ? form : f) : [...d.fornitori, {
+        ...form,
+        id: uid()
+      }]
+    }));
+    setModal(null);
+  };
+  const saveOF = () => {
+    if (!form.fornitoreId) return;
+    const of = {
+      ...form,
+      righe: form.righe || [],
+      totale: (form.righe || []).reduce((s, r) => s + (r.qta || 0) * (r.prezzoUnitario || 0), 0)
+    };
+    setDati(d => ({
+      ...d,
+      ordiniFornitore: of.id ? d.ordiniFornitore.map(o => o.id === of.id ? of : o) : [{
+        ...of,
+        id: uid()
+      }, ...d.ordiniFornitore]
+    }));
+    setModal(null);
+  };
+  const CAT = ["bottiglie", "frantoio", "packaging", "etichette", "logistica", "altro"];
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
+    title: "\uD83D\uDE9B Fornitori",
+    action: /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8
+      }
+    }, tab === "ana" && /*#__PURE__*/React.createElement(Btn, {
+      ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Fornitore"),
+      sz: "sm",
+      onClick: () => {
+        setForm({});
+        setModal("f");
+      }
+    }), tab === "ord" && /*#__PURE__*/React.createElement(Btn, {
+      ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Ordine"),
+      sz: "sm",
+      onClick: () => {
+        setForm({
+          stato: "attesa",
+          data: todayStr(),
+          righe: []
+        });
+        setModal("of");
+      }
+    }))
+  }), /*#__PURE__*/React.createElement(Tab, {
     tabs: [{
       k: "ana",
       l: "Anagrafica"
@@ -8777,17 +10012,7 @@ function AlertsPage({
       color: C.giallo
     };
   })];
-  const alertsDedup = (() => {
-    const result = []; const clienteGroups = {};
-    alerts.forEach(a => {
-      if ((a.tipo === "firma" || a.tipo === "pagamento") && a.clienteId) {
-        const key = a.tipo + "_" + a.clienteId;
-        if (!clienteGroups[key]) { clienteGroups[key] = {...a, _ordini:[a]}; result.push(clienteGroups[key]); }
-        else { clienteGroups[key]._ordini.push(a); const n=clienteGroups[key]._ordini.length; const cl=dati.clienti.find(c=>c.id===a.clienteId); const nome=cl?.insegna||cl?.ragioneSociale||"Cliente"; clienteGroups[key].titolo=(a.tipo==="firma"?"Da firmare: ":"Da riscuotere: ")+nome; clienteGroups[key].desc=n+" ordini"; clienteGroups[key].targetId=null; }
-      } else { result.push(a); }
-    });
-    return result;
-  })();
+  const alertsDedup = (() => { const result=[]; const cg={}; alerts.forEach(a => { if((a.tipo==="firma"||a.tipo==="pagamento")&&a.clienteId){const key=a.tipo+"_"+a.clienteId; if(!cg[key]){cg[key]={...a,_ordini:[a]};result.push(cg[key]);}else{cg[key]._ordini.push(a);const n=cg[key]._ordini.length;const cl=dati.clienti.find(c=>c.id===a.clienteId);const nome=cl?.insegna||cl?.ragioneSociale||"Cliente";cg[key].titolo=(a.tipo==="firma"?"Da firmare: ":"Da riscuotere: ")+nome;cg[key].desc=n+" ordini";cg[key].targetId=null;}}else{result.push(a);}});return result;})();
   const byPriorita = {
     alta: alertsDedup.filter(a => a.priorita === "alta"),
     media: alertsDedup.filter(a => a.priorita === "media"),
