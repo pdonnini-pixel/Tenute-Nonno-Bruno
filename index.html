@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Tenute Nonno Bruno — Gestionale Pro</title><style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:sans-serif;background:#f4f3ef;}::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-track{background:#e8e6e0;}::-webkit-scrollbar-thumb{background:#a09d95;border-radius:3px;}</style></head><body><div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#2e3a1c;flex-direction:column;gap:8px;"><div style="font-family:serif;font-size:13px;color:#c9a84c;letter-spacing:3px;">TENUTE</div><div style="font-family:serif;font-size:30px;font-weight:700;color:#fff;">Nonno Bruno</div><div style="font-size:10px;color:rgba(255,255,255,.3);letter-spacing:2px;margin-top:4px;">GESTIONALE PRO</div><div style="font-size:11px;color:#c9a84c;margin-top:12px;opacity:0.7;">Connessione...</div></div></div><script>/**
+<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Tenute Nonno Bruno — Gestionale Pro</title><style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:sans-serif;background:#f4f3ef;}::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-track{background:#e8e6e0;}::-webkit-scrollbar-thumb{background:#a09d95;border-radius:3px;}</style></head><body><div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#2e3a1c;flex-direction:column;gap:8px;"><div style="font-family:serif;font-size:13px;color:#c9a84c;letter-spacing:3px;">TENUTE</div><div style="font-family:serif;font-size:30px;font-weight:700;color:#fff;">Nonno Bruno</div><div style="font-size:10px;color:rgba(255,255,255,.3);letter-spacing:2px;margin-top:4px;">GESTIONALE PRO</div></div></div><script>/**
  * @license React
  * react.production.min.js
  *
@@ -4881,7 +4881,9 @@ function Ordini({
   const [form, setForm] = useState({});
   const [cvModal, setCvModal] = useState(null);
   const [navTarget, setNavTarget] = useState(null);
-  useEffect(() => { setTimeout(() => { if(window._tnbNav && window._tnbNav.targetId){ setNavTarget(window._tnbNav.targetId); window._tnbNav=null; } }, 80); }, []);
+  const [expandedClients, setExpandedClients] = useState({});
+  const [viewMode, setViewMode] = useState("gruppo");
+  useEffect(() => { setTimeout(() => { if(window._tnbNav && window._tnbNav.targetId){ setNavTarget(window._tnbNav.targetId); setViewMode("lista"); window._tnbNav=null; } }, 80); }, []);
   const [cvForm, setCvForm] = useState({});
   const [pdfInvioModal, setPdfInvioModal] = useState(null);
   const oggi = todayStr();
@@ -5001,10 +5003,82 @@ function Ordini({
     cv: allOrdini.filter(o => o.modalita === "conto_vendita"),
     da_pagare: allOrdini.filter(o => o.statoPagamento === "da_pagare" || o.statoPagamento === "parziale")
   };
-  const lista = navTarget
-    ? allOrdini.filter(o => o.id === navTarget)
-    : (views[tab] || allOrdini);
+  const lista = navTarget ? allOrdini.filter(o => o.id === navTarget) : (views[tab] || allOrdini);
   const handleSetTab = (k) => { setNavTarget(null); setTab(k); };
+  const toggleClient = (cid) => setExpandedClients(prev => ({...prev, [cid]: !prev[cid]}));
+  const gruppiClienti = React.useMemo(() => {
+    const listaBase = navTarget ? allOrdini.filter(o => o.id === navTarget) : (views[tab] || allOrdini);
+    const map = {};
+    listaBase.forEach(o => {
+      const cid = o.clienteId || '__nessuno__';
+      if (!map[cid]) map[cid] = { cliente: dati.clienti.find(c => c.id === cid), ordini: [] };
+      map[cid].ordini.push(o);
+    });
+    return Object.values(map).sort((a,b) => {
+      const na = a.cliente?.insegna || a.cliente?.ragioneSociale || '';
+      const nb = b.cliente?.insegna || b.cliente?.ragioneSociale || '';
+      return na.localeCompare(nb);
+    });
+  }, [lista, tab, navTarget]);
+  const renderGruppoCliente = (gruppo) => {
+    const cl = gruppo.cliente;
+    const cid = cl?.id || '__nessuno__';
+    const isOpen = !!expandedClients[cid];
+    const ordini = gruppo.ordini;
+    const totale = ordini.reduce((s,o) => s + totOrdine(o), 0);
+    const nDaPagare = ordini.filter(o => o.statoPagamento === 'da_pagare' || o.statoPagamento === 'parziale').length;
+    const nDaFirmare = ordini.filter(o => o.stato === 'da_firmare').length;
+    const nCvScadute = ordini.filter(o => o.modalita === 'conto_vendita' && o.scadenzaCV && o.scadenzaCV < oggi && o.statoPagamento !== 'pagato').length;
+    const hasAlert = nDaPagare > 0 || nDaFirmare > 0 || nCvScadute > 0;
+    return React.createElement(React.Fragment, {key: cid},
+      React.createElement('tr', {
+        onClick: () => toggleClient(cid),
+        style: { cursor:'pointer', background: isOpen ? '#f0f4e8' : (hasAlert ? '#fffbf0' : '#fafaf8'),
+          borderBottom: '1.5px solid #e8e6e0' }
+      },
+        React.createElement('td', {style:{padding:'10px 12px', fontWeight:700, fontSize:13, color:'#2e3a1c'}},
+          React.createElement('span', {style:{marginRight:8, fontSize:12}}, isOpen ? '▼' : '▶'),
+          cl?.insegna || cl?.ragioneSociale || '—'
+        ),
+        React.createElement('td', {style:{padding:'10px 12px', fontSize:12, color:'#5f5e5a'}},
+          React.createElement('span', {style:{background:'#e8f5e9',color:'#2e7d32',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11}},
+            ordini.length + (ordini.length===1?' ordine':' ordini')
+          )
+        ),
+        React.createElement('td', {style:{padding:'10px 12px'}},
+          nDaPagare > 0 && React.createElement('span', {style:{background:'#fff3e0',color:'#e65100',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},
+            '💶 ' + nDaPagare + ' da pagare'),
+          nDaFirmare > 0 && React.createElement('span', {style:{background:'#e3f2fd',color:'#1565c0',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},
+            '✍️ ' + nDaFirmare + ' da firmare'),
+          nCvScadute > 0 && React.createElement('span', {style:{background:'#ffebee',color:'#c62828',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},
+            '⚠️ ' + nCvScadute + ' CV scadute')
+        ),
+        React.createElement('td', {style:{padding:'10px 12px', fontWeight:700, fontSize:13, textAlign:'right'}},
+          fmt(totale)
+        ),
+        React.createElement('td', {style:{padding:'10px 12px', fontSize:11, color:'#888'}, colSpan:4},
+          ordini.map(o => o.numero).join(' · ')
+        )
+      ),
+      isOpen && ordini.map(o => React.createElement('tr', {key: o.id, style:{background:'#f7f9f3'}},
+        React.createElement('td', {colSpan:8, style:{padding:0}},
+          React.createElement('table', {style:{width:'100%', borderCollapse:'collapse', fontSize:12}},
+            React.createElement('tbody', null,
+              React.createElement(TR, {key:o.id, ch: React.createElement(React.Fragment, null,
+                ...['', o.numero + ' · ' + fmtD(o.data),
+                   o.modalita==='conto_vendita'?'C.Vendita':'Vendita',
+                   (o.righe||[]).map(r => r.qta+'×'+r.formato).join(' · '),
+                   fmt(totOrdine(o)), o.statoPagamento||'—',
+                   o.scadenzaCV ? 'Scad.'+fmtD(o.scadenzaCV) : (o.dataPagamento ? 'Pag.'+fmtD(o.dataPagamento) : '—')
+                ].map((v,i) => React.createElement(TD, {key:i, ch:v}))
+              )}, renderOrdine(o))
+            )
+          )
+        )
+      ))
+    );
+  };
+
   const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "20 ml"];
   const ANNATE = ["2025", "2024"];
   const renderOrdine = o => {
@@ -5152,25 +5226,50 @@ function Ordini({
         setModal("new");
       }
     })
-  }), /*#__PURE__*/React.createElement(Tab, {
-    tabs: [{
-      k: "tutti",
-      l: "Tutti",
-      n: allOrdini.length
-    }, {
-      k: "vendita",
-      l: "Vendita"
-    }, {
-      k: "cv",
-      l: "Conto Vendita"
-    }, {
-      k: "da_pagare",
-      l: "⚠ Da pagare",
-      n: views.da_pagare.length
-    }],
-    active: navTarget ? '__nav__' : tab,
-    onSelect: handleSetTab
-  }), /*#__PURE__*/React.createElement(Card, {
+  }), /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:8,marginBottom:8,alignItems:"center",justifyContent:"space-between"}},
+    /*#__PURE__*/React.createElement(Tab, {
+      tabs: [{
+        k: "tutti", l: "Tutti", n: allOrdini.length
+      }, {
+        k: "vendita", l: "Vendita"
+      }, {
+        k: "cv", l: "Conto Vendita"
+      }, {
+        k: "da_pagare", l: "⚠ Da pagare", n: views.da_pagare.length
+      }],
+      active: navTarget ? "__nav__" : tab,
+      onSelect: handleSetTab
+    }),
+    /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:4}},
+      /*#__PURE__*/React.createElement(Btn, {ch:"👤 Per cliente", sz:"sm",
+        style:{background: viewMode==="gruppo" ? "#2e3a1c" : "#e8e6e0",
+               color: viewMode==="gruppo" ? "#fff" : "#5f5e5a",
+               border:"none", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer"},
+        onClick: () => setViewMode("gruppo")}),
+      /*#__PURE__*/React.createElement(Btn, {ch:"☰ Lista", sz:"sm",
+        style:{background: viewMode==="lista" ? "#2e3a1c" : "#e8e6e0",
+               color: viewMode==="lista" ? "#fff" : "#5f5e5a",
+               border:"none", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer"},
+        onClick: () => setViewMode("lista")})
+    )
+  ),
+  viewMode === "gruppo" && /*#__PURE__*/React.createElement("div", {
+    style:{background:"#fff",borderRadius:10,border:"0.5px solid #e8e6e0",overflow:"hidden"}
+  },
+    /*#__PURE__*/React.createElement("table", {style:{width:"100%",borderCollapse:"collapse"}},
+      /*#__PURE__*/React.createElement("thead", null,
+        /*#__PURE__*/React.createElement("tr", {style:{background:"#f4f3ef"}},
+          ["Cliente","Ordini","Alert","Totale","N° Ordini"].map(h =>
+            /*#__PURE__*/React.createElement("th", {key:h, style:{padding:"8px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:"#5f5e5a",letterSpacing:.4}}, h)
+          )
+        )
+      ),
+      /*#__PURE__*/React.createElement("tbody", null,
+        gruppiClienti.map(renderGruppoCliente)
+      )
+    )
+  ),
+  viewMode === "lista" && /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(Tbl, {
       cols: ["N° Ordine", "Cliente", "Tipo", "Prodotti", "Totale", "Pagamento", "Date", "Azioni"],
       data: lista,
