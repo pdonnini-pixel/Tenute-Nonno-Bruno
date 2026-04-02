@@ -4367,11 +4367,13 @@ function Pipeline({
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.del, null), " Elimina"),
       v: "dan",
       sz: "sm",
-      onClick: () => {
-        delProspect(detail.id);
-        setDetailId(null);
-      }
-    })))
+      onClick: () => { delProspect(detail.id); setDetailId(null); }
+    })), detail.stato === "acquisito" && /*#__PURE__*/React.createElement("div", { style: { borderTop: `1px solid ${C.grigio200}`, paddingTop: 10, marginTop: 4 } },
+      /*#__PURE__*/React.createElement(Btn, {
+        ch: "✅ Sposta in Clienti",
+        onClick: () => { convertToCliente(detail); setDetailId(null); }
+      })
+    ))
   }), (modal === "new" || modal === "edit") && /*#__PURE__*/React.createElement(Modal, {
     title: modal === "new" ? "Nuovo Prospect" : "Modifica Prospect",
     onClose: () => setModal(null),
@@ -4528,7 +4530,6 @@ function Clienti({
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [detailId, setDetailId] = useState(null);
-  useEffect(() => { setTimeout(() => { if(window._tnbNav && window._tnbNav.targetId){ setDetailId(window._tnbNav.targetId); window._tnbNav=null; } }, 80); }, []);
   const saveCliente = () => {
     if (!form.ragioneSociale) return;
     const isNew = !form.id;
@@ -7339,7 +7340,7 @@ function App() {
       }
     } catch (e) {}
     const access = ROLE_ACCESS[user.role];
-    setModulo(user.role === "commerciale" ? "oggi" : access.includes("dashboard") ? "dashboard" : access[0]);
+    setModulo(access.includes("oggi") ? "oggi" : access.includes("dashboard") ? "dashboard" : access[0]);
   };
   const handleLogout = async () => {
     setCurrentUser(null);
@@ -7424,7 +7425,7 @@ function App() {
   }, "\uD83E\uDED2"), "Caricamento gestionale\u2026");
   const ALL_NAV = [{
     k: "oggi",
-    l: "📅 Oggi & Azioni",
+    l: "📅 Agenda & Azioni",
     icon: /*#__PURE__*/React.createElement(I.dash, null)
   }, {
     k: "dashboard",
@@ -8039,9 +8040,9 @@ const USERS = [{
   ruoloExt: "Key Account Manager HoReCa & Retail"
 }];
 const ROLE_ACCESS = {
-  superadmin: ["dashboard", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "mailing", "contratti"],
-  admin: ["dashboard", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "mailing", "contratti"],
-  commerciale: ["oggi", "dashboard", "clienti", "ordini", "magazzino", "report", "listino", "alerts", "log", "mailing", "contratti"]
+  superadmin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "mailing", "contratti"],
+  admin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "mailing", "contratti"],
+  commerciale: ["oggi", "pipeline", "dashboard", "clienti", "ordini", "listino", "alerts", "mailing", "contratti"]
 };
 const ROLE_LABELS = {
   superadmin: "Super Admin",
@@ -8051,7 +8052,7 @@ const ROLE_LABELS = {
 const ROLE_READONLY = {
   superadmin: [],
   admin: [],
-  commerciale: ["magazzino", "produzione", "fornitori", "costi"]
+  commerciale: ["magazzino","produzione","fornitori","costi"]
 };
 const ROLE_COLORS = {
   superadmin: C.olivaScuro,
@@ -9405,7 +9406,6 @@ function ClientiCommerciale({
   const [filterCanale, setFilterCanale] = useState("");
   const [selectedClient, setSelectedClient] = useState(null);
   const [showNuovo, setShowNuovo] = useState(false);
-  useEffect(() => { setTimeout(() => { if(window._tnbNav && window._tnbNav.targetId){ const t=window._tnbNav.targetId; window._tnbNav=null; const found=dati.clienti.find(x=>x.id===t); if(found) setSelectedClient(found); } }, 80); }, []);
   const [nuovoForm, setNuovoForm] = useState({
     tipo: "retail",
     canale: "campagna_m",
