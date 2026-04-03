@@ -10634,8 +10634,23 @@ function MailingSystem({
     });
   };
   const ordiniCliente = dati.ordini.filter(o => o.clienteId === clienteId);
+    var listaMassivo = tipoSogg === "clienti"
+    ? dati.clienti.filter(function(c){ return !filtroTipo || c.tipo === filtroTipo; })
+    : dati.prospect.filter(function(p){ return p.email && (!filtroTipo || p.tipo===filtroTipo) && p.stato!=="non_interessato" && p.stato!=="acquisito"; });
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
-    title: "\uD83D\uDCE7 Mailing \u2014 Template Email"
+    title: "\uD83D\uDCE7 Mailing",
+    action: /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:8}},
+      /*#__PURE__*/React.createElement("button", {
+        onClick: function(){ setModalita("singolo"); setCodaInvii([]); },
+        style:{padding:"5px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+          background:modalita==="singolo"?C.oliva:C.grigio200, color:modalita==="singolo"?"#fff":C.grigio600}
+      }, "\uD83D\uDCE4 Singolo"),
+      /*#__PURE__*/React.createElement("button", {
+        onClick: function(){ setModalita("massivo"); setCodaInvii([]); },
+        style:{padding:"5px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+          background:modalita==="massivo"?C.oliva:C.grigio200, color:modalita==="massivo"?"#fff":C.grigio600}
+      }, "\uD83D\uDCEC Massivo")
+    )
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
@@ -10787,26 +10802,27 @@ function MailingSystem({
     }, t.label)))
   }), /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        fontWeight: 700,
-        color: C.grigio600,
-        marginBottom: 10,
-        letterSpacing: .5
-      }
-    }, "DESTINATARIO"), /*#__PURE__*/React.createElement(Sel, {
-      label: "Cliente",
-      v: clienteId,
-      on: v => {
-        setClienteId(v);
-        setOrdineId("");
-        setOggetto("");
-        setCorpo("");
-      },
-      opts: dati.clienti.map(c => ({
-        v: c.id,
-        l: c.insegna || c.ragioneSociale
-      }))
+      style: {fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}
+    }, "DESTINATARIO"),
+    /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:6,marginBottom:12}},
+      ["clienti","prospect"].map(function(t){ return /*#__PURE__*/React.createElement("button", {
+        key:t,
+        onClick: function(){ setTipoSogg(t); setClienteId(""); setProspectId(""); setOggetto(""); setCorpo(""); },
+        style:{flex:1,padding:"6px 0",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+          background:tipoSogg===t?C.oliva:C.grigio200,color:tipoSogg===t?"#fff":C.grigio600}
+      }, t==="clienti"?"\uD83D\uDC65 Clienti":"\uD83C\uDFAF Prospect"); })
+    ), tipoSogg === "clienti" ? /*#__PURE__*/React.createElement(Sel, {
+      label: "Cliente", v: clienteId,
+      on: function(v){ setClienteId(v); setOrdineId(""); setOggetto(""); setCorpo(""); },
+      opts: dati.clienti.map(function(c){ return {v:c.id, l:c.insegna||c.ragioneSociale}; })
+    }) : /*#__PURE__*/React.createElement(Sel, {
+      label: "Prospect (con email)", v: prospectId,
+      on: function(v){ setProspectId(v); setOggetto(""); setCorpo(""); },
+      opts: (dati.prospect||[]).filter(function(p){ return !!p.email; }).map(function(p){ return {
+        v:p.id,
+        l:(p.tipo==="Privato" ? ((p.nome||"")+" "+(p.cognome||"")).trim() : p.ragioneSociale||"") +
+          (STATO_FUNNEL[p.stato] ? " \u00b7 "+STATO_FUNNEL[p.stato].l : "")
+      }; })
     }), destAttivo && /*#__PURE__*/React.createElement("div", {
       style:{marginTop:8,padding:"8px 10px",background:C.grigio50,borderRadius:6,fontSize:11,color:C.grigio600}
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, "Email:"), " ",
