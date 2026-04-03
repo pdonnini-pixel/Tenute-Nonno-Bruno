@@ -4954,6 +4954,39 @@ function Clienti({
       map: STATO_PAG,
       small: true
     }), /*#__PURE__*/React.createElement("strong", null, fmt(totOrdine(o))))))), /*#__PURE__*/React.createElement("div", {
+      style: { borderTop: "1px solid " + C.grigio200, paddingTop: 12, marginTop: 4 }
+    },
+      /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 11, fontWeight: 700, color: C.grigio600, marginBottom: 8, letterSpacing: .5 }
+      }, "\uD83D\uDCE7 STORICO INVII (" + (detail.emailLog || []).length + ")"),
+      (detail.emailLog || []).length === 0
+        ? /*#__PURE__*/React.createElement("div", {
+            style: { fontSize: 12, color: C.grigio400, fontStyle: "italic" }
+          }, "Nessuna email registrata")
+        : /*#__PURE__*/React.createElement("div", {
+            style: { display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto" }
+          }, (detail.emailLog || []).map(function(e, i) {
+            var tmpl = MAIL_TEMPLATES[e.template];
+            var colore = tmpl ? tmpl.colore : C.grigio400;
+            return /*#__PURE__*/React.createElement("div", {
+              key: e.id || i,
+              style: { display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 10px",
+                borderRadius: 7, background: colore + "10", border: "1px solid " + colore + "33" }
+            },
+              /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+                /*#__PURE__*/React.createElement("div", {
+                  style: { fontSize: 12, fontWeight: 600, color: C.grigio800 }
+                }, tmpl ? tmpl.label : (e.template || "Email")),
+                /*#__PURE__*/React.createElement("div", {
+                  style: { fontSize: 11, color: C.grigio600, marginTop: 2 }
+                }, e.oggetto || "—")
+              ),
+              /*#__PURE__*/React.createElement("div", {
+                style: { fontSize: 10, color: C.grigio400, whiteSpace: "nowrap" }
+              }, fmtD(e.data || e.ts))
+            );
+          }))
+    ), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         justifyContent: "flex-end"
@@ -10420,134 +10453,179 @@ function AlertsPage({
 // ═══════════════════════════════════════════════════════════════════════════
 // MAILING SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════
+const ALLEGATI_CANVA = [
+  {
+    id: "scheda_tecnica",
+    label: "\uD83D\uDCCE Scheda Tecnica",
+    desc: "21 pag. \u2014 variet\u00e0, processo, certificazioni, formati",
+    tag: ["primo_contatto","campionatura","followup_offerta","recall"],
+    target: ["clienti","prospect"],
+    pdfUrl: "https://www.canva.com/design/DAGXr-gntNs/pdf",
+    viewUrl: "https://www.canva.com/d/Jt9JzhEWPmBi2mM"
+  },
+  {
+    id: "brochure_listino",
+    label: "\uD83D\uDCCB Brochure + Listino prezzi",
+    desc: "8 pag. \u2014 prodotto, formati, prezzi e condizioni",
+    tag: ["primo_contatto","followup_offerta","recall","proposta_ordine"],
+    target: ["clienti","prospect"],
+    pdfUrl: "https://www.canva.com/design/DAHCgwrZAlo/pdf",
+    viewUrl: "https://www.canva.com/d/Onh5o9-RTY55oPf"
+  },
+  {
+    id: "presentazione_horeca",
+    label: "\uD83C\uDF7D Presentazione HoReCa",
+    desc: "9 pag. \u2014 per ristoranti, hotel, enoteche, catering",
+    tag: ["primo_contatto","campionatura","followup_offerta","recall"],
+    target: ["clienti","prospect"],
+    pdfUrl: "https://www.canva.com/design/DAG_sjwCMxo/pdf",
+    viewUrl: "https://www.canva.com/d/ZjP-i3jV2CpVwA8"
+  },
+  {
+    id: "carta_intestata",
+    label: "\uD83D\uDCDD Carta intestata",
+    desc: "Carta ufficiale TNB \u2014 per proposte e conferme formali",
+    tag: ["proposta_ordine","conferma_ordine","ringraziamento"],
+    target: ["clienti"],
+    pdfUrl: "https://www.canva.com/design/DAG1750M3T0/pdf",
+    viewUrl: "https://www.canva.com/d/xHEdxToHtsxsSwG"
+  }
+];
+
 const MAIL_TEMPLATES = {
   primo_contatto: {
     label: "📧 Primo contatto",
     colore: C.blu,
-    oggetto: cl => `Tenute Nonno Bruno — Olio EVO Biologico Toscano`,
-    corpo: cl => `Gentile ${cl.referente || ""},
-
-La ringraziamo per il tempo dedicatoci oggi.
-
-Come anticipato, Tenute Nonno Bruno produce olio extravergine di oliva biologico da olive coltivate sulle colline di Fattucchia, nel territorio di Bagno a Ripoli (Firenze), nell'area della Fonte della Fata Morgana.
-
-Le caratteristiche principali del nostro olio:
-• Varietà: Frantoio, Moraiolo, Leccino
-• Raccolta manuale e frangitura a freddo entro poche ore
-• Certificazione biologica
-• Produzione limitata — Raccolta 2025
-
-I nostri formati disponibili:
-• 100 ml — ideale per omaggi e degustazioni
-• 250 ml — formato classico
-• 500 ml — uso professionale
-• Latte 3L e 5L — per uso cucina e ristorazione
-
-Rimaniamo a disposizione per qualsiasi informazione o per concordare un incontro di degustazione.
-
-Cordiali saluti,
-Tenute Nonno Bruno
-Fattucchia, Bagno a Ripoli (FI)
-tenutenonnobruno.it`
+    target: ["clienti","prospect"],
+    oggetto: (dest) => "Olio EVO biologico di Fattucchia \u2014 Tenute Nonno Bruno",
+    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\ngrazie per la disponibilit\u00e0. Come anticipato, le invio qualche dettaglio sul nostro olio.\n\nTenute Nonno Bruno produce olio extravergine di oliva biologico sulle colline di Fattucchia, a Bagno a Ripoli \u2014 oliveti pluricentenari, blend Frantoio, Moraiolo e Leccino. Raccolta manuale, frangitura a freddo entro poche ore. Produzione limitata, certificazione biologica.\n\nUn olio a fruttato medio-intenso, equilibrato in amaro e piccante, pensato per chi vuole distinguersi nella proposta al tavolo o sullo scaffale.\n\nFormati: 100 ml \u00b7 250 ml \u00b7 500 ml \u00b7 Latta 3 L \u00b7 Latta 5 L\n\nSe \u00e8 disponibile, le faccio recapitare un campione senza impegno: preferisco che sia il prodotto a presentarsi.\n\nResto a disposizione per qualsiasi domanda o per fissare un incontro.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
+  },
+  campionatura: {
+    label: "\uD83D\uDCE6 Campionatura",
+    colore: "#7b1fa2",
+    target: ["clienti","prospect"],
+    oggetto: (dest) => "Tenute Nonno Bruno \u2014 Campione olio EVO biologico in arrivo",
+    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\ncome concordato, le invieremo nei prossimi giorni un campione del nostro olio extravergine di oliva biologico \u2014 Raccolta 2025.\n\nLe arriver\u00e0:\n\u2022 1 bottiglia da 250 ml \u2014 blend Frantoio, Moraiolo, Leccino\n\nLa preghiamo di assaggiarlo a crudo, su pane o su una bruschetta leggera: \u00e8 il modo migliore per apprezzare la complessit\u00e0 aromatica e la struttura del fruttato.\n\nDopo qualche giorno, la ricontatter\u00f2 per un riscontro.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
+  },
+  followup_offerta: {
+    label: "\uD83D\uDCE8 Follow-up offerta",
+    colore: "#f57c00",
+    target: ["clienti","prospect"],
+    oggetto: (dest) => "Tenute Nonno Bruno \u2014 In attesa di un suo riscontro",
+    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\nle scrivo per sapere se ha avuto modo di valutare la nostra proposta.\n\nSiamo consapevoli che le decisioni di acquisto richiedono tempo, ed \u00e8 giusto cos\u00ec. Se ha domande sul prodotto, sui formati o sulle condizioni, sono qui.\n\nSe preferisce, possiamo anche fissare una breve chiamata o una visita per chiarire qualsiasi aspetto.\n\nRimango a disposizione.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
   },
   recall: {
-    label: "🔄 Recall / Ricontatto",
+    label: "\uD83D\uDD04 Recall / Ricontatto",
     colore: C.viola,
-    oggetto: cl => `Tenute Nonno Bruno — Aggiornamento disponibilità Raccolta 2025`,
-    corpo: cl => `Gentile ${cl.referente || ""},
-
-La ricontatto come concordato in occasione del nostro precedente incontro.
-
-Siamo lieti di informarla che la Raccolta 2025 è disponibile in tutti i formati. Quest'anno la resa è stata particolarmente buona e la qualità dell'olio è eccellente.
-
-Se desidera ricevere un campione o concordare un ordine, siamo a completa disposizione.
-
-Cordiali saluti,
-Tenute Nonno Bruno`
+    target: ["clienti","prospect"],
+    oggetto: (dest) => "Tenute Nonno Bruno \u2014 Aggiornamento disponibilit\u00e0 Raccolta 2025",
+    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\nla ricontatto come concordato in occasione del nostro precedente incontro.\n\nLa Raccolta 2025 \u00e8 disponibile in tutti i formati. Quest'anno la resa \u00e8 stata particolarmente buona e la qualit\u00e0 dell'olio \u00e8 eccellente \u2014 polifenoli elevati, fruttato intenso e buona persistenza.\n\nSe desidera ricevere un campione o concordare un ordine, siamo a sua completa disposizione.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
   },
   proposta_ordine: {
-    label: "📋 Proposta ordine",
+    label: "\uD83D\uDCCB Proposta ordine",
     colore: C.oliva,
-    oggetto: (cl, ord) => `Tenute Nonno Bruno — Proposta ordine per ${cl.insegna || cl.ragioneSociale}`,
-    corpo: (cl, ord) => `Gentile ${cl.referente || ""},
-
-In seguito alla nostra conversazione, Le inviamo il riepilogo della proposta:
-
-${(ord?.righe || []).map(r => `• ${r.qta} × ${r.formato} Raccolta ${r.annata} — ${fmt(r.prezzoUnitario)} cad.`).join("\n")}
-
-Totale imponibile: ${fmt(ord ? totOrdine(ord) : 0)}
-IVA 4%: ${fmt(ord ? totIVA(totOrdine(ord)) : 0)}
-Totale IVA inclusa: ${fmt(ord ? totOrdine(ord) + totIVA(totOrdine(ord)) : 0)}
-
-Modalità pagamento: ${ord?.modalitaPagamento || "da concordare"}
-
-Per procedere con l'ordine Le invieremo il modulo da firmare.
-
-Cordiali saluti,
-Tenute Nonno Bruno`
+    target: ["clienti"],
+    oggetto: (dest, ord) => "Tenute Nonno Bruno \u2014 Proposta ordine per " + (dest.nomeDisplay || dest.insegna || dest.ragioneSociale || ""),
+    corpo: (dest, ord) => "Gentile " + (dest.referente || "") + ",\n\nin seguito alla nostra conversazione, le inviamo il riepilogo della proposta:\n\n" + ((ord && ord.righe) ? ord.righe.map(function(r){ return "\u2022 " + r.qta + " \u00d7 " + r.formato + " Raccolta " + r.annata + " \u2014 " + fmt(r.prezzoUnitario) + " cad."; }).join("\n") : "") + "\n\nTotale imponibile: " + fmt(ord ? totOrdine(ord) : 0) + "\nIVA 4%: " + fmt(ord ? totIVA(totOrdine(ord)) : 0) + "\nTotale IVA inclusa: " + fmt(ord ? totOrdine(ord) + totIVA(totOrdine(ord)) : 0) + "\n\nPer procedere con l'ordine le invieremo il modulo da firmare.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
   },
   conferma_ordine: {
-    label: "✅ Conferma ordine",
+    label: "\u2705 Conferma ordine",
     colore: C.verde,
-    oggetto: (cl, ord) => `Tenute Nonno Bruno — Conferma ordine ${ord?.numero || ""}`,
-    corpo: (cl, ord) => `Gentile ${cl.referente || ""},
-
-Siamo lieti di confermare il Suo ordine n° ${ord?.numero || ""} del ${fmtD(ord?.data || "")}.
-
-${(ord?.righe || []).map(r => `• ${r.qta} × ${r.formato} Raccolta ${r.annata}`).join("\n")}
-
-Totale IVA inclusa: ${fmt(ord ? totOrdine(ord) + totIVA(totOrdine(ord)) : 0)}
-
-La consegna è prevista nei prossimi giorni. La contatteremo per concordare modalità e orario.
-
-Grazie per la fiducia.
-
-Cordiali saluti,
-Tenute Nonno Bruno`
+    target: ["clienti"],
+    oggetto: (dest, ord) => "Tenute Nonno Bruno \u2014 Conferma ordine " + (ord && ord.numero ? ord.numero : ""),
+    corpo: (dest, ord) => "Gentile " + (dest.referente || "") + ",\n\nsiamo lieti di confermare il suo ordine n\u00b0 " + (ord && ord.numero ? ord.numero : "") + " del " + fmtD(ord && ord.data ? ord.data : "") + ".\n\n" + ((ord && ord.righe) ? ord.righe.map(function(r){ return "\u2022 " + r.qta + " \u00d7 " + r.formato + " Raccolta " + r.annata; }).join("\n") : "") + "\n\nTotale IVA inclusa: " + fmt(ord ? totOrdine(ord) + totIVA(totOrdine(ord)) : 0) + "\n\nLa consegna \u00e8 prevista nei prossimi giorni. La contatteremo per concordare modalit\u00e0 e orari.\n\nGrazie per la fiducia.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
+  },
+  ringraziamento: {
+    label: "\uD83D\uDE4F Ringraziamento",
+    colore: "#2e7d32",
+    target: ["clienti"],
+    oggetto: (dest) => "Grazie \u2014 Tenute Nonno Bruno",
+    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\nla ringraziamo per aver scelto il nostro olio.\n\nSperiamo che il prodotto risponda alle sue aspettative. Se desidera condividere un riscontro \u2014 positivo o costruttivo \u2014 lo accogliamo con piacere: ci aiuta a migliorare.\n\nSiamo a disposizione per qualsiasi necessit\u00e0, ri-ordini o formato diverso.\n\nA presto,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
   }
 };
+
+
 function MailingSystem({
   dati,
   setDati,
   logAction
 }) {
   const [templateKey, setTemplateKey] = useState("primo_contatto");
+  const [tipoSogg, setTipoSogg] = useState("clienti");
+  const [modalita, setModalita] = useState("singolo");
   const [clienteId, setClienteId] = useState("");
+  const [prospectId, setProspectId] = useState("");
   const [ordineId, setOrdineId] = useState("");
   const [oggetto, setOggetto] = useState("");
   const [corpo, setCorpo] = useState("");
   const [copied, setCopied] = useState(false);
+  const [selezionati, setSelezionati] = useState([]);
+  const [codaInvii, setCodaInvii] = useState([]);
+  const [filtroTipo, setFiltroTipo] = useState("");
+  const [indiceCorrente, setIndiceCorrente] = useState(0);
   const template = MAIL_TEMPLATES[templateKey];
   const cliente = dati.clienti.find(c => c.id === clienteId);
+  const prospect = dati.prospect.find(p => p.id === prospectId);
   const ordine = dati.ordini.find(o => o.id === ordineId);
+  const destAttivo = tipoSogg === "clienti"
+    ? (cliente ? {...cliente, nomeDisplay: cliente.insegna || cliente.ragioneSociale} : null)
+    : (prospect ? {
+        ...prospect,
+        nomeDisplay: prospect.tipo === "Privato" ? ((prospect.nome||"") + " " + (prospect.cognome||"")).trim() : prospect.ragioneSociale,
+        referente: prospect.tipo === "Privato" ? ((prospect.nome||"") + " " + (prospect.cognome||"")).trim() : prospect.referente
+      } : null);
+  const templateFiltrati = Object.entries(MAIL_TEMPLATES).filter(([k,t]) => t.target.includes(tipoSogg));
+  const salvaLog = (dest, tmplKey, ogg) => {
+    if (tipoSogg === "clienti") {
+      setDati(d => ({...d, clienti: d.clienti.map(c => c.id !== dest.id ? c : {
+        ...c, emailLog: [{id:uid(), ts:new Date().toISOString(), template:tmplKey, oggetto:ogg, data:todayStr(),
+          ...(ordineId && {ordineId})}, ...(c.emailLog||[])]
+      })}));
+    } else {
+      setDati(d => ({...d, prospect: d.prospect.map(p => p.id !== dest.id ? p : {
+        ...p, azioni: [...(p.azioni||[]), {
+          id:uid(), tipo:"mail_presentazione", aperta:todayStr(), chiusa:todayStr(),
+          nota:"Inviata via Mailing — " + ogg
+        }]
+      })}));
+    }
+  };
   const genera = () => {
-    if (!cliente) return;
-    setOggetto(template.oggetto(cliente, ordine));
-    setCorpo(template.corpo(cliente, ordine));
+    if (!destAttivo) return;
+    setOggetto(template.oggetto(destAttivo, ordine));
+    setCorpo(template.corpo(destAttivo, ordine));
+  };
+  const generaCoda = () => {
+    var lista = tipoSogg === "clienti"
+      ? dati.clienti.filter(c => selezionati.includes(c.id))
+      : dati.prospect.filter(p => selezionati.includes(p.id));
+    var coda = lista.map(x => {
+      var dest = tipoSogg === "clienti"
+        ? {...x, nomeDisplay: x.insegna||x.ragioneSociale}
+        : {...x, nomeDisplay: x.tipo==="Privato" ? ((x.nome||"")+" "+(x.cognome||"")).trim() : x.ragioneSociale,
+            referente: x.tipo==="Privato" ? ((x.nome||"")+" "+(x.cognome||"")).trim() : x.referente};
+      if (!dest.email) return null;
+      return {id:dest.id, nomeDisplay:dest.nomeDisplay, email:dest.email,
+        oggetto:template.oggetto(dest, null), corpo:template.corpo(dest, null), inviata:false};
+    }).filter(Boolean);
+    setCodaInvii(coda); setIndiceCorrente(0);
   };
   const apriGmail = () => {
-    if (!cliente) return;
-    const email = cliente.email || "";
-    const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(oggetto)}&body=${encodeURIComponent(corpo)}`;
-    window.open(url, "_blank");
-    if (logAction) logAction(`Email inviata: ${templateKey}`, "mailing", `${cliente.insegna || cliente.ragioneSociale} — ${oggetto}`);
-    // Salva invio in storico cliente
-    setDati(d => ({
-      ...d,
-      clienti: d.clienti.map(c => c.id !== clienteId ? c : {
-        ...c,
-        emailLog: [{
-          id: uid(),
-          ts: new Date().toISOString(),
-          template: templateKey,
-          oggetto,
-          data: todayStr(),
-          ...(ordineId && {
-            ordineId
-          })
-        }, ...(c.emailLog || [])]
-      })
-    }));
+    if (!destAttivo || !destAttivo.email) return;
+    window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(destAttivo.email) +
+      "&su=" + encodeURIComponent(oggetto) + "&body=" + encodeURIComponent(corpo), "_blank");
+    if (logAction) logAction("Email: " + templateKey, "mailing", (destAttivo.nomeDisplay||"") + " — " + oggetto);
+    salvaLog(destAttivo, templateKey, oggetto);
+  };
+  const inviaCorrente = () => {
+    var item = codaInvii[indiceCorrente];
+    if (!item) return;
+    window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(item.email) +
+      "&su=" + encodeURIComponent(item.oggetto) + "&body=" + encodeURIComponent(item.corpo), "_blank");
+    var dest = tipoSogg === "clienti" ? dati.clienti.find(c=>c.id===item.id) : dati.prospect.find(p=>p.id===item.id);
+    if (dest) salvaLog(dest, templateKey, item.oggetto);
+    setCodaInvii(q => q.map((x,i) => i===indiceCorrente ? {...x, inviata:true} : x));
+    if (indiceCorrente < codaInvii.length-1) setIndiceCorrente(i => i+1);
   };
   const copia = () => {
     navigator.clipboard.writeText(`OGGETTO: ${oggetto}\n\n${corpo}`).then(() => {
@@ -10561,11 +10639,121 @@ function MailingSystem({
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "300px 1fr",
+      gridTemplateColumns: modalita === "massivo" ? "1fr" : "300px 1fr",
       gap: 16,
       alignItems: "start"
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  },
+  modalita === "massivo" && /*#__PURE__*/React.createElement(Card, {
+    ch: /*#__PURE__*/React.createElement(React.Fragment, null,
+      /*#__PURE__*/React.createElement("div", {style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}},
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}}, "DESTINATARI"),
+          /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:6}},
+            ["clienti","prospect"].map(function(t){ return /*#__PURE__*/React.createElement("button",{
+              key:t, onClick:function(){ setTipoSogg(t); setSelezionati([]); setCodaInvii([]); setFiltroTipo(""); },
+              style:{flex:1,padding:"6px 0",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+                background:tipoSogg===t?C.oliva:C.grigio200,color:tipoSogg===t?"#fff":C.grigio600}
+            }, t==="clienti"?"\uD83D\uDC65 Clienti":"\uD83C\uDFAF Prospect"); })
+          )
+        ),
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}}, "FILTRA TIPO"),
+          /*#__PURE__*/React.createElement("select",{
+            value:filtroTipo, onChange:function(e){ setFiltroTipo(e.target.value); setSelezionati([]); },
+            style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"7px 10px",fontSize:12}
+          }, /*#__PURE__*/React.createElement("option",{value:""},"\u2014 Tutti \u2014"),
+            ["HoReCa","Retail","GDO","Catering","Enoteca","Albergo","Privato","Altro"].map(function(t){
+              return /*#__PURE__*/React.createElement("option",{key:t,value:t},t);
+            })
+          )
+        ),
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}}, "TEMPLATE"),
+          /*#__PURE__*/React.createElement("select",{
+            value:templateKey, onChange:function(e){ setTemplateKey(e.target.value); setCodaInvii([]); },
+            style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"7px 10px",fontSize:12}
+          }, templateFiltrati.map(function(kt){ return /*#__PURE__*/React.createElement("option",{key:kt[0],value:kt[0]},kt[1].label); }))
+        )
+      ),
+      codaInvii.length === 0 && /*#__PURE__*/React.createElement(React.Fragment, null,
+        /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginBottom:10,alignItems:"center"}},
+          /*#__PURE__*/React.createElement("span",{style:{fontSize:12,color:C.grigio600}},
+            selezionati.length + " / " + listaMassivo.length + " selezionati"),
+          /*#__PURE__*/React.createElement("button",{onClick:function(){ setSelezionati(listaMassivo.map(function(x){return x.id;})); },
+            style:{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid "+C.grigio200,cursor:"pointer",background:"#fff"}
+          }, "Seleziona tutti"),
+          /*#__PURE__*/React.createElement("button",{onClick:function(){ setSelezionati([]); },
+            style:{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid "+C.grigio200,cursor:"pointer",background:"#fff"}
+          }, "Deseleziona"),
+          selezionati.length > 0 && /*#__PURE__*/React.createElement("button",{
+            onClick:generaCoda,
+            style:{marginLeft:"auto",padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",
+              background:C.oliva,color:"#fff",fontSize:12,fontWeight:700}
+          }, "\u25B6 Genera coda (" + selezionati.length + ")")
+        ),
+        /*#__PURE__*/React.createElement("div",{style:{maxHeight:420,overflowY:"auto",border:"1px solid "+C.grigio200,borderRadius:8}},
+          listaMassivo.length === 0
+            ? /*#__PURE__*/React.createElement("div",{style:{padding:20,textAlign:"center",color:C.grigio400,fontSize:13}}, "Nessun destinatario con email valida")
+            : listaMassivo.map(function(x,i){
+                var nome = tipoSogg==="clienti" ? (x.insegna||x.ragioneSociale)
+                  : (x.tipo==="Privato" ? ((x.nome||"")+" "+(x.cognome||"")).trim() : x.ragioneSociale);
+                var isSel = selezionati.includes(x.id);
+                var hasEmail = !!x.email;
+                return /*#__PURE__*/React.createElement("div",{
+                  key:x.id,
+                  onClick:function(){ if(hasEmail) setSelezionati(function(s){ return s.includes(x.id)?s.filter(function(id){return id!==x.id;}):s.concat([x.id]); }); },
+                  style:{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",cursor:hasEmail?"pointer":"default",
+                    borderBottom:i<listaMassivo.length-1?"1px solid "+C.grigio100:"none",
+                    background:isSel?C.oliva+"11":"#fff",opacity:hasEmail?1:0.4}
+                },
+                  /*#__PURE__*/React.createElement("input",{type:"checkbox",checked:isSel,disabled:!hasEmail,
+                    onChange:function(){},style:{cursor:hasEmail?"pointer":"default",pointerEvents:"none"}}),
+                  /*#__PURE__*/React.createElement("div",{style:{flex:1}},
+                    /*#__PURE__*/React.createElement("div",{style:{fontSize:13,fontWeight:600,color:C.grigio800}}, nome),
+                    /*#__PURE__*/React.createElement("div",{style:{fontSize:11,color:C.grigio500}},
+                      hasEmail ? x.email : "\u26A0 Email mancante",
+                      tipoSogg==="prospect" && x.stato ? " \u00b7 " + (STATO_FUNNEL[x.stato]&&STATO_FUNNEL[x.stato].l||x.stato) : ""
+                    )
+                  )
+                );
+              })
+        )
+      ),
+      codaInvii.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null,
+        /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:14}},
+          /*#__PURE__*/React.createElement("div",{style:{fontSize:13,fontWeight:700,color:C.grigio800}},
+            "Coda: " + codaInvii.filter(function(x){return x.inviata;}).length + "/" + codaInvii.length + " inviate"
+          ),
+          /*#__PURE__*/React.createElement("button",{
+            onClick:function(){ setCodaInvii([]); setSelezionati([]); },
+            style:{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid "+C.grigio200,cursor:"pointer",background:"#fff"}
+          }, "\u2715 Ricomincia")
+        ),
+        codaInvii.map(function(item,i){
+          var isCorr = i===indiceCorrente && !item.inviata;
+          return /*#__PURE__*/React.createElement("div",{
+            key:i,
+            style:{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:8,marginBottom:6,
+              background:item.inviata?"#e8f5e9":isCorr?C.oliva+"15":C.grigio50,
+              border:"1px solid "+(item.inviata?"#a5d6a7":isCorr?C.oliva:C.grigio200)}
+          },
+            /*#__PURE__*/React.createElement("span",{style:{fontSize:16}}, item.inviata?"\u2705":isCorr?"\u25B6":"\u23F3"),
+            /*#__PURE__*/React.createElement("div",{style:{flex:1}},
+              /*#__PURE__*/React.createElement("div",{style:{fontSize:13,fontWeight:600}}, item.nomeDisplay),
+              /*#__PURE__*/React.createElement("div",{style:{fontSize:11,color:C.grigio500}}, item.email)
+            ),
+            isCorr && /*#__PURE__*/React.createElement("button",{
+              onClick:inviaCorrente,
+              style:{padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",
+                background:C.blu,color:"#fff",fontSize:12,fontWeight:700}
+            }, "\uD83D\uDCE8 Apri Gmail \u2192")
+          );
+        })
+      )
+    )
+  }),
+  modalita === "singolo" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -10580,7 +10768,7 @@ function MailingSystem({
         marginBottom: 10,
         letterSpacing: .5
       }
-    }, "TIPO EMAIL"), Object.entries(MAIL_TEMPLATES).map(([k, t]) => /*#__PURE__*/React.createElement("button", {
+    }, "TIPO EMAIL"), templateFiltrati.map(([k, t]) => /*#__PURE__*/React.createElement("button", {
       key: k,
       onClick: () => setTemplateKey(k),
       style: {
@@ -10619,20 +10807,13 @@ function MailingSystem({
         v: c.id,
         l: c.insegna || c.ragioneSociale
       }))
-    }), cliente && /*#__PURE__*/React.createElement("div", {
-      style: {
-        marginTop: 8,
-        padding: "8px 10px",
-        background: C.grigio50,
-        borderRadius: 6,
-        fontSize: 11,
-        color: C.grigio600
-      }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, "Email:"), " ", cliente.email || /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: C.rosso
-      }
-    }, "\u26A0 Non disponibile")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, "Referente:"), " ", cliente.referente || "—")), (templateKey === "proposta_ordine" || templateKey === "conferma_ordine") && clienteId && /*#__PURE__*/React.createElement("div", {
+    }), destAttivo && /*#__PURE__*/React.createElement("div", {
+      style:{marginTop:8,padding:"8px 10px",background:C.grigio50,borderRadius:6,fontSize:11,color:C.grigio600}
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, "Email:"), " ",
+        destAttivo.email || /*#__PURE__*/React.createElement("span",{style:{color:C.rosso}}, "\u26A0 Non disponibile")),
+      /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, "Referente:"), " ",
+        destAttivo.referente || destAttivo.nomeDisplay || "\u2014")
+    ) (templateKey === "proposta_ordine" || templateKey === "conferma_ordine") && clienteId && /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 10
       }
@@ -10648,7 +10829,7 @@ function MailingSystem({
   }), /*#__PURE__*/React.createElement(Btn, {
     ch: "\u26A1 Genera testo",
     onClick: genera,
-    dis: !clienteId,
+    dis: !destAttivo,
     style: {
       width: "100%",
       justifyContent: "center"
@@ -10661,10 +10842,39 @@ function MailingSystem({
       width: "100%",
       justifyContent: "center"
     }
-  }), /*#__PURE__*/React.createElement(Btn, {
-    ch: "\uD83D\uDCE8 Apri in Gmail",
+  }), /*#__PURE__*/React.createElement("div", {
+    style:{border:"1px solid "+C.grigio200,borderRadius:8,padding:"10px 12px",marginTop:4}
+  },
+    /*#__PURE__*/React.createElement("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}}, "\uD83D\uDCCE ALLEGATI"),
+    ALLEGATI_CANVA.map(function(a){
+      var sel = allegatiSel.includes(a.id);
+      return /*#__PURE__*/React.createElement("div",{
+        key:a.id,
+        onClick:function(){ setAllegatiSel(function(s){ return s.includes(a.id)?s.filter(function(x){return x!==a.id;}):s.concat([a.id]); }); },
+        style:{display:"flex",alignItems:"flex-start",gap:8,marginBottom:6,padding:"6px 8px",borderRadius:6,
+          background:sel?C.oliva+"15":C.grigio50,cursor:"pointer"}
+      },
+        /*#__PURE__*/React.createElement("input",{type:"checkbox",checked:sel,onChange:function(){},style:{marginTop:2,pointerEvents:"none"}}),
+        /*#__PURE__*/React.createElement("div",{style:{flex:1}},
+          /*#__PURE__*/React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.grigio800}}, a.label),
+          /*#__PURE__*/React.createElement("div",{style:{fontSize:10,color:C.grigio500}}, a.desc)
+        )
+      );
+    }),
+    allegatiSel.length > 0 && /*#__PURE__*/React.createElement("div",{style:{marginTop:8,paddingTop:8,borderTop:"1px solid "+C.grigio200}},
+      /*#__PURE__*/React.createElement("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:4}}, "\u2193 Scarica PDF prima di allegare:"),
+      ALLEGATI_CANVA.filter(function(a){return allegatiSel.includes(a.id);}).map(function(a){
+        return /*#__PURE__*/React.createElement("a",{
+          key:a.id, href:a.pdfUrl, target:"_blank",
+          style:{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:5,marginBottom:4,
+            background:"#e3f2fd",color:"#1565c0",textDecoration:"none",fontSize:11,fontWeight:700}
+        }, "\u2193 PDF: "+a.label);
+      })
+    )
+  ), /*#__PURE__*/React.createElement(Btn, {
+    ch: "\uD83D\uDCE8 Apri Gmail",
     onClick: apriGmail,
-    dis: !cliente?.email,
+    dis: !destAttivo?.email,
     style: {
       width: "100%",
       justifyContent: "center",
@@ -10672,13 +10882,16 @@ function MailingSystem({
       color: "#fff",
       border: "none"
     }
-  }), !cliente?.email && /*#__PURE__*/React.createElement("div", {
+  }), allegatiSel.length > 0 && /*#__PURE__*/React.createElement("div",{
+    style:{fontSize:10,color:C.grigio500,textAlign:"center",lineHeight:1.5,padding:"4px 0"}
+  }, "\u2139\uFE0F Scarica i PDF sopra, poi allegali in Gmail dopo l'apertura"),
+  !destAttivo?.email && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: C.rosso,
       textAlign: "center"
     }
-  }, "Email cliente non presente in anagrafica"))), /*#__PURE__*/React.createElement(Card, {
+  }, "Email non presente in anagrafica"))), /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11,
