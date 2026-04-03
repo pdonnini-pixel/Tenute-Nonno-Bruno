@@ -10565,7 +10565,7 @@ function MailingSystem({
   const [indiceCorrente, setIndiceCorrente] = useState(0);
   const template = MAIL_TEMPLATES[templateKey];
   const cliente = dati.clienti.find(c => c.id === clienteId);
-  const prospect = dati.prospect.find(p => p.id === prospectId);
+  const prospect = (dati.prospect||[]).find(p => p.id === prospectId);
   const ordine = dati.ordini.find(o => o.id === ordineId);
   const destAttivo = tipoSogg === "clienti"
     ? (cliente ? {...cliente, nomeDisplay: cliente.insegna || cliente.ragioneSociale} : null)
@@ -10574,7 +10574,7 @@ function MailingSystem({
         nomeDisplay: prospect.tipo === "Privato" ? ((prospect.nome||"") + " " + (prospect.cognome||"")).trim() : prospect.ragioneSociale,
         referente: prospect.tipo === "Privato" ? ((prospect.nome||"") + " " + (prospect.cognome||"")).trim() : prospect.referente
       } : null);
-  const templateFiltrati = Object.entries(MAIL_TEMPLATES).filter(([k,t]) => t.target.includes(tipoSogg));
+  const templateFiltrati = Object.entries(MAIL_TEMPLATES).filter(([k,t]) => !t.target || t.target.includes(tipoSogg));
   const salvaLog = (dest, tmplKey, ogg) => {
     if (tipoSogg === "clienti") {
       setDati(d => ({...d, clienti: d.clienti.map(c => c.id !== dest.id ? c : {
@@ -10598,7 +10598,7 @@ function MailingSystem({
   const generaCoda = () => {
     var lista = tipoSogg === "clienti"
       ? dati.clienti.filter(c => selezionati.includes(c.id))
-      : dati.prospect.filter(p => selezionati.includes(p.id));
+      : (dati.prospect||[]).filter(p => selezionati.includes(p.id));
     var coda = lista.map(x => {
       var dest = tipoSogg === "clienti"
         ? {...x, nomeDisplay: x.insegna||x.ragioneSociale}
@@ -10622,7 +10622,7 @@ function MailingSystem({
     if (!item) return;
     window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(item.email) +
       "&su=" + encodeURIComponent(item.oggetto) + "&body=" + encodeURIComponent(item.corpo), "_blank");
-    var dest = tipoSogg === "clienti" ? dati.clienti.find(c=>c.id===item.id) : dati.prospect.find(p=>p.id===item.id);
+    var dest = tipoSogg === "clienti" ? dati.clienti.find(c=>c.id===item.id) : (dati.prospect||[]).find(p=>p.id===item.id);
     if (dest) salvaLog(dest, templateKey, item.oggetto);
     setCodaInvii(q => q.map((x,i) => i===indiceCorrente ? {...x, inviata:true} : x));
     if (indiceCorrente < codaInvii.length-1) setIndiceCorrente(i => i+1);
@@ -10636,7 +10636,7 @@ function MailingSystem({
   const ordiniCliente = dati.ordini.filter(o => o.clienteId === clienteId);
     var listaMassivo = tipoSogg === "clienti"
     ? dati.clienti.filter(function(c){ return !filtroTipo || c.tipo === filtroTipo; })
-    : dati.prospect.filter(function(p){ return p.email && (!filtroTipo || p.tipo===filtroTipo) && p.stato!=="non_interessato" && p.stato!=="acquisito"; });
+    : (dati.prospect||[]).filter(function(p){ return p.email && (!filtroTipo || p.tipo===filtroTipo) && p.stato!=="non_interessato" && p.stato!=="acquisito"; });
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83D\uDCE7 Mailing",
     action: /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:8}},
@@ -10829,7 +10829,7 @@ function MailingSystem({
         destAttivo.email || /*#__PURE__*/React.createElement("span",{style:{color:C.rosso}}, "\u26A0 Non disponibile")),
       /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, "Referente:"), " ",
         destAttivo.referente || destAttivo.nomeDisplay || "\u2014")
-    ) (templateKey === "proposta_ordine" || templateKey === "conferma_ordine") && clienteId && /*#__PURE__*/React.createElement("div", {
+    ), (templateKey === "proposta_ordine" || templateKey === "conferma_ordine") && clienteId && /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 10
       }
