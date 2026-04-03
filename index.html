@@ -674,7 +674,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
 // Sostituisce window.storage con implementazione Supabase
 // Zero dipendenze esterne — usa fetch() nativo
 const SUPA_URL = 'https://njwtfmiviijszzxschll.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFxamxzemNicXpqbGRndWRkY2xwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NzA4MDcsImV4cCI6MjA4OTQ0NjgwN30.o9DUk6_SDJwn07R_99sy3RriBgko5uZWWN9CNm3lz0A';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qd3RmbWl2aWlqc3p6eHNjaGxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMjg0MzksImV4cCI6MjA5MDcwNDQzOX0.jp94knI8L-e5ytwslvIuVcGGguD49OPddcamXiQ62LU';
 
 const _supaHeaders = {
   'apikey': SUPA_KEY,
@@ -7686,7 +7686,17 @@ function App() {
   const access = ROLE_ACCESS[currentUser.role] || [];
   const NAV = ALL_NAV.filter(n => access.includes(n.k));
   const alerts = [dati.magazzino.filter(m => m.giacenza <= m.soglia).length, dati.ordini.filter(o => o.statoPagamento === "da_pagare" && o.modalita === "vendita").length, dati.ordini.filter(o => o.scadenzaCV && o.scadenzaCV < todayStr() && o.statoPagamento !== "pagato").length].reduce((s, n) => s + n, 0);
-  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("style", null, css), /*#__PURE__*/React.createElement("div", {
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("style", null, css), supaWarn && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
+      background: "#f57c00", color: "#fff",
+      padding: "7px 16px", fontSize: 12, fontWeight: 600,
+      display: "flex", justifyContent: "space-between", alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "\u26A0\uFE0F  Supabase non raggiungibile \u2014 salvataggio solo locale (controlla la chiave API)"), /*#__PURE__*/React.createElement("button", {
+    onClick: function() { setSupaWarn(false); },
+    style: { background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 16, fontWeight: 700, lineHeight: 1 }
+  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       minHeight: "100vh"
