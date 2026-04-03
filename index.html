@@ -3763,49 +3763,49 @@ function Dashboard({
     label: "Fatturato Vendite",
     sub: `${dati.ordini.filter(o => o.modalita === "vendita").length} ordini`,
     color: C.oliva,
-    onClick: () => setModuloNav("ordini")
+    onClick: () => window._nav("ordini")
   }), /*#__PURE__*/React.createElement(KPI, {
     icon: "\uD83E\uDD1D",
     val: fmt(cvEsposizione),
     label: "Esposizione CV",
     sub: `${dati.ordini.filter(o => o.modalita === "conto_vendita").length} contratti`,
     color: C.viola,
-    onClick: () => setModuloNav("ordini")
+    onClick: () => window._nav("ordini")
   }), /*#__PURE__*/React.createElement(KPI, {
     icon: "\u26A0\uFE0F",
     val: fmt(daRiscuotere),
     label: "Da Riscuotere",
     sub: `${dati.ordini.filter(o => o.statoPagamento === "da_pagare").length} ordini`,
     color: daRiscuotere > 500 ? C.rosso : C.arancio,
-    onClick: () => setModuloNav("ordini")
+    onClick: () => window._nav("ordini")
   }), /*#__PURE__*/React.createElement(KPI, {
     icon: "\uD83C\uDFAF",
     val: dati.prospect.filter(p => p.stato !== "acquisito").length,
     label: "Prospect Attivi",
     sub: `${dati.prospect.filter(p => p.stato === "interessato").length} interessati`,
     color: C.blu,
-    onClick: () => setModuloNav("pipeline")
+    onClick: () => window._nav("pipeline")
   }), /*#__PURE__*/React.createElement(KPI, {
     icon: "\uD83D\uDC65",
     val: dati.clienti.length,
     label: "Clienti Acquisiti",
     sub: `${dati.clienti.filter(c => c.tipo === "horeca").length} HoReCa`,
     color: C.cyan,
-    onClick: () => setModuloNav("clienti")
+    onClick: () => window._nav("clienti")
   }), sottosoglia.length > 0 && /*#__PURE__*/React.createElement(KPI, {
     icon: "\uD83D\uDCE6",
     val: sottosoglia.length,
     label: "Sotto Soglia",
     sub: sottosoglia.map(s => s.formato).join(", "),
     color: C.rosso,
-    onClick: () => setModuloNav("magazzino")
+    onClick: () => window._nav("magazzino")
   }), cvScadute > 0 && /*#__PURE__*/React.createElement(KPI, {
     icon: "\uD83D\uDD14",
     val: cvScadute,
     label: "CV Scadute",
     sub: "Rendicontazione urgente",
     color: C.rosso,
-    onClick: () => setModuloNav("ordini")
+    onClick: () => window._nav("ordini")
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
@@ -7580,6 +7580,8 @@ function App() {
     setModulo(mod);
     window.location.hash = mod;
   }, []);
+  // Rende setModuloNav accessibile globalmente ai componenti figli
+  window._nav = setModuloNav;
   useEffect(() => {
     const onHash = () => {
       const m = window.location.hash.replace("#","");
@@ -7893,7 +7895,7 @@ function App() {
       gap: 12
     }
   }, alerts > 0 && /*#__PURE__*/React.createElement("button", {
-    onClick: () => setModuloNav("alerts"),
+    onClick: () => window._nav("alerts"),
     style: {
       display: "flex",
       alignItems: "center",
@@ -9440,7 +9442,7 @@ function OggiAzioni({
         marginBottom: 8,
         cursor: "pointer"
       },
-      onClick: () => { if(a.tipo==="richiama"&&a.prospect){ window._tnbNav={targetId:a.prospect.id}; if(setModuloNav) setModuloNav("pipeline"); } else if(a.cliente){ setSelectedClient(a.cliente); } }
+      onClick: () => { if(a.tipo==="richiama"&&a.prospect){ window._tnbNav={targetId:a.prospect.id}; if(window._nav) window._nav("pipeline"); } else if(a.cliente){ setSelectedClient(a.cliente); } }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 22,
@@ -10396,7 +10398,7 @@ function AlertsPage({
       ch: `${a.cta} →`,
       sz: "sm",
       v: "sec",
-      onClick: () => { if(a.targetId){ window._tnbNav={targetId:a.targetId}; } setModuloNav(a.modulo); },
+      onClick: () => { if(a.targetId){ window._tnbNav={targetId:a.targetId}; } window._nav(a.modulo); },
       style: {
         flexShrink: 0,
         color: a.color,
