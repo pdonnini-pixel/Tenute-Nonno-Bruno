@@ -3045,6 +3045,17 @@ const STATO_FUNNEL = {
     c: C.viola
   }
 };
+const STATI_PROGRESSIONE = ["da_contattare","interessato","in_trattativa","acquisito"];
+const AZIONI_TIPO = {
+  richiamare:         { l: "Richiamare",           emoji: "📞", c: "#f57c00" },
+  mail_presentazione: { l: "Mail presentazione",   emoji: "📧", c: "#1565c0" },
+  mail_offerta:       { l: "Mail offerta",          emoji: "📩", c: "#1565c0" },
+  mail_followup:      { l: "Mail follow-up",        emoji: "📨", c: "#1565c0" },
+  campionatura:       { l: "Campionatura",          emoji: "📦", c: "#7b1fa2" },
+  visita:             { l: "Visita",                emoji: "🚗", c: "#2e7d32" },
+  attendere_risposta: { l: "Attendere risposta",    emoji: "⏳", c: "#78909c" },
+  trattativa:         { l: "Chiudere trattativa",   emoji: "🤝", c: "#f9a825" },
+};
 const CANALE = {
   fiera: "Fiera / Evento",
   call_diretta: "Call diretta",
@@ -4018,6 +4029,79 @@ function Dashboard({
 }
 
 // ─── PIPELINE KANBAN ──────────────────────────────────────────────────────────
+function AzioniSection({ prospect, addAzione, closeAzione }) {
+  const azioni = prospect.azioni || [];
+  const aperte = azioni.filter(a => !a.chiusa);
+  const chiuse = azioni.filter(a => a.chiusa).slice().reverse();
+  const [nuovoTipo, setNuovoTipo] = useState("");
+  const [nuovaNota, setNuovaNota] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const C2 = { grigio100:"#f5f5f5", grigio200:"#e0e0e0", grigio400:"#bdbdbd", grigio500:"#9e9e9e", grigio600:"#757575", grigio800:"#424242", bianco:"#fff" };
+  return /*#__PURE__*/React.createElement("div", { style: { marginTop: 4 } },
+    /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, fontWeight: 700, color: C2.grigio600, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }
+    }, "AZIONI (" + aperte.length + " aperte)", /*#__PURE__*/React.createElement("button", {
+      onClick: () => setShowForm(s => !s),
+      style: { fontSize: 11, background: "#e8f5e9", border: "1px solid #a5d6a7", borderRadius: 5, padding: "2px 10px", cursor: "pointer", color: "#2e7d32", fontWeight: 600 }
+    }, showForm ? "✕" : "+ Nuova azione")),
+    showForm && /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }
+    }, /*#__PURE__*/React.createElement("select", {
+      value: nuovoTipo,
+      onChange: e => setNuovoTipo(e.target.value),
+      style: { flex: 1, border: "1px solid " + C2.grigio200, borderRadius: 5, padding: "5px 8px", fontSize: 12 }
+    }, /*#__PURE__*/React.createElement("option", { value: "" }, "— Tipo azione —"),
+      Object.entries(AZIONI_TIPO).map(([k, v]) =>
+        /*#__PURE__*/React.createElement("option", { key: k, value: k }, v.emoji + " " + v.l)
+      )
+    ), /*#__PURE__*/React.createElement("input", {
+      placeholder: "Nota (opz.)",
+      value: nuovaNota,
+      onChange: e => setNuovaNota(e.target.value),
+      style: { flex: 2, border: "1px solid " + C2.grigio200, borderRadius: 5, padding: "5px 8px", fontSize: 12 }
+    }), /*#__PURE__*/React.createElement("button", {
+      onClick: () => { if(!nuovoTipo) return; addAzione(prospect.id, nuovoTipo, nuovaNota); setNuovoTipo(""); setNuovaNota(""); setShowForm(false); },
+      style: { background: "#1976d2", color: "#fff", border: "none", borderRadius: 5, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }
+    }, "Aggiungi")),
+    aperte.length === 0 && !showForm && /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, color: C2.grigio400, fontStyle: "italic", marginBottom: 6 }
+    }, "Nessuna azione aperta"),
+    aperte.map(az => {
+      const at = AZIONI_TIPO[az.tipo] || { emoji: "▶", l: az.tipo, c: "#999" };
+      return /*#__PURE__*/React.createElement("div", {
+        key: az.id,
+        style: { display: "flex", alignItems: "center", gap: 8, background: at.c + "15", border: "1px solid " + at.c + "44", borderRadius: 7, padding: "7px 10px", marginBottom: 5 }
+      }, /*#__PURE__*/React.createElement("span", { style: { fontSize: 16 } }, at.emoji),
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: at.c } }, at.l),
+          az.nota && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C2.grigio600 } }, az.nota),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C2.grigio400 } }, "Aperta il " + az.aperta)
+        ),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: () => closeAzione(prospect.id, az.id),
+          style: { fontSize: 11, background: "#e8f5e9", border: "1px solid #a5d6a7", borderRadius: 5, padding: "3px 10px", cursor: "pointer", color: "#2e7d32", fontWeight: 700 }
+        }, "✓ Chiudi")
+      );
+    }),
+    chiuse.length > 0 && /*#__PURE__*/React.createElement("details", { style: { marginTop: 6 } },
+      /*#__PURE__*/React.createElement("summary", {
+        style: { fontSize: 11, color: C2.grigio500, cursor: "pointer", userSelect: "none" }
+      }, "Storico (" + chiuse.length + " completate)"),
+      chiuse.map(az => {
+        const at = AZIONI_TIPO[az.tipo] || { emoji: "▶", l: az.tipo, c: "#999" };
+        return /*#__PURE__*/React.createElement("div", {
+          key: az.id,
+          style: { display: "flex", alignItems: "center", gap: 6, padding: "4px 0", borderBottom: "1px solid " + C2.grigio100 }
+        }, /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, opacity: 0.5 } }, at.emoji),
+          /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C2.grigio400, textDecoration: "line-through" } }, at.l),
+          az.nota && /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C2.grigio500 } }, "— " + az.nota),
+          /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, color: C2.grigio400, marginLeft: "auto" } }, az.chiusa)
+        );
+      })
+    )
+  );
+}
+
 function Pipeline({
   dati,
   setDati,
@@ -4039,6 +4123,29 @@ function Pipeline({
       })
     }));
     setCallNota("");
+  };
+  const addAzione = (id, tipo, nota) => {
+    const az = { id: uid(), tipo, aperta: todayStr(), chiusa: null, nota: nota || "" };
+    setDati(d => ({
+      ...d,
+      prospect: d.prospect.map(p => p.id !== id ? p : {
+        ...p,
+        azioni: [...(p.azioni || []), az]
+      })
+    }));
+  };
+  const closeAzione = (prospectId, azioneId) => {
+    setDati(d => ({
+      ...d,
+      prospect: d.prospect.map(p => p.id !== prospectId ? p : {
+        ...p,
+        azioni: (p.azioni || []).map(a => a.id !== azioneId ? a : { ...a, chiusa: todayStr() })
+      })
+    }));
+  };
+  const prossimoStatoId = (statoAttuale) => {
+    const idx = STATI_PROGRESSIONE.indexOf(statoAttuale);
+    return (idx >= 0 && idx < STATI_PROGRESSIONE.length - 1) ? STATI_PROGRESSIONE[idx + 1] : null;
   };
   const saveProspect = () => {
     if (!form.ragioneSociale) return;
@@ -4172,41 +4279,20 @@ function Pipeline({
         marginBottom: 3,
         lineHeight: 1.3
       }
-    }, p.ragioneSociale), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 10,
-        color: C.grigio400,
-        marginBottom: 6,
-        lineHeight: 1.3
-      }
+    }, p.tipo === "Privato" ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato" : p.ragioneSociale), /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 10, color: C.grigio400, marginBottom: 4, lineHeight: 1.3 }
     }, p.indirizzo), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between"
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 10,
-        color: C.grigio600
-      }
-    }, CANALE[p.canale] || p.canale), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 10,
-        background: C.grigio100,
-        borderRadius: 4,
-        padding: "1px 6px",
-        fontWeight: 600,
-        color: C.grigio600
-      }
-    }, (p.calls || []).length, " call")), p.nextAction && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 10,
-        color: C.arancio,
-        marginTop: 4,
-        fontStyle: "italic"
-      }
-    }, "\u2192 ", p.nextAction)), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", alignItems: "center", justifyContent: "space-between" }
+    }, /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, color: C.grigio600 } }, CANALE[p.canale] || p.canale), /*#__PURE__*/React.createElement("span", {
+      style: { fontSize: 10, background: C.grigio100, borderRadius: 4, padding: "1px 6px", fontWeight: 600, color: C.grigio600 }
+    }, (p.calls || []).length, " call")), function() {
+      var az = (p.azioni || []).find(function(a) { return !a.chiusa; });
+      if (!az) return null;
+      var at = AZIONI_TIPO[az.tipo] || { emoji: "▶", l: az.tipo, c: "#999" };
+      return /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 10, color: at.c, marginTop: 4, fontWeight: 600 }
+      }, at.emoji, " ", at.l);
+    }()), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 4,
@@ -4243,7 +4329,7 @@ function Pipeline({
       }
     }, "\u270F\uFE0F")))));
   })), detail && /*#__PURE__*/React.createElement(Modal, {
-    title: detail.ragioneSociale,
+    title: detail.tipo === "Privato" ? ((detail.nome||"") + " " + (detail.cognome||"")).trim() || "Privato" : (detail.ragioneSociale || "—"),
     onClose: () => setDetailId(null),
     ch: /*#__PURE__*/React.createElement("div", {
       style: {
@@ -4307,18 +4393,14 @@ function Pipeline({
     }, "CALL LOG (", (detail.calls || []).length, ")")), /*#__PURE__*/React.createElement("div", {
       style: { display: "flex", gap: 6, marginBottom: 6 }
     }, /*#__PURE__*/React.createElement("input", {
-      placeholder: "Nota (opz.)",
+      placeholder: "Nota call (opz.)",
       value: callNota,
-      onChange: function(e) { setCallNota(e.target.value); },
-      style: {
-        flex: 1, border: "1px solid " + C.grigio200, borderRadius: 5,
-        padding: "4px 8px", fontSize: 12, color: C.grigio800, background: "#fafafa"
-      }
+      onChange: e => setCallNota(e.target.value),
+      style: { flex: 1, border: "1px solid " + C.grigio200, borderRadius: 5, padding: "4px 8px", fontSize: 12 }
     }), /*#__PURE__*/React.createElement(Btn, {
-      ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.phone, null), " Aggiungi oggi"),
-      sz: "sm",
-      v: "sec",
-      onClick: function() { addCall(detail.id, callNota); }
+      ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.phone, null), " Aggiungi"),
+      sz: "sm", v: "sec",
+      onClick: () => addCall(detail.id, callNota)
     })), /*#__PURE__*/React.createElement("div", {
       style: { display: "flex", flexDirection: "column", gap: 4 }
     }, (detail.calls || []).slice().reverse().map(function(c, i) {
@@ -4327,35 +4409,33 @@ function Pipeline({
       return /*#__PURE__*/React.createElement("div", {
         key: i, style: { display: "flex", alignItems: "center", gap: 8 }
       }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          background: C.grigio100, borderRadius: 6, padding: "3px 10px",
-          fontSize: 11, color: C.grigio600, fontWeight: 500, whiteSpace: "nowrap"
-        }
-      }, fmtD(cData)), cNota ? /*#__PURE__*/React.createElement("span", {
+        style: { background: C.grigio100, borderRadius: 6, padding: "3px 10px", fontSize: 11, color: C.grigio600, fontWeight: 500, whiteSpace: "nowrap" }
+      }, fmtD(cData)), cNota && /*#__PURE__*/React.createElement("span", {
         style: { fontSize: 11, color: C.grigio500, fontStyle: "italic" }
-      }, cNota) : null);
+      }, cNota));
     }), !(detail.calls || []).length && /*#__PURE__*/React.createElement("span", {
       style: { color: C.grigio400, fontStyle: "italic", fontSize: 12 }
-    }, "Nessuna call registrata")), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        gap: 8,
-        flexWrap: "wrap"
-      }
-    }, Object.entries(STATO_FUNNEL).map(([k, v]) => detail.stato !== k && /*#__PURE__*/React.createElement(Btn, {
-      key: k,
-      ch: `→ ${v.l}`,
-      sz: "sm",
-      v: "sec",
-      onClick: () => {
-        moveStato(detail.id, k);
-        setDetailId(null);
-      },
-      style: {
-        color: v.c,
-        borderColor: v.c
-      }
-    }))), /*#__PURE__*/React.createElement("div", {
+    }, "Nessuna call registrata")), function() {
+      var prossSt = prossimoStatoId(detail.stato);
+      var prosSf = prossSt ? STATO_FUNNEL[prossSt] : null;
+      return /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" } },
+        prosSf && /*#__PURE__*/React.createElement(Btn, {
+          ch: "▶ " + prosSf.l, sz: "sm",
+          onClick: function() { moveStato(detail.id, prossSt); setDetailId(null); },
+          style: { background: prosSf.c, color: "#fff", border: "none", fontWeight: 700 }
+        }),
+        detail.stato !== "non_interessato" && /*#__PURE__*/React.createElement(Btn, {
+          ch: "🚫 Non interessato", sz: "sm", v: "dan",
+          onClick: function() { moveStato(detail.id, "non_interessato"); setDetailId(null); }
+        }),
+        detail.stato !== "in_sospeso" && detail.stato !== "acquisito" && detail.stato !== "non_interessato" && /*#__PURE__*/React.createElement(Btn, {
+          ch: "⏸ In sospeso", sz: "sm", v: "sec",
+          onClick: function() { moveStato(detail.id, "in_sospeso"); setDetailId(null); }
+        })
+      );
+    }(), /*#__PURE__*/React.createElement(AzioniSection, {
+      prospect: detail, addAzione: addAzione, closeAzione: closeAzione
+    }), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         justifyContent: "space-between"
@@ -4386,109 +4466,63 @@ function Pipeline({
     title: modal === "new" ? "Nuovo Prospect" : "Modifica Prospect",
     onClose: () => setModal(null),
     ch: /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 14
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        gridColumn: "span 2"
-      }
-    }, /*#__PURE__*/React.createElement(Inp, {
-      label: "Ragione Sociale",
-      v: form.ragioneSociale || "",
-      on: v => setForm(f => ({
-        ...f,
-        ragioneSociale: v
-      })),
-      req: true,
-      full: true
-    })), /*#__PURE__*/React.createElement(Inp, {
-      label: "Referente",
-      v: form.referente || "",
-      on: v => setForm(f => ({...f, referente: v})),
-      ph: "es. Mario Rossi"
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Email",
-      v: form.email || "",
-      on: v => setForm(f => ({...f, email: v})),
-      ph: "info@locale.it"
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Telefono",
-      v: form.telefono || "",
-      on: v => setForm(f => ({...f, telefono: v}))
-    }), /*#__PURE__*/React.createElement(Sel, {
+      style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }
+    }, /*#__PURE__*/React.createElement(Sel, {
       label: "Tipo attività",
       v: form.tipo || "",
       on: v => setForm(f => ({...f, tipo: v})),
       opts: ["HoReCa","Retail","GDO","Catering","Enoteca","Albergo","Privato","Altro"].map(t=>({v:t,l:t}))
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        gridColumn: "span 2"
-      }
-    }, /*#__PURE__*/React.createElement(Inp, {
-      label: "Indirizzo",
-      v: form.indirizzo || "",
-      on: v => setForm(f => ({
-        ...f,
-        indirizzo: v
-      })),
-      full: true
-    })), /*#__PURE__*/React.createElement(Sel, {
+    }), /*#__PURE__*/React.createElement(Sel, {
       label: "📍 Da dove arriva",
       v: form.canale || "",
-      on: v => setForm(f => ({
-        ...f,
-        canale: v
-      })),
-      opts: Object.entries(CANALE).map(([k, l]) => ({
-        v: k,
-        l
-      }))
-    }), /*#__PURE__*/React.createElement(Sel, {
+      on: v => setForm(f => ({...f, canale: v})),
+      opts: Object.entries(CANALE).map(([k, l]) => ({v:k,l}))
+    }), form.tipo === "Privato" ? /*#__PURE__*/React.createElement(Inp, {
+      label: "Nome", req: true, ph: "Mario",
+      v: form.nome || "", on: v => setForm(f => ({...f, nome: v}))
+    }) : /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
+      /*#__PURE__*/React.createElement(Inp, {
+        label: "Ragione Sociale", req: true, full: true,
+        v: form.ragioneSociale || "", on: v => setForm(f => ({...f, ragioneSociale: v}))
+      })
+    ), form.tipo === "Privato" ? /*#__PURE__*/React.createElement(Inp, {
+      label: "Cognome", req: true, ph: "Rossi",
+      v: form.cognome || "", on: v => setForm(f => ({...f, cognome: v}))
+    }) : null, form.tipo !== "Privato" ? /*#__PURE__*/React.createElement(Inp, {
+      label: "Referente", ph: "es. Mario Rossi",
+      v: form.referente || "", on: v => setForm(f => ({...f, referente: v}))
+    }) : null, /*#__PURE__*/React.createElement(Inp, {
+      label: "Email",
+      ph: form.tipo === "Privato" ? "mario.rossi@email.it" : "info@locale.it",
+      v: form.email || "", on: v => setForm(f => ({...f, email: v}))
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Telefono", v: form.telefono || "", on: v => setForm(f => ({...f, telefono: v}))
+    }), /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
+      /*#__PURE__*/React.createElement(Inp, {
+        label: "Indirizzo", full: true,
+        v: form.indirizzo || "", on: v => setForm(f => ({...f, indirizzo: v}))
+      })
+    ), /*#__PURE__*/React.createElement(Sel, {
       label: "Stato funnel",
       v: form.stato || "",
-      on: v => setForm(f => ({
-        ...f,
-        stato: v
-      })),
-      opts: Object.entries(STATO_FUNNEL).map(([k, v]) => ({
-        v: k,
-        l: v.l
-      }))
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Next Action",
-      v: form.nextAction || "",
-      on: v => setForm(f => ({
-        ...f,
-        nextAction: v
-      }))
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Entro il",
-      type: "date",
-      v: form.nextData || "",
-      on: v => setForm(f => ({...f, nextData: v}))
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "📲 Richiama il",
-      type: "date",
-      v: form.nextCall?.data || "",
+      on: v => setForm(f => ({...f, stato: v})),
+      opts: Object.entries(STATO_FUNNEL).map(([k, v]) => ({v:k, l:v.l}))
+    }), form.stato !== "non_interessato" ? /*#__PURE__*/React.createElement(Inp, {
+      label: "📲 Richiama il", type: "date",
+      v: (form.nextCall && form.nextCall.data) || "",
       on: v => setForm(f => ({...f, nextCall:{...(f.nextCall||{}), data:v}}))
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Nota richiamata",
-      v: form.nextCall?.nota || "",
+    }) : /*#__PURE__*/React.createElement("div", null), form.stato !== "non_interessato" ? /*#__PURE__*/React.createElement(Inp, {
+      label: "Memo prossima call",
+      ph: "Es: chiedere se ha ricevuto il campione",
+      v: (form.nextCall && form.nextCall.nota) || "",
       on: v => setForm(f => ({...f, nextCall:{...(f.nextCall||{}), nota:v}}))
-    }), /*#__PURE__*/React.createElement("div", {
-      style: { gridColumn: "span 2" }
-    }, /*#__PURE__*/React.createElement(Inp, {
-      label: "Note",
-      v: form.note || "",
-      on: v => setForm(f => ({
-        ...f,
-        note: v
-      })),
-      rows: 2
-    })), /*#__PURE__*/React.createElement("div", {
+    }) : null, /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
+      /*#__PURE__*/React.createElement(Inp, {
+        label: "Note prospect", rows: 2,
+        ph: "Contesto, interessi, storico relazione...",
+        v: form.note || "", on: v => setForm(f => ({...f, note: v}))
+      })
+    ), /*#__PURE__*/React.createElement("div", {
       style: { gridColumn: "span 2", background: "#f0f8ff", borderRadius: 8, padding: "10px 14px", border: "1px solid #bee3f8" }
     },
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#1565c0", marginBottom: 6 } }, "📧 Mail di presentazione"),
@@ -4508,6 +4542,18 @@ function Pipeline({
           var corpo = "Gentile " + nome + ",\n\nLa ringraziamo per il tempo dedicatoci" + (canaleLabel ? " (" + canaleLabel + ")" : "") + ".\n\nCome anticipato, produciamo olio EVO biologico sulle colline di Fattucchia, Bagno a Ripoli (FI).\n\nVarieta: Frantoio, Moraiolo, Leccino. Raccolta manuale, frangitura a freddo, cert. biologica.\n\nFormati: 100ml, 250ml, 500ml, Latte 3L e 5L\n\nRimaniamo a disposizione per un incontro.\n\nCordiali saluti,\nIrene Paggetti - Tenute Nonno Bruno\nirene.paggetti@tenutenonnobruno.it  338 1427611";
           window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(form.email) + "&su=" + encodeURIComponent(ogg) + "&body=" + encodeURIComponent(corpo), "_blank");
           if(logAction) logAction("Mail pres.", "pipeline", form.ragioneSociale);
+          if(form.id) {
+            var azId = uid();
+            setDati(function(d) { return {
+              ...d,
+              prospect: d.prospect.map(function(p) {
+                if(p.id !== form.id) return p;
+                return {...p, azioni: [...(p.azioni||[]).map(function(a){
+                  return (!a.chiusa && (a.tipo==="mail_presentazione"||a.tipo==="richiamare")) ? {...a, chiusa: todayStr()} : a;
+                }), {id:azId, tipo:"mail_presentazione", aperta:todayStr(), chiusa:todayStr(), nota:"Inviata via Gmail"}]};
+              })
+            }; });
+          }
         }
       })
     ), /*#__PURE__*/React.createElement("div", {
