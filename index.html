@@ -4029,6 +4029,75 @@ function Dashboard({
 }
 
 // ─── PIPELINE KANBAN ──────────────────────────────────────────────────────────
+function DoppioniFinder({ prospect, onOpen }) {
+  const risultati = [];
+  const seenEmail = {};
+  const seenPiva = {};
+  const seenNome = {};
+
+  prospect.forEach(function(p) {
+    const label = p.tipo === "Privato"
+      ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato"
+      : (p.ragioneSociale || "");
+    const email = (p.email||"").trim().toLowerCase();
+    const piva  = (p.piva||"").trim().replace(/\s/g,"");
+    const nome  = label.toLowerCase();
+
+    if (email) {
+      if (!seenEmail[email]) seenEmail[email] = [];
+      seenEmail[email].push({p, label});
+    }
+    if (piva) {
+      if (!seenPiva[piva]) seenPiva[piva] = [];
+      seenPiva[piva].push({p, label});
+    }
+    if (nome) {
+      if (!seenNome[nome]) seenNome[nome] = [];
+      seenNome[nome].push({p, label});
+    }
+  });
+
+  [["📧 Email", seenEmail], ["🏢 P.IVA", seenPiva], ["👤 Nome/ragione sociale", seenNome]].forEach(function(pair) {
+    const tipo = pair[0], map = pair[1];
+    Object.entries(map).filter(function(e) { return e[1].length > 1; }).forEach(function(e) {
+      const key = e[0], items = e[1];
+      risultati.push({tipo, key, items});
+    });
+  });
+
+  const C2 = { grigio100:"#f5f5f5", grigio200:"#e0e0e0", grigio400:"#bdbdbd", grigio600:"#757575", grigio800:"#424242", rosso:"#e53935", bianco:"#fff" };
+
+  if (!risultati.length) return /*#__PURE__*/React.createElement("div", {
+    style: { padding: "20px 0", textAlign: "center", color: C2.grigio400, fontSize: 14 }
+  }, "✅ Nessun doppione rilevato tra i ", prospect.length, " prospect");
+
+  return /*#__PURE__*/React.createElement("div", null,
+    /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, color: C2.grigio600, marginBottom: 14 }
+    }, risultati.length, " gruppo/i con doppioni trovati su ", prospect.length, " prospect"),
+    risultati.map(function(r, ri) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: ri,
+        style: { marginBottom: 14, border: "1px solid #ffcdd2", borderRadius: 8, overflow: "hidden" }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: { background: "#ffebee", padding: "6px 12px", fontSize: 11, fontWeight: 700, color: C2.rosso }
+      }, r.tipo, " duplicata: ", r.key),
+        r.items.map(function(item, ii) {
+          return /*#__PURE__*/React.createElement("div", {
+            key: ii,
+            style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: ii%2===0 ? C2.bianco : C2.grigio100, borderTop: "1px solid " + C2.grigio200 }
+          }, /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, fontWeight: 600 } }, item.label),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function() { onOpen(item.p.id); },
+              style: { fontSize: 11, background: "#1976d2", color: "#fff", border: "none", borderRadius: 5, padding: "3px 12px", cursor: "pointer", fontWeight: 600 }
+            }, "Apri →")
+          );
+        })
+      );
+    })
+  );
+}
+
 function AzioniSection({ prospect, addAzione, closeAzione }) {
   const azioni = prospect.azioni || [];
   const aperte = azioni.filter(a => !a.chiusa);
@@ -4154,6 +4223,32 @@ function Pipeline({
     const label = form.tipo === "Privato"
       ? ((form.nome||"") + " " + (form.cognome||"")).trim() || "Privato"
       : form.ragioneSociale;
+
+    // ── controllo doppioni (blocco duro su email e P.IVA) ───────────────
+    if (isNew) {
+      const emailN = (form.email||"").trim().toLowerCase();
+      const pivaNew = (form.piva||"").trim().replace(/\s/g,"");
+
+      for (const p of dati.prospect) {
+        const pLabel = p.tipo === "Privato"
+          ? ((p.nome||"") + " " + (p.cognome||"")).trim()
+          : (p.ragioneSociale||"");
+        const hits = [];
+        if (emailN && (p.email||"").trim().toLowerCase() === emailN)
+          hits.push("email");
+        if (pivaNew && (p.piva||"").trim().replace(/\s/g,"") === pivaNew)
+          hits.push("P.IVA");
+
+        if (hits.length) {
+          window.alert("⛔ " + hits.join(" e ") + " già presente - apri la scheda esistente:\n\n→ " + pLabel);
+          setModal(null);
+          setDetailId(p.id);
+          return false;
+        }
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────
+
     setDati(d => ({
       ...d,
       prospect: form.id ? d.prospect.map(p => p.id === form.id ? form : p) : [...d.prospect, {
@@ -4188,7 +4283,14 @@ function Pipeline({
   const stati = ["da_contattare","in_trattativa","interessato","acquisito","non_interessato","in_sospeso"];
   const CANALI_LABEL = {fiera:"Fiera",call_diretta:"Call",contatto_aziendale:"Aziendale",web:"Web",passaparola:"Passaparola",email:"Email",visita:"Visita",altro:"Altro"};
   const convertToCliente = (p) => { if(!window.confirm("Convertire "+p.ragioneSociale+" in cliente?")) return; setDati(d=>({...d,clienti:[...d.clienti,{id:uid(),ragioneSociale:p.ragioneSociale,insegna:p.insegna||p.ragioneSociale,referente:p.referente||"",email:p.email||"",telefono:p.telefono||"",indirizzo:p.indirizzo||"",tipo:p.tipo||"horeca",canale:p.canale||"irene",piva:p.piva||""}],prospect:d.prospect.map(x=>x.id===p.id?{...x,stato:"acquisito"}:x)})); if(logAction) logAction("Prospect->Cliente","pipeline",p.ragioneSociale); };
-  const filtered = dati.prospect.filter(p => !filter || p.ragioneSociale.toLowerCase().includes(filter.toLowerCase()) || p.indirizzo?.toLowerCase().includes(filter.toLowerCase()));
+  const filtered = dati.prospect.filter(p => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    const label = p.tipo === "Privato"
+      ? ((p.nome||"") + " " + (p.cognome||"")).trim()
+      : (p.ragioneSociale || "");
+    return label.toLowerCase().includes(q) || (p.indirizzo||"").toLowerCase().includes(q) || (p.email||"").toLowerCase().includes(q);
+  });
   const detail = dati.prospect.find(p => p.id === detailId);
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83C\uDFAF Pipeline Prospect",
@@ -4210,6 +4312,10 @@ function Pipeline({
         outline: "none",
         width: 200
       }
+    }), /*#__PURE__*/React.createElement(Btn, {
+      ch: "🔍 Doppioni",
+      sz: "sm", v: "sec",
+      onClick: () => setModal("doppioni")
     }), /*#__PURE__*/React.createElement(Btn, {
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Prospect"),
       sz: "sm",
@@ -4471,6 +4577,13 @@ function Pipeline({
         onClick: () => { convertToCliente(detail); setDetailId(null); }
       })
     ))
+  }), modal === "doppioni" && /*#__PURE__*/React.createElement(Modal, {
+    title: "🔍 Scansione doppioni prospect",
+    onClose: () => setModal(null),
+    ch: /*#__PURE__*/React.createElement(DoppioniFinder, {
+      prospect: dati.prospect,
+      onOpen: (id) => { setModal(null); setDetailId(id); }
+    })
   }), (modal === "new" || modal === "edit") && /*#__PURE__*/React.createElement(Modal, {
     title: modal === "new" ? "Nuovo Prospect" : "Modifica Prospect",
     onClose: () => setModal(null),
@@ -4506,7 +4619,11 @@ function Pipeline({
       v: form.email || "", on: v => setForm(f => ({...f, email: v}))
     }), /*#__PURE__*/React.createElement(Inp, {
       label: "Telefono", v: form.telefono || "", on: v => setForm(f => ({...f, telefono: v}))
-    }), /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
+    }), form.tipo !== "Privato" ? /*#__PURE__*/React.createElement(Inp, {
+      label: "P.IVA",
+      v: form.piva || "", on: v => setForm(f => ({...f, piva: v})),
+      ph: "IT01234567890"
+    }) : /*#__PURE__*/React.createElement("div", null), /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
       /*#__PURE__*/React.createElement(Inp, {
         label: "Indirizzo", full: true,
         v: form.indirizzo || "", on: v => setForm(f => ({...f, indirizzo: v}))
