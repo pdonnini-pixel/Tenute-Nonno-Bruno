@@ -7574,6 +7574,13 @@ function App() {
     } catch (e) {}
   }, [currentUser]);
   const isReadonly = mod => (ROLE_READONLY[currentUser?.role] || []).includes(mod);
+  const [supaWarn, setSupaWarn] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (window._supaOk === false) setSupaWarn(true);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   // ── CONDITIONAL RENDERS (after all hooks) ──
   if (!dati) return React.createElement("div", {
