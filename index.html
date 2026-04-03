@@ -4711,8 +4711,10 @@ function Pipeline({
     }), /*#__PURE__*/React.createElement(Btn, {
       ch: "Salva",
       onClick: saveProspect
-    })))
-  }));
+    }))
+  )
+}
+));
 }
 
 // ─── CRM CLIENTI ─────────────────────────────────────────────────────────────
@@ -10545,432 +10547,307 @@ const MAIL_TEMPLATES = {
 };
 
 
-function MailingSystem({
-  dati,
-  setDati,
-  logAction
-}) {
-  const [templateKey, setTemplateKey] = useState("primo_contatto");
-  const [tipoSogg, setTipoSogg] = useState("clienti");
-  const [modalita, setModalita] = useState("singolo");
-  const [clienteId, setClienteId] = useState("");
-  const [prospectId, setProspectId] = useState("");
-  const [ordineId, setOrdineId] = useState("");
-  const [oggetto, setOggetto] = useState("");
-  const [corpo, setCorpo] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [selezionati, setSelezionati] = useState([]);
-  const [codaInvii, setCodaInvii] = useState([]);
-  const [filtroTipo, setFiltroTipo] = useState("");
-  const [indiceCorrente, setIndiceCorrente] = useState(0);
-  const template = MAIL_TEMPLATES[templateKey];
-  const cliente = dati.clienti.find(c => c.id === clienteId);
-  const prospect = (dati.prospect||[]).find(p => p.id === prospectId);
-  const ordine = dati.ordini.find(o => o.id === ordineId);
-  const destAttivo = tipoSogg === "clienti"
-    ? (cliente ? {...cliente, nomeDisplay: cliente.insegna || cliente.ragioneSociale} : null)
-    : (prospect ? {
-        ...prospect,
+function MailingSystem({ dati, setDati, logAction }) {
+  var _useState0 = useState("primo_contatto"); var templateKey = _useState0[0]; var setTemplateKey = _useState0[1];
+  var _useState1 = useState("clienti");         var tipoSogg = _useState1[0];   var setTipoSogg = _useState1[1];
+  var _useState2 = useState("singolo");          var modalita = _useState2[0];   var setModalita = _useState2[1];
+  var _useState3 = useState("");                 var clienteId = _useState3[0];  var setClienteId = _useState3[1];
+  var _useState4 = useState("");                 var prospectId = _useState4[0]; var setProspectId = _useState4[1];
+  var _useState5 = useState("");                 var ordineId = _useState5[0];   var setOrdineId = _useState5[1];
+  var _useState6 = useState("");                 var oggetto = _useState6[0];    var setOggetto = _useState6[1];
+  var _useState7 = useState("");                 var corpo = _useState7[0];      var setCorpo = _useState7[1];
+  var _useState8 = useState(false);             var copied = _useState8[0];     var setCopied = _useState8[1];
+  var _useState9 = useState([]);                var selezionati = _useState9[0]; var setSelezionati = _useState9[1];
+  var _useState10 = useState([]);               var codaInvii = _useState10[0];  var setCodaInvii = _useState10[1];
+  var _useState11 = useState("");               var filtroTipo = _useState11[0]; var setFiltroTipo = _useState11[1];
+  var _useState12 = useState(0);               var indiceCorrente = _useState12[0]; var setIndiceCorrente = _useState12[1];
+  var _useState13 = useState([]);              var allegatiSel = _useState13[0]; var setAllegatiSel = _useState13[1];
+
+  var template = MAIL_TEMPLATES[templateKey];
+  var cliente = dati.clienti.find(function(c){ return c.id === clienteId; });
+  var prospect = (dati.prospect||[]).find(function(p){ return p.id === prospectId; });
+  var ordine = dati.ordini.find(function(o){ return o.id === ordineId; });
+  var destAttivo = tipoSogg === "clienti"
+    ? (cliente ? Object.assign({}, cliente, {nomeDisplay: cliente.insegna || cliente.ragioneSociale}) : null)
+    : (prospect ? Object.assign({}, prospect, {
         nomeDisplay: prospect.tipo === "Privato" ? ((prospect.nome||"") + " " + (prospect.cognome||"")).trim() : prospect.ragioneSociale,
         referente: prospect.tipo === "Privato" ? ((prospect.nome||"") + " " + (prospect.cognome||"")).trim() : prospect.referente
-      } : null);
-  const templateFiltrati = Object.entries(MAIL_TEMPLATES).filter(([k,t]) => !t.target || t.target.includes(tipoSogg));
-  const salvaLog = (dest, tmplKey, ogg) => {
+      }) : null);
+  var templateFiltrati = Object.entries(MAIL_TEMPLATES).filter(function(kt){ return !kt[1].target || kt[1].target.includes(tipoSogg); });
+  var listaMassivo = tipoSogg === "clienti"
+    ? dati.clienti.filter(function(c){ return !filtroTipo || c.tipo === filtroTipo; })
+    : (dati.prospect||[]).filter(function(p){ return p.email && (!filtroTipo || p.tipo===filtroTipo) && p.stato!=="non_interessato" && p.stato!=="acquisito"; });
+  var ordiniCliente = dati.ordini.filter(function(o){ return o.clienteId === clienteId; });
+
+  var salvaLog = function(dest, tmplKey, ogg) {
     if (tipoSogg === "clienti") {
-      setDati(d => ({...d, clienti: d.clienti.map(c => c.id !== dest.id ? c : {
-        ...c, emailLog: [{id:uid(), ts:new Date().toISOString(), template:tmplKey, oggetto:ogg, data:todayStr(),
-          ...(ordineId && {ordineId})}, ...(c.emailLog||[])]
-      })}));
+      setDati(function(d){ return Object.assign({}, d, {clienti: d.clienti.map(function(c){
+        return c.id !== dest.id ? c : Object.assign({}, c, {emailLog: [{id:uid(), ts:new Date().toISOString(), template:tmplKey, oggetto:ogg, data:todayStr()}].concat(c.emailLog||[])});
+      })}); });
     } else {
-      setDati(d => ({...d, prospect: d.prospect.map(p => p.id !== dest.id ? p : {
-        ...p, azioni: [...(p.azioni||[]), {
-          id:uid(), tipo:"mail_presentazione", aperta:todayStr(), chiusa:todayStr(),
-          nota:"Inviata via Mailing — " + ogg
-        }]
-      })}));
+      setDati(function(d){ return Object.assign({}, d, {prospect: d.prospect.map(function(p){
+        return p.id !== dest.id ? p : Object.assign({}, p, {azioni: (p.azioni||[]).concat([{id:uid(), tipo:"mail_presentazione", aperta:todayStr(), chiusa:todayStr(), nota:"Inviata via Mailing — "+ogg}])});
+      })}); });
     }
   };
-  const genera = () => {
+
+  var genera = function() {
     if (!destAttivo) return;
     setOggetto(template.oggetto(destAttivo, ordine));
     setCorpo(template.corpo(destAttivo, ordine));
+    setAllegatiSel(ALLEGATI_CANVA.filter(function(a){ return a.tag.includes(templateKey); }).map(function(a){ return a.id; }));
   };
-  const generaCoda = () => {
-    var lista = tipoSogg === "clienti"
-      ? dati.clienti.filter(c => selezionati.includes(c.id))
-      : (dati.prospect||[]).filter(p => selezionati.includes(p.id));
-    var coda = lista.map(x => {
-      var dest = tipoSogg === "clienti"
-        ? {...x, nomeDisplay: x.insegna||x.ragioneSociale}
-        : {...x, nomeDisplay: x.tipo==="Privato" ? ((x.nome||"")+" "+(x.cognome||"")).trim() : x.ragioneSociale,
-            referente: x.tipo==="Privato" ? ((x.nome||"")+" "+(x.cognome||"")).trim() : x.referente};
-      if (!dest.email) return null;
-      return {id:dest.id, nomeDisplay:dest.nomeDisplay, email:dest.email,
-        oggetto:template.oggetto(dest, null), corpo:template.corpo(dest, null), inviata:false};
-    }).filter(Boolean);
-    setCodaInvii(coda); setIndiceCorrente(0);
-  };
-  const apriGmail = () => {
+
+  var apriGmail = function() {
     if (!destAttivo || !destAttivo.email) return;
     window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(destAttivo.email) +
       "&su=" + encodeURIComponent(oggetto) + "&body=" + encodeURIComponent(corpo), "_blank");
     if (logAction) logAction("Email: " + templateKey, "mailing", (destAttivo.nomeDisplay||"") + " — " + oggetto);
     salvaLog(destAttivo, templateKey, oggetto);
   };
-  const inviaCorrente = () => {
+
+  var copia = function() {
+    navigator.clipboard.writeText("OGGETTO: " + oggetto + "\n\n" + corpo).then(function(){
+      setCopied(true); setTimeout(function(){ setCopied(false); }, 2000);
+    });
+  };
+
+  var generaCoda = function() {
+    var lista = tipoSogg === "clienti"
+      ? dati.clienti.filter(function(c){ return selezionati.includes(c.id); })
+      : (dati.prospect||[]).filter(function(p){ return selezionati.includes(p.id); });
+    var coda = lista.map(function(x) {
+      var dest = tipoSogg === "clienti"
+        ? Object.assign({}, x, {nomeDisplay: x.insegna||x.ragioneSociale})
+        : Object.assign({}, x, {nomeDisplay: x.tipo==="Privato" ? ((x.nome||"")+" "+(x.cognome||"")).trim() : x.ragioneSociale});
+      if (!dest.email) return null;
+      return {id:dest.id, nomeDisplay:dest.nomeDisplay, email:dest.email,
+        oggetto:template.oggetto(dest,null), corpo:template.corpo(dest,null), inviata:false};
+    }).filter(Boolean);
+    setCodaInvii(coda); setIndiceCorrente(0);
+  };
+
+  var inviaCorrente = function() {
     var item = codaInvii[indiceCorrente];
     if (!item) return;
     window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(item.email) +
       "&su=" + encodeURIComponent(item.oggetto) + "&body=" + encodeURIComponent(item.corpo), "_blank");
-    var dest = tipoSogg === "clienti" ? dati.clienti.find(c=>c.id===item.id) : (dati.prospect||[]).find(p=>p.id===item.id);
+    var dest = tipoSogg==="clienti" ? dati.clienti.find(function(c){return c.id===item.id;}) : (dati.prospect||[]).find(function(p){return p.id===item.id;});
     if (dest) salvaLog(dest, templateKey, item.oggetto);
-    setCodaInvii(q => q.map((x,i) => i===indiceCorrente ? {...x, inviata:true} : x));
-    if (indiceCorrente < codaInvii.length-1) setIndiceCorrente(i => i+1);
+    setCodaInvii(function(q){ return q.map(function(x,i){ return i===indiceCorrente ? Object.assign({},x,{inviata:true}) : x; }); });
+    if (indiceCorrente < codaInvii.length-1) setIndiceCorrente(function(i){ return i+1; });
   };
-  const copia = () => {
-    navigator.clipboard.writeText(`OGGETTO: ${oggetto}\n\n${corpo}`).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-  const ordiniCliente = dati.ordini.filter(o => o.clienteId === clienteId);
-    var listaMassivo = tipoSogg === "clienti"
-    ? dati.clienti.filter(function(c){ return !filtroTipo || c.tipo === filtroTipo; })
-    : (dati.prospect||[]).filter(function(p){ return p.email && (!filtroTipo || p.tipo===filtroTipo) && p.stato!=="non_interessato" && p.stato!=="acquisito"; });
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
-    title: "\uD83D\uDCE7 Mailing",
-    action: /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:8}},
-      /*#__PURE__*/React.createElement("button", {
-        onClick: function(){ setModalita("singolo"); setCodaInvii([]); },
-        style:{padding:"5px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
-          background:modalita==="singolo"?C.oliva:C.grigio200, color:modalita==="singolo"?"#fff":C.grigio600}
-      }, "\uD83D\uDCE4 Singolo"),
-      /*#__PURE__*/React.createElement("button", {
-        onClick: function(){ setModalita("massivo"); setCodaInvii([]); },
-        style:{padding:"5px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
-          background:modalita==="massivo"?C.oliva:C.grigio200, color:modalita==="massivo"?"#fff":C.grigio600}
-      }, "\uD83D\uDCEC Massivo")
-    )
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: modalita === "massivo" ? "1fr" : "300px 1fr",
-      gap: 16,
-      alignItems: "start"
-    }
-  },
-  modalita === "massivo" && /*#__PURE__*/React.createElement(Card, {
-    ch: /*#__PURE__*/React.createElement(React.Fragment, null,
-      /*#__PURE__*/React.createElement("div", {style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}},
-        /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}}, "DESTINATARI"),
-          /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:6}},
-            ["clienti","prospect"].map(function(t){ return /*#__PURE__*/React.createElement("button",{
-              key:t, onClick:function(){ setTipoSogg(t); setSelezionati([]); setCodaInvii([]); setFiltroTipo(""); },
-              style:{flex:1,padding:"6px 0",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
-                background:tipoSogg===t?C.oliva:C.grigio200,color:tipoSogg===t?"#fff":C.grigio600}
-            }, t==="clienti"?"\uD83D\uDC65 Clienti":"\uD83C\uDFAF Prospect"); })
-          )
-        ),
-        /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}}, "FILTRA TIPO"),
-          /*#__PURE__*/React.createElement("select",{
-            value:filtroTipo, onChange:function(e){ setFiltroTipo(e.target.value); setSelezionati([]); },
-            style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"7px 10px",fontSize:12}
-          }, /*#__PURE__*/React.createElement("option",{value:""},"\u2014 Tutti \u2014"),
-            ["HoReCa","Retail","GDO","Catering","Enoteca","Albergo","Privato","Altro"].map(function(t){
-              return /*#__PURE__*/React.createElement("option",{key:t,value:t},t);
-            })
-          )
-        ),
-        /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}}, "TEMPLATE"),
-          /*#__PURE__*/React.createElement("select",{
-            value:templateKey, onChange:function(e){ setTemplateKey(e.target.value); setCodaInvii([]); },
-            style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"7px 10px",fontSize:12}
-          }, templateFiltrati.map(function(kt){ return /*#__PURE__*/React.createElement("option",{key:kt[0],value:kt[0]},kt[1].label); }))
-        )
-      ),
-      codaInvii.length === 0 && /*#__PURE__*/React.createElement(React.Fragment, null,
-        /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginBottom:10,alignItems:"center"}},
-          /*#__PURE__*/React.createElement("span",{style:{fontSize:12,color:C.grigio600}},
-            selezionati.length + " / " + listaMassivo.length + " selezionati"),
-          /*#__PURE__*/React.createElement("button",{onClick:function(){ setSelezionati(listaMassivo.map(function(x){return x.id;})); },
-            style:{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid "+C.grigio200,cursor:"pointer",background:"#fff"}
-          }, "Seleziona tutti"),
-          /*#__PURE__*/React.createElement("button",{onClick:function(){ setSelezionati([]); },
-            style:{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid "+C.grigio200,cursor:"pointer",background:"#fff"}
-          }, "Deseleziona"),
-          selezionati.length > 0 && /*#__PURE__*/React.createElement("button",{
-            onClick:generaCoda,
-            style:{marginLeft:"auto",padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",
-              background:C.oliva,color:"#fff",fontSize:12,fontWeight:700}
-          }, "\u25B6 Genera coda (" + selezionati.length + ")")
-        ),
-        /*#__PURE__*/React.createElement("div",{style:{maxHeight:420,overflowY:"auto",border:"1px solid "+C.grigio200,borderRadius:8}},
-          listaMassivo.length === 0
-            ? /*#__PURE__*/React.createElement("div",{style:{padding:20,textAlign:"center",color:C.grigio400,fontSize:13}}, "Nessun destinatario con email valida")
-            : listaMassivo.map(function(x,i){
-                var nome = tipoSogg==="clienti" ? (x.insegna||x.ragioneSociale)
-                  : (x.tipo==="Privato" ? ((x.nome||"")+" "+(x.cognome||"")).trim() : x.ragioneSociale);
-                var isSel = selezionati.includes(x.id);
-                var hasEmail = !!x.email;
-                return /*#__PURE__*/React.createElement("div",{
-                  key:x.id,
-                  onClick:function(){ if(hasEmail) setSelezionati(function(s){ return s.includes(x.id)?s.filter(function(id){return id!==x.id;}):s.concat([x.id]); }); },
-                  style:{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",cursor:hasEmail?"pointer":"default",
-                    borderBottom:i<listaMassivo.length-1?"1px solid "+C.grigio100:"none",
-                    background:isSel?C.oliva+"11":"#fff",opacity:hasEmail?1:0.4}
-                },
-                  /*#__PURE__*/React.createElement("input",{type:"checkbox",checked:isSel,disabled:!hasEmail,
-                    onChange:function(){},style:{cursor:hasEmail?"pointer":"default",pointerEvents:"none"}}),
-                  /*#__PURE__*/React.createElement("div",{style:{flex:1}},
-                    /*#__PURE__*/React.createElement("div",{style:{fontSize:13,fontWeight:600,color:C.grigio800}}, nome),
-                    /*#__PURE__*/React.createElement("div",{style:{fontSize:11,color:C.grigio500}},
-                      hasEmail ? x.email : "\u26A0 Email mancante",
-                      tipoSogg==="prospect" && x.stato ? " \u00b7 " + (STATO_FUNNEL[x.stato]&&STATO_FUNNEL[x.stato].l||x.stato) : ""
-                    )
-                  )
-                );
-              })
-        )
-      ),
-      codaInvii.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null,
-        /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:14}},
-          /*#__PURE__*/React.createElement("div",{style:{fontSize:13,fontWeight:700,color:C.grigio800}},
-            "Coda: " + codaInvii.filter(function(x){return x.inviata;}).length + "/" + codaInvii.length + " inviate"
-          ),
-          /*#__PURE__*/React.createElement("button",{
-            onClick:function(){ setCodaInvii([]); setSelezionati([]); },
-            style:{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid "+C.grigio200,cursor:"pointer",background:"#fff"}
-          }, "\u2715 Ricomincia")
-        ),
-        codaInvii.map(function(item,i){
-          var isCorr = i===indiceCorrente && !item.inviata;
-          return /*#__PURE__*/React.createElement("div",{
-            key:i,
-            style:{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:8,marginBottom:6,
-              background:item.inviata?"#e8f5e9":isCorr?C.oliva+"15":C.grigio50,
-              border:"1px solid "+(item.inviata?"#a5d6a7":isCorr?C.oliva:C.grigio200)}
-          },
-            /*#__PURE__*/React.createElement("span",{style:{fontSize:16}}, item.inviata?"\u2705":isCorr?"\u25B6":"\u23F3"),
-            /*#__PURE__*/React.createElement("div",{style:{flex:1}},
-              /*#__PURE__*/React.createElement("div",{style:{fontSize:13,fontWeight:600}}, item.nomeDisplay),
-              /*#__PURE__*/React.createElement("div",{style:{fontSize:11,color:C.grigio500}}, item.email)
-            ),
-            isCorr && /*#__PURE__*/React.createElement("button",{
-              onClick:inviaCorrente,
-              style:{padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",
-                background:C.blu,color:"#fff",fontSize:12,fontWeight:700}
-            }, "\uD83D\uDCE8 Apri Gmail \u2192")
-          );
-        })
+
+  var CE = React.createElement;
+
+  return CE("div", null,
+    CE(SH, {
+      title: "\uD83D\uDCE7 Mailing",
+      action: CE("div", {style:{display:"flex",gap:8}},
+        CE("button", {
+          onClick: function(){ setModalita("singolo"); setCodaInvii([]); },
+          style:{padding:"5px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+            background:modalita==="singolo"?C.oliva:C.grigio200,color:modalita==="singolo"?"#fff":C.grigio600}
+        }, "\uD83D\uDCE4 Singolo"),
+        CE("button", {
+          onClick: function(){ setModalita("massivo"); setCodaInvii([]); },
+          style:{padding:"5px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+            background:modalita==="massivo"?C.oliva:C.grigio200,color:modalita==="massivo"?"#fff":C.grigio600}
+        }, "\uD83D\uDCEC Massivo")
       )
-    )
-  }),
-  modalita === "singolo" && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 12
-    }
-  }, /*#__PURE__*/React.createElement(Card, {
-    ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        fontWeight: 700,
-        color: C.grigio600,
-        marginBottom: 10,
-        letterSpacing: .5
-      }
-    }, "TIPO EMAIL"), templateFiltrati.map(([k, t]) => /*#__PURE__*/React.createElement("button", {
-      key: k,
-      onClick: () => setTemplateKey(k),
-      style: {
-        width: "100%",
-        textAlign: "left",
-        padding: "10px 12px",
-        borderRadius: 8,
-        border: `1.5px solid ${templateKey === k ? t.colore : C.grigio200}`,
-        background: templateKey === k ? t.colore + "11" : "transparent",
-        marginBottom: 6,
-        cursor: "pointer",
-        fontSize: 12,
-        fontWeight: templateKey === k ? 700 : 400,
-        color: templateKey === k ? t.colore : C.grigio600
-      }
-    }, t.label)))
-  }), /*#__PURE__*/React.createElement(Card, {
-    ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      style: {fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}
-    }, "DESTINATARIO"),
-    /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:6,marginBottom:12}},
-      ["clienti","prospect"].map(function(t){ return /*#__PURE__*/React.createElement("button", {
-        key:t,
-        onClick: function(){ setTipoSogg(t); setClienteId(""); setProspectId(""); setOggetto(""); setCorpo(""); },
-        style:{flex:1,padding:"6px 0",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
-          background:tipoSogg===t?C.oliva:C.grigio200,color:tipoSogg===t?"#fff":C.grigio600}
-      }, t==="clienti"?"\uD83D\uDC65 Clienti":"\uD83C\uDFAF Prospect"); })
-    ), tipoSogg === "clienti" ? /*#__PURE__*/React.createElement(Sel, {
-      label: "Cliente", v: clienteId,
-      on: function(v){ setClienteId(v); setOrdineId(""); setOggetto(""); setCorpo(""); },
-      opts: dati.clienti.map(function(c){ return {v:c.id, l:c.insegna||c.ragioneSociale}; })
-    }) : /*#__PURE__*/React.createElement(Sel, {
-      label: "Prospect (con email)", v: prospectId,
-      on: function(v){ setProspectId(v); setOggetto(""); setCorpo(""); },
-      opts: (dati.prospect||[]).filter(function(p){ return !!p.email; }).map(function(p){ return {
-        v:p.id,
-        l:(p.tipo==="Privato" ? ((p.nome||"")+" "+(p.cognome||"")).trim() : p.ragioneSociale||"") +
-          (STATO_FUNNEL[p.stato] ? " \u00b7 "+STATO_FUNNEL[p.stato].l : "")
-      }; })
-    }), destAttivo && /*#__PURE__*/React.createElement("div", {
-      style:{marginTop:8,padding:"8px 10px",background:C.grigio50,borderRadius:6,fontSize:11,color:C.grigio600}
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, "Email:"), " ",
-        destAttivo.email || /*#__PURE__*/React.createElement("span",{style:{color:C.rosso}}, "\u26A0 Non disponibile")),
-      /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, "Referente:"), " ",
-        destAttivo.referente || destAttivo.nomeDisplay || "\u2014")
-    ), (templateKey === "proposta_ordine" || templateKey === "conferma_ordine") && clienteId && /*#__PURE__*/React.createElement("div", {
-      style: {
-        marginTop: 10
-      }
-    }, /*#__PURE__*/React.createElement(Sel, {
-      label: "Ordine collegato",
-      v: ordineId,
-      on: setOrdineId,
-      opts: ordiniCliente.map(o => ({
-        v: o.id,
-        l: `${o.numero} — ${fmtD(o.data)}`
-      }))
-    })))
-  }), /*#__PURE__*/React.createElement(Btn, {
-    ch: "\u26A1 Genera testo",
-    onClick: genera,
-    dis: !destAttivo,
-    style: {
-      width: "100%",
-      justifyContent: "center"
-    }
-  }), corpo && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Btn, {
-    ch: copied ? "✅ Copiato!" : "📋 Copia testo",
-    v: "sec",
-    onClick: copia,
-    style: {
-      width: "100%",
-      justifyContent: "center"
-    }
-  }), /*#__PURE__*/React.createElement("div", {
-    style:{border:"1px solid "+C.grigio200,borderRadius:8,padding:"10px 12px",marginTop:4}
-  },
-    /*#__PURE__*/React.createElement("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}}, "\uD83D\uDCCE ALLEGATI"),
-    ALLEGATI_CANVA.map(function(a){
-      var sel = allegatiSel.includes(a.id);
-      return /*#__PURE__*/React.createElement("div",{
-        key:a.id,
-        onClick:function(){ setAllegatiSel(function(s){ return s.includes(a.id)?s.filter(function(x){return x!==a.id;}):s.concat([a.id]); }); },
-        style:{display:"flex",alignItems:"flex-start",gap:8,marginBottom:6,padding:"6px 8px",borderRadius:6,
-          background:sel?C.oliva+"15":C.grigio50,cursor:"pointer"}
-      },
-        /*#__PURE__*/React.createElement("input",{type:"checkbox",checked:sel,onChange:function(){},style:{marginTop:2,pointerEvents:"none"}}),
-        /*#__PURE__*/React.createElement("div",{style:{flex:1}},
-          /*#__PURE__*/React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.grigio800}}, a.label),
-          /*#__PURE__*/React.createElement("div",{style:{fontSize:10,color:C.grigio500}}, a.desc)
-        )
-      );
     }),
-    allegatiSel.length > 0 && /*#__PURE__*/React.createElement("div",{style:{marginTop:8,paddingTop:8,borderTop:"1px solid "+C.grigio200}},
-      /*#__PURE__*/React.createElement("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:4}}, "\u2193 Scarica PDF prima di allegare:"),
-      ALLEGATI_CANVA.filter(function(a){return allegatiSel.includes(a.id);}).map(function(a){
-        return /*#__PURE__*/React.createElement("a",{
-          key:a.id, href:a.pdfUrl, target:"_blank",
-          style:{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:5,marginBottom:4,
-            background:"#e3f2fd",color:"#1565c0",textDecoration:"none",fontSize:11,fontWeight:700}
-        }, "\u2193 PDF: "+a.label);
-      })
+    CE("div", {style:{display:"grid",gridTemplateColumns:modalita==="massivo"?"1fr":"300px 1fr",gap:16,alignItems:"start"}},
+      modalita === "singolo" && CE("div", {style:{display:"flex",flexDirection:"column",gap:12}},
+        CE(Card, {ch: CE(React.Fragment, null,
+          CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}},"TIPO EMAIL"),
+          templateFiltrati.map(function(kt){
+            var k=kt[0]; var t=kt[1];
+            return CE("button",{
+              key:k,
+              onClick:function(){ setTemplateKey(k); setOggetto(""); setCorpo(""); setAllegatiSel(ALLEGATI_CANVA.filter(function(a){return a.tag.includes(k);}).map(function(a){return a.id;})); },
+              style:{width:"100%",textAlign:"left",padding:"9px 12px",borderRadius:8,marginBottom:5,cursor:"pointer",fontSize:12,
+                border:"1.5px solid "+(templateKey===k?t.colore:C.grigio200),
+                background:templateKey===k?t.colore+"11":"transparent",
+                fontWeight:templateKey===k?700:400,color:templateKey===k?t.colore:C.grigio600}
+            }, t.label);
+          })
+        )}),
+        CE(Card, {ch: CE(React.Fragment, null,
+          CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}},"DESTINATARIO"),
+          CE("div",{style:{display:"flex",gap:6,marginBottom:12}},
+            ["clienti","prospect"].map(function(t){
+              return CE("button",{key:t,
+                onClick:function(){ setTipoSogg(t); setClienteId(""); setProspectId(""); setOggetto(""); setCorpo(""); },
+                style:{flex:1,padding:"6px 0",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+                  background:tipoSogg===t?C.oliva:C.grigio200,color:tipoSogg===t?"#fff":C.grigio600}
+              }, t==="clienti"?"\uD83D\uDC65 Clienti":"\uD83C\uDFAF Prospect");
+            })
+          ),
+          tipoSogg==="clienti"
+            ? CE(Sel,{label:"Cliente",v:clienteId,
+                on:function(v){setClienteId(v);setOrdineId("");setOggetto("");setCorpo("");},
+                opts:dati.clienti.map(function(c){return{v:c.id,l:c.insegna||c.ragioneSociale};})})
+            : CE(Sel,{label:"Prospect (con email)",v:prospectId,
+                on:function(v){setProspectId(v);setOggetto("");setCorpo("");},
+                opts:(dati.prospect||[]).filter(function(p){return !!p.email;}).map(function(p){
+                  var nome=p.tipo==="Privato"?((p.nome||"")+" "+(p.cognome||"")).trim():p.ragioneSociale||"";
+                  return{v:p.id,l:nome+(STATO_FUNNEL[p.stato]?" \u00b7 "+STATO_FUNNEL[p.stato].l:"")};
+                })}),
+          destAttivo && CE("div",{style:{marginTop:8,padding:"8px 10px",background:C.grigio50,borderRadius:6,fontSize:11,color:C.grigio600}},
+            CE("div",null,CE("strong",null,"Email: "),destAttivo.email||CE("span",{style:{color:C.rosso}},"\u26A0 Non disponibile")),
+            CE("div",null,CE("strong",null,"Referente: "),destAttivo.referente||destAttivo.nomeDisplay||"\u2014")
+          ),
+          (templateKey==="proposta_ordine"||templateKey==="conferma_ordine") && clienteId && CE("div",{style:{marginTop:10}},
+            CE(Sel,{label:"Ordine collegato",v:ordineId,on:setOrdineId,
+              opts:ordiniCliente.map(function(o){return{v:o.id,l:o.numero+" — "+fmtD(o.data)};})})
+          )
+        )}),
+        CE(Btn,{ch:"\u26A1 Genera testo",onClick:genera,dis:!destAttivo,style:{width:"100%",justifyContent:"center"}}),
+        corpo && CE(React.Fragment, null,
+          CE(Btn,{ch:copied?"✅ Copiato!":"\uD83D\uDCCB Copia testo",v:"sec",onClick:copia,style:{width:"100%",justifyContent:"center"}}),
+          CE("div",{style:{border:"1px solid "+C.grigio200,borderRadius:8,padding:"10px 12px"}},
+            CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}},"\uD83D\uDCCE ALLEGATI"),
+            ALLEGATI_CANVA.map(function(a){
+              var sel=allegatiSel.includes(a.id);
+              return CE("div",{key:a.id,
+                onClick:function(){setAllegatiSel(function(s){return s.includes(a.id)?s.filter(function(x){return x!==a.id;}):s.concat([a.id]);});},
+                style:{display:"flex",alignItems:"flex-start",gap:8,marginBottom:6,padding:"6px 8px",borderRadius:6,
+                  background:sel?C.oliva+"15":C.grigio50,cursor:"pointer"}},
+                CE("input",{type:"checkbox",checked:sel,onChange:function(){},style:{marginTop:2,pointerEvents:"none"}}),
+                CE("div",{style:{flex:1}},
+                  CE("div",{style:{fontSize:12,fontWeight:600,color:C.grigio800}},a.label),
+                  CE("div",{style:{fontSize:10,color:C.grigio500}},a.desc)
+                )
+              );
+            }),
+            allegatiSel.length>0 && CE("div",{style:{marginTop:8,paddingTop:8,borderTop:"1px solid "+C.grigio200}},
+              CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:4}},"\u2193 Scarica PDF prima di allegare:"),
+              ALLEGATI_CANVA.filter(function(a){return allegatiSel.includes(a.id);}).map(function(a){
+                return CE("a",{key:a.id,href:a.pdfUrl,target:"_blank",
+                  style:{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:5,marginBottom:4,
+                    background:"#e3f2fd",color:"#1565c0",textDecoration:"none",fontSize:11,fontWeight:700}
+                },"\u2193 PDF: "+a.label);
+              })
+            )
+          ),
+          CE(Btn,{ch:"\uD83D\uDCE8 Apri Gmail",onClick:apriGmail,dis:!destAttivo||!destAttivo.email,
+            style:{width:"100%",justifyContent:"center",background:C.blu,color:"#fff",border:"none"}}),
+          allegatiSel.length>0 && CE("div",{style:{fontSize:10,color:C.grigio500,textAlign:"center",lineHeight:1.5,padding:"4px 0"}},
+            "\u2139\uFE0F Scarica i PDF sopra, poi allegali in Gmail dopo l'apertura"),
+          !destAttivo || !destAttivo.email
+            ? CE("div",{style:{fontSize:11,color:C.rosso,textAlign:"center"}},"Email non presente in anagrafica")
+            : null
+        )
+      ),
+      modalita==="singolo" && CE(Card, {ch: CE(React.Fragment, null,
+        CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:12,letterSpacing:.5}},"ANTEPRIMA EMAIL"),
+        !corpo && CE("div",{style:{color:C.grigio400,fontStyle:"italic",fontSize:13,padding:32,textAlign:"center"}},
+          "Seleziona destinatario e tipo, poi clicca \"Genera testo\""
+        ),
+        corpo && CE(React.Fragment, null,
+          CE("div",{style:{marginBottom:12}},
+            CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600}},"OGGETTO"),
+            CE("input",{value:oggetto,onChange:function(e){setOggetto(e.target.value);},
+              style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"8px 10px",fontSize:13,marginTop:4,outline:"none"}})
+          ),
+          CE("div",null,
+            CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600}},"CORPO"),
+            CE("textarea",{value:corpo,onChange:function(e){setCorpo(e.target.value);},rows:20,
+              style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"10px 12px",
+                fontSize:12.5,lineHeight:1.7,marginTop:4,resize:"vertical",outline:"none",fontFamily:"'DM Sans',sans-serif"}})
+          )
+        )
+      )}),
+      modalita==="massivo" && CE(Card, {ch: CE(React.Fragment, null,
+        CE("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}},
+          CE("div",null,
+            CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}},"DESTINATARI"),
+            CE("div",{style:{display:"flex",gap:6}},
+              ["clienti","prospect"].map(function(t){
+                return CE("button",{key:t,
+                  onClick:function(){setTipoSogg(t);setSelezionati([]);setCodaInvii([]);setFiltroTipo("");},
+                  style:{flex:1,padding:"6px 0",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+                    background:tipoSogg===t?C.oliva:C.grigio200,color:tipoSogg===t?"#fff":C.grigio600}
+                }, t==="clienti"?"\uD83D\uDC65 Clienti":"\uD83C\uDFAF Prospect");
+              })
+            )
+          ),
+          CE("div",null,
+            CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}},"FILTRA TIPO"),
+            CE("select",{value:filtroTipo,onChange:function(e){setFiltroTipo(e.target.value);setSelezionati([]);},
+              style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"7px 10px",fontSize:12}},
+              CE("option",{value:""},"\u2014 Tutti \u2014"),
+              ["HoReCa","Retail","GDO","Catering","Enoteca","Albergo","Privato","Altro"].map(function(t){return CE("option",{key:t,value:t},t);})
+            )
+          ),
+          CE("div",null,
+            CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}},"TEMPLATE"),
+            CE("select",{value:templateKey,onChange:function(e){setTemplateKey(e.target.value);setCodaInvii([]);},
+              style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"7px 10px",fontSize:12}},
+              templateFiltrati.map(function(kt){return CE("option",{key:kt[0],value:kt[0]},kt[1].label);})
+            )
+          )
+        ),
+        codaInvii.length===0 && CE(React.Fragment, null,
+          CE("div",{style:{display:"flex",gap:8,marginBottom:10,alignItems:"center"}},
+            CE("span",{style:{fontSize:12,color:C.grigio600}},selezionati.length+" / "+listaMassivo.length+" selezionati"),
+            CE("button",{onClick:function(){setSelezionati(listaMassivo.map(function(x){return x.id;}));},
+              style:{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid "+C.grigio200,cursor:"pointer",background:"#fff"}},"Seleziona tutti"),
+            CE("button",{onClick:function(){setSelezionati([]);},
+              style:{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid "+C.grigio200,cursor:"pointer",background:"#fff"}},"Deseleziona"),
+            selezionati.length>0 && CE("button",{onClick:generaCoda,
+              style:{marginLeft:"auto",padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",
+                background:C.oliva,color:"#fff",fontSize:12,fontWeight:700}
+            },"\u25B6 Genera coda ("+selezionati.length+")")
+          ),
+          CE("div",{style:{maxHeight:420,overflowY:"auto",border:"1px solid "+C.grigio200,borderRadius:8}},
+            listaMassivo.length===0
+              ? CE("div",{style:{padding:20,textAlign:"center",color:C.grigio400,fontSize:13}},"Nessun destinatario con email valida")
+              : listaMassivo.map(function(x,i){
+                  var nome=tipoSogg==="clienti"?(x.insegna||x.ragioneSociale):x.tipo==="Privato"?((x.nome||"")+" "+(x.cognome||"")).trim():x.ragioneSociale;
+                  var isSel=selezionati.includes(x.id); var hasEmail=!!x.email;
+                  return CE("div",{key:x.id,
+                    onClick:function(){if(hasEmail)setSelezionati(function(s){return s.includes(x.id)?s.filter(function(id){return id!==x.id;}):s.concat([x.id]);});},
+                    style:{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",cursor:hasEmail?"pointer":"default",
+                      borderBottom:i<listaMassivo.length-1?"1px solid "+C.grigio100:"none",
+                      background:isSel?C.oliva+"11":"#fff",opacity:hasEmail?1:0.4}},
+                    CE("input",{type:"checkbox",checked:isSel,disabled:!hasEmail,onChange:function(){},style:{cursor:hasEmail?"pointer":"default",pointerEvents:"none"}}),
+                    CE("div",{style:{flex:1}},
+                      CE("div",{style:{fontSize:13,fontWeight:600,color:C.grigio800}},nome),
+                      CE("div",{style:{fontSize:11,color:C.grigio500}},hasEmail?x.email:"\u26A0 Email mancante")
+                    )
+                  );
+                })
+          )
+        ),
+        codaInvii.length>0 && CE(React.Fragment, null,
+          CE("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:14}},
+            CE("div",{style:{fontSize:13,fontWeight:700,color:C.grigio800}},"Coda: "+codaInvii.filter(function(x){return x.inviata;}).length+"/"+codaInvii.length+" inviate"),
+            CE("button",{onClick:function(){setCodaInvii([]);setSelezionati([]);},
+              style:{fontSize:11,padding:"3px 10px",borderRadius:5,border:"1px solid "+C.grigio200,cursor:"pointer",background:"#fff"}},"\u2715 Ricomincia")
+          ),
+          codaInvii.map(function(item,i){
+            var isCorr=i===indiceCorrente&&!item.inviata;
+            return CE("div",{key:i,style:{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:8,marginBottom:6,
+              background:item.inviata?"#e8f5e9":isCorr?C.oliva+"15":C.grigio50,
+              border:"1px solid "+(item.inviata?"#a5d6a7":isCorr?C.oliva:C.grigio200)}},
+              CE("span",{style:{fontSize:16}},item.inviata?"\u2705":isCorr?"\u25B6":"\u23F3"),
+              CE("div",{style:{flex:1}},
+                CE("div",{style:{fontSize:13,fontWeight:600}},item.nomeDisplay),
+                CE("div",{style:{fontSize:11,color:C.grigio500}},item.email)
+              ),
+              isCorr && CE("button",{onClick:inviaCorrente,
+                style:{padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",background:C.blu,color:"#fff",fontSize:12,fontWeight:700}
+              },"\uD83D\uDCE8 Apri Gmail \u2192")
+            );
+          })
+        )
+      )})
     )
-  ), /*#__PURE__*/React.createElement(Btn, {
-    ch: "\uD83D\uDCE8 Apri Gmail",
-    onClick: apriGmail,
-    dis: !destAttivo?.email,
-    style: {
-      width: "100%",
-      justifyContent: "center",
-      background: C.blu,
-      color: "#fff",
-      border: "none"
-    }
-  }), allegatiSel.length > 0 && /*#__PURE__*/React.createElement("div",{
-    style:{fontSize:10,color:C.grigio500,textAlign:"center",lineHeight:1.5,padding:"4px 0"}
-  }, "\u2139\uFE0F Scarica i PDF sopra, poi allegali in Gmail dopo l'apertura"),
-  !destAttivo?.email && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.rosso,
-      textAlign: "center"
-    }
-  }, "Email non presente in anagrafica"))), /*#__PURE__*/React.createElement(Card, {
-    ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        fontWeight: 700,
-        color: C.grigio600,
-        marginBottom: 12,
-        letterSpacing: .5
-      }
-    }, "ANTEPRIMA EMAIL"), !corpo && /*#__PURE__*/React.createElement("div", {
-      style: {
-        color: C.grigio400,
-        fontStyle: "italic",
-        fontSize: 13,
-        padding: 32,
-        textAlign: "center"
-      }
-    }, "Seleziona un cliente e clicca \"Genera testo\""), corpo && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        marginBottom: 12
-      }
-    }, /*#__PURE__*/React.createElement("label", {
-      style: {
-        fontSize: 11,
-        fontWeight: 700,
-        color: C.grigio600
-      }
-    }, "OGGETTO"), /*#__PURE__*/React.createElement("input", {
-      value: oggetto,
-      onChange: e => setOggetto(e.target.value),
-      style: {
-        width: "100%",
-        border: `1.5px solid ${C.grigio200}`,
-        borderRadius: 6,
-        padding: "8px 10px",
-        fontSize: 13,
-        marginTop: 4,
-        outline: "none"
-      }
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-      style: {
-        fontSize: 11,
-        fontWeight: 700,
-        color: C.grigio600
-      }
-    }, "CORPO"), /*#__PURE__*/React.createElement("textarea", {
-      value: corpo,
-      onChange: e => setCorpo(e.target.value),
-      rows: 18,
-      style: {
-        width: "100%",
-        border: `1.5px solid ${C.grigio200}`,
-        borderRadius: 6,
-        padding: "10px 12px",
-        fontSize: 12.5,
-        lineHeight: 1.7,
-        marginTop: 4,
-        resize: "vertical",
-        outline: "none",
-        fontFamily: "'DM Sans',sans-serif"
-      }
-    }))))
-  })));
+  );
 }
+
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONTRATTI
