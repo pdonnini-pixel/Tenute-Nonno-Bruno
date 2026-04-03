@@ -1049,7 +1049,8 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// ─── PALETTE ──────────────────────────────────────────────────────────────────
+</script><script>// TNB-BUILD-20260403-v9
+// ─── PALETTE ──────────────────────────────────────────────────────────────────
 const C = {
   oliva: "#4a5c2f",
   olivaScuro: "#2e3a1c",
@@ -7868,7 +7869,7 @@ function App() {
       alignItems: sideOpen ? "flex-start" : "center",
       gap: 6
     }
-  }, saving && sideOpen && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(HelpFab, {modulo: modulo}), saving && sideOpen && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
       color: "rgba(255,255,255,.35)"
@@ -10455,6 +10456,252 @@ function AlertsPage({
 // ═══════════════════════════════════════════════════════════════════════════
 // MAILING SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════
+// ── HELP SYSTEM ──────────────────────────────────────────────────────────────
+const HELP_CONTENT = {
+  "oggi": {
+    titolo: "Oggi & Azioni",
+    desc: "La scrivania giornaliera. Mostra cosa fare oggi e traccia le azioni commerciali.",
+    tips: [
+      "Inizia sempre da qui ogni mattina",
+      "Le card rosse sono priorità alta — gestiscile per prime",
+      "Le azioni scadute compaiono automaticamente dall'agenda"
+    ],
+    sezioni: [
+      { t: "Agenda del giorno", d: "Attività urgenti estratte automaticamente: prospect da richiamare, ordini in scadenza, alert attivi." },
+      { t: "Azioni recenti", d: "Log delle ultime operazioni. Serve per capire chi ha fatto cosa e quando." }
+    ]
+  },
+  "dashboard": {
+    titolo: "Dashboard BI",
+    desc: "Panoramica numerica: vendite, clienti, magazzino, margini — tutto aggiornato in tempo reale.",
+    tips: [
+      "Clicca sulle card KPI per andare alla sezione corrispondente",
+      "I valori in rosso segnalano situazioni da gestire subito"
+    ],
+    sezioni: [
+      { t: "KPI principali", d: "Fatturato, ordini aperti, clienti attivi, giacenza magazzino." },
+      { t: "Grafici trend", d: "Andamento vendite per formato e periodo. Utile per capire quali prodotti trainano." }
+    ]
+  },
+  "pipeline": {
+    titolo: "Pipeline Prospect",
+    desc: "CRM commerciale. Gestisce tutti i contatti che Irene sta lavorando: ristoranti, enoteche, negozi.",
+    tips: [
+      "Un prospect con email può ricevere mail direttamente dal Mailing",
+      "Quando un prospect diventa cliente, spostalo in Clienti dalla sua scheda",
+      "Usa 🔍 Doppioni per evitare duplicati prima di inserire nuovi contatti"
+    ],
+    sezioni: [
+      { t: "Aggiungi prospect", d: "Clicca '+ Prospect'. Scegli tipo (azienda o privato), compila ragione sociale e stato funnel." },
+      { t: "Stati del funnel", d: "Da contattare → Interessato → In trattativa → Acquisito. Avanza con il bottone freccia sulla card." },
+      { t: "Azioni", d: "Ogni prospect ha un registro azioni (richiamare, mail, campionatura...). Aggiungile dalla scheda e chiudile quando completate." }
+    ]
+  },
+  "clienti": {
+    titolo: "Clienti Acquisiti",
+    desc: "Anagrafica clienti attivi con storico ordini, email inviate e contratti.",
+    tips: [
+      "Email e P.IVA devono essere univoci — il sistema blocca duplicati",
+      "Nella scheda cliente trovi tutto lo storico email inviate via Mailing"
+    ],
+    sezioni: [
+      { t: "Scheda cliente", d: "Clicca su un cliente per vedere ordini, email inviate e contratti attivi." },
+      { t: "Aggiungi cliente", d: "Usa '+ Cliente'. Campi obbligatori: ragione sociale, tipo, email." },
+      { t: "Storico invii", d: "Tutte le email inviate dal Mailing: data, template usato e oggetto." }
+    ]
+  },
+  "ordini": {
+    titolo: "Ordini & Conto Vendita",
+    desc: "Gestione di tutti gli ordini di vendita e i contratti conto vendita.",
+    tips: [
+      "Lo stato ordine segue: Bozza → Confermato → Spedito → Fatturato",
+      "L'IVA al 4% si applica automaticamente ai prodotti biologici alimentari"
+    ],
+    sezioni: [
+      { t: "Nuovo ordine", d: "Seleziona cliente, aggiungi righe prodotto (formato, qta, prezzo), scegli modalità pagamento." },
+      { t: "Conto Vendita", d: "Registra merce consegnata, poi aggiorna le vendite effettive a fine periodo." },
+      { t: "PDF ordine", d: "Da ogni ordine puoi generare il PDF di conferma da inviare al cliente." }
+    ]
+  },
+  "magazzino": {
+    titolo: "Magazzino",
+    desc: "Giacenze per formato e lotto. Si aggiorna automaticamente con ogni ordine confermato.",
+    tips: [
+      "Le giacenze sotto soglia generano un alert automatico",
+      "Ogni uscita di magazzino è collegata a un ordine specifico"
+    ],
+    sezioni: [
+      { t: "Giacenze", d: "Quantità disponibile per ogni formato (100ml, 250ml, 500ml, latte). Aggiornate in tempo reale." },
+      { t: "Movimenti", d: "Storico di tutte le entrate (produzione) e uscite (ordini) per tracciabilità." }
+    ]
+  },
+  "produzione": {
+    titolo: "Produzione — Lotti",
+    desc: "Tracciabilità dei lotti: dalla raccolta alla frangitura fino all'imbottigliamento.",
+    tips: [
+      "Registra ogni lotto subito dopo la frangitura",
+      "La resa tipica è 15-18% del peso delle olive"
+    ],
+    sezioni: [
+      { t: "Lotti", d: "Data raccolta, kg olive, resa in olio, quantità imbottigliata per formato." },
+      { t: "Tracciabilità", d: "Ogni bottiglia venduta è collegabile a un lotto. Fondamentale per certificazioni biologiche e IGP." }
+    ]
+  },
+  "fornitori": {
+    titolo: "Fornitori",
+    desc: "Anagrafica fornitori: bottiglie, tappi, etichette, imballaggi, frantoio.",
+    tips: [
+      "Collega ogni fornitore alla categoria merceologica corretta",
+      "I prezzi d'acquisto entrano nel calcolo dei margini"
+    ],
+    sezioni: [
+      { t: "Scheda fornitore", d: "Contatti, condizioni di pagamento, materiali forniti e storico ordini." },
+      { t: "Ordini d'acquisto", d: "Registra acquisti da fornitori per tracciare costi e calcolare margini reali." }
+    ]
+  },
+  "costi": {
+    titolo: "Costi & Margini",
+    desc: "Analisi della redditività per formato, periodo e canale di vendita.",
+    tips: [
+      "Un margine sotto il 30% è da monitorare",
+      "Il 100ml ha costo unitario più alto ma prezzo al litro maggiore"
+    ],
+    sezioni: [
+      { t: "Margine per formato", d: "Confronta prezzo vendita vs costo totale (produzione + imbottigliamento + etichettatura)." },
+      { t: "Analisi canale", d: "HoReCa vs Retail vs Diretto: qual è il canale più redditizio?" }
+    ]
+  },
+  "listino": {
+    titolo: "Listino Commerciale",
+    desc: "Prezzi ufficiali per formato con scaglioni di quantità. Usati automaticamente negli ordini.",
+    tips: [
+      "Modifica i prezzi solo a inizio campagna commerciale",
+      "Gli ordini già confermati mantengono il prezzo originale al momento dell'ordine"
+    ],
+    sezioni: [
+      { t: "Prezzi base", d: "Prezzo al pubblico, HoReCa e distribuzione per ogni formato — aggiornati Raccolta 2025." },
+      { t: "Scaglioni", d: "I prezzi variano per numero colli. Vengono applicati automaticamente creando gli ordini." }
+    ]
+  },
+  "alerts": {
+    titolo: "Alert & Notifiche",
+    desc: "Centro notifiche automatico. Il sistema genera alert quando serve attenzione.",
+    tips: [
+      "Gli alert si generano automaticamente — non serve configurarli",
+      "Rosso = oggi | Arancio = entro 3 giorni | Grigio = info"
+    ],
+    sezioni: [
+      { t: "Tipologie", d: "Scadenze CV, giacenza sotto soglia, ordini non evasi, prospect da richiamare, contratti in scadenza." },
+      { t: "Gestione", d: "Clicca '→' per andare direttamente alla sezione coinvolta." }
+    ]
+  },
+  "mailing": {
+    titolo: "Mailing",
+    desc: "Email commerciali a clienti e prospect. Non invia in automatico — apre Gmail precompilato.",
+    tips: [
+      "Il testo generato è sempre modificabile prima di inviare",
+      "I prospect devono avere l'email inserita per apparire nella lista",
+      "Scarica i PDF PRIMA di aprire Gmail, poi allega in Gmail"
+    ],
+    sezioni: [
+      { t: "Singolo", d: "Scegli template → destinatario → Genera testo → scarica allegati → Apri Gmail → allega PDF → invia." },
+      { t: "Massivo", d: "Seleziona più destinatari, genera coda, invia uno per uno con 'Apri Gmail'." },
+      { t: "Allegati", d: "Per ogni template vengono suggeriti gli allegati adatti (Scheda Tecnica, Brochure, HoReCa). Puoi modificare la selezione." },
+      { t: "Template", d: "Primo contatto, Campionatura, Follow-up, Recall, Proposta ordine, Conferma ordine, Ringraziamento." }
+    ]
+  },
+  "contratti": {
+    titolo: "Contratti",
+    desc: "Contratti attivi con clienti: vendita diretta, conto vendita, distribuzione.",
+    tips: [
+      "I contratti in scadenza entro 30 giorni generano alert automatici",
+      "Un contratto attivo è prerequisito per alcune tipologie di ordine"
+    ],
+    sezioni: [
+      { t: "Nuovo contratto", d: "Collega a un cliente, scegli tipo, inserisci durata e condizioni." },
+      { t: "Scadenze", d: "I contratti in scadenza entro 30 giorni generano un alert automatico." }
+    ]
+  },
+  "log": {
+    titolo: "Log Attività",
+    desc: "Storico completo di tutte le operazioni eseguite — chi, quando, cosa.",
+    tips: [
+      "Il log non è modificabile — garantisce tracciabilità completa",
+      "Superadmin vede tutto, Commerciale vede solo le proprie azioni"
+    ],
+    sezioni: [
+      { t: "Filtri", d: "Filtra per utente, modulo o periodo per trovare un'operazione specifica." },
+      { t: "Lettura", d: "Ogni riga: quando, chi, cosa ha fatto e in quale sezione." }
+    ]
+  }
+};
+
+function HelpModal({ modulo, onClose }) {
+  var h = HELP_CONTENT[modulo];
+  if (!h) return null;
+  var CE = React.createElement;
+  return CE("div", {
+    onClick: onClose,
+    style: { position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",
+      zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:24 }
+  },
+    CE("div", {
+      onClick: function(e){ e.stopPropagation(); },
+      style: { background:"#fff",borderRadius:14,maxWidth:540,width:"100%",maxHeight:"80vh",
+        overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.22)",fontFamily:"'DM Sans',sans-serif" }
+    },
+      CE("div",{style:{padding:"18px 22px 14px",borderBottom:"1px solid "+C.grigio100,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}},
+        CE("div",null,
+          CE("div",{style:{fontSize:10,fontWeight:700,color:C.oliva,letterSpacing:1.2,marginBottom:4,textTransform:"uppercase"}},"Guida sezione"),
+          CE("h3",{style:{fontSize:17,fontWeight:700,color:C.olivaScuro,margin:0}},h.titolo)
+        ),
+        CE("button",{onClick:onClose,style:{background:"none",border:"none",fontSize:18,cursor:"pointer",
+          color:C.grigio400,padding:"0 0 0 12px",lineHeight:1,flexShrink:0}},"\u2715")
+      ),
+      CE("div",{style:{padding:"14px 22px 20px"}},
+        CE("p",{style:{fontSize:13,color:C.grigio600,lineHeight:1.65,marginTop:0,marginBottom:14}},h.desc),
+        h.sezioni.map(function(s,i){
+          return CE("div",{key:i,style:{marginBottom:10,padding:"9px 13px",background:C.grigio50,
+            borderRadius:8,borderLeft:"3px solid "+C.oliva}},
+            CE("div",{style:{fontSize:12,fontWeight:700,color:C.olivaScuro,marginBottom:3}},s.t),
+            CE("div",{style:{fontSize:12,color:C.grigio600,lineHeight:1.55}},s.d)
+          );
+        }),
+        h.tips && h.tips.length > 0 && CE("div",{style:{marginTop:14,padding:"10px 13px",
+          background:"#fffde7",borderRadius:8,border:"1px solid #f9a825"}},
+          CE("div",{style:{fontSize:10,fontWeight:700,color:"#e65100",letterSpacing:1,marginBottom:7,textTransform:"uppercase"}},
+            "\uD83D\uDCA1 Consigli pratici"),
+          h.tips.map(function(t,i){
+            return CE("div",{key:i,style:{fontSize:12,color:"#4e342e",marginBottom:i<h.tips.length-1?5:0}},
+              "\u2022 "+t);
+          })
+        )
+      )
+    )
+  );
+}
+
+function HelpFab({ modulo }) {
+  var _s = useState(false); var open = _s[0]; var setOpen = _s[1];
+  if (!modulo || !HELP_CONTENT[modulo]) return null;
+  var CE = React.createElement;
+  return CE(React.Fragment, null,
+    CE("button",{
+      onClick: function(){ setOpen(true); },
+      title: "Guida a questa sezione",
+      style:{ position:"fixed",bottom:24,right:24,width:40,height:40,borderRadius:"50%",
+        border:"2px solid "+C.oliva,background:"#fff",cursor:"pointer",
+        fontSize:16,fontWeight:700,color:C.oliva,
+        boxShadow:"0 4px 16px rgba(0,0,0,0.15)",zIndex:800,
+        display:"flex",alignItems:"center",justifyContent:"center",
+        transition:"all .2s" }
+    }, "?"),
+    open && CE(HelpModal, {modulo:modulo, onClose:function(){ setOpen(false); }})
+  );
+}
+
+
+
 const ALLEGATI_CANVA = [
   {
     id: "scheda_tecnica",
