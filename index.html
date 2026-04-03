@@ -4028,14 +4028,17 @@ function Pipeline({
   const [form, setForm] = useState({});
   const [detailId, setDetailId] = useState(null);
   useEffect(() => { setTimeout(() => { if(window._tnbNav && window._tnbNav.targetId){ setDetailId(window._tnbNav.targetId); window._tnbNav=null; } }, 80); }, []);
-  const addCall = id => {
+  const [callNota, setCallNota] = useState("");
+  const addCall = (id, nota) => {
+    const newCall = { data: todayStr(), nota: nota || "" };
     setDati(d => ({
       ...d,
       prospect: d.prospect.map(p => p.id !== id ? p : {
         ...p,
-        calls: [...(p.calls || []), todayStr()]
+        calls: [...(p.calls || []), newCall]
       })
     }));
+    setCallNota("");
   };
   const saveProspect = () => {
     if (!form.ragioneSociale) return;
@@ -4210,7 +4213,7 @@ function Pipeline({
         marginTop: 8
       }
     }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => addCall(p.id),
+      onClick: () => addCall(p.id, ""),
       style: {
         flex: 1,
         background: C.grigio100,
@@ -4301,34 +4304,39 @@ function Pipeline({
         alignItems: "center",
         justifyContent: "space-between"
       }
-    }, "CALL LOG (", (detail.calls || []).length, ")", /*#__PURE__*/React.createElement(Btn, {
+    }, "CALL LOG (", (detail.calls || []).length, ")")), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", gap: 6, marginBottom: 6 }
+    }, /*#__PURE__*/React.createElement("input", {
+      placeholder: "Nota (opz.)",
+      value: callNota,
+      onChange: function(e) { setCallNota(e.target.value); },
+      style: {
+        flex: 1, border: "1px solid " + C.grigio200, borderRadius: 5,
+        padding: "4px 8px", fontSize: 12, color: C.grigio800, background: "#fafafa"
+      }
+    }), /*#__PURE__*/React.createElement(Btn, {
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.phone, null), " Aggiungi oggi"),
       sz: "sm",
       v: "sec",
-      onClick: () => addCall(detail.id)
+      onClick: function() { addCall(detail.id, callNota); }
     })), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 6
-      }
-    }, (detail.calls || []).map((c, i) => /*#__PURE__*/React.createElement("span", {
-      key: i,
-      style: {
-        background: C.grigio100,
-        borderRadius: 6,
-        padding: "3px 10px",
-        fontSize: 11,
-        color: C.grigio600,
-        fontWeight: 500
-      }
-    }, fmtD(c))), !(detail.calls || []).length && /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: C.grigio400,
-        fontStyle: "italic",
-        fontSize: 12
-      }
-    }, "Nessuna call registrata"))), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", flexDirection: "column", gap: 4 }
+    }, (detail.calls || []).slice().reverse().map(function(c, i) {
+      var cData = typeof c === "string" ? c : c.data;
+      var cNota = typeof c === "string" ? "" : (c.nota || "");
+      return /*#__PURE__*/React.createElement("div", {
+        key: i, style: { display: "flex", alignItems: "center", gap: 8 }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          background: C.grigio100, borderRadius: 6, padding: "3px 10px",
+          fontSize: 11, color: C.grigio600, fontWeight: 500, whiteSpace: "nowrap"
+        }
+      }, fmtD(cData)), cNota ? /*#__PURE__*/React.createElement("span", {
+        style: { fontSize: 11, color: C.grigio500, fontStyle: "italic" }
+      }, cNota) : null);
+    }), !(detail.calls || []).length && /*#__PURE__*/React.createElement("span", {
+      style: { color: C.grigio400, fontStyle: "italic", fontSize: 12 }
+    }, "Nessuna call registrata")), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 8,
