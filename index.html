@@ -3763,49 +3763,49 @@ function Dashboard({
     label: "Fatturato Vendite",
     sub: `${dati.ordini.filter(o => o.modalita === "vendita").length} ordini`,
     color: C.oliva,
-    onClick: () => setModulo("ordini")
+    onClick: () => setModuloNav("ordini")
   }), /*#__PURE__*/React.createElement(KPI, {
     icon: "\uD83E\uDD1D",
     val: fmt(cvEsposizione),
     label: "Esposizione CV",
     sub: `${dati.ordini.filter(o => o.modalita === "conto_vendita").length} contratti`,
     color: C.viola,
-    onClick: () => setModulo("ordini")
+    onClick: () => setModuloNav("ordini")
   }), /*#__PURE__*/React.createElement(KPI, {
     icon: "\u26A0\uFE0F",
     val: fmt(daRiscuotere),
     label: "Da Riscuotere",
     sub: `${dati.ordini.filter(o => o.statoPagamento === "da_pagare").length} ordini`,
     color: daRiscuotere > 500 ? C.rosso : C.arancio,
-    onClick: () => setModulo("ordini")
+    onClick: () => setModuloNav("ordini")
   }), /*#__PURE__*/React.createElement(KPI, {
     icon: "\uD83C\uDFAF",
     val: dati.prospect.filter(p => p.stato !== "acquisito").length,
     label: "Prospect Attivi",
     sub: `${dati.prospect.filter(p => p.stato === "interessato").length} interessati`,
     color: C.blu,
-    onClick: () => setModulo("pipeline")
+    onClick: () => setModuloNav("pipeline")
   }), /*#__PURE__*/React.createElement(KPI, {
     icon: "\uD83D\uDC65",
     val: dati.clienti.length,
     label: "Clienti Acquisiti",
     sub: `${dati.clienti.filter(c => c.tipo === "horeca").length} HoReCa`,
     color: C.cyan,
-    onClick: () => setModulo("clienti")
+    onClick: () => setModuloNav("clienti")
   }), sottosoglia.length > 0 && /*#__PURE__*/React.createElement(KPI, {
     icon: "\uD83D\uDCE6",
     val: sottosoglia.length,
     label: "Sotto Soglia",
     sub: sottosoglia.map(s => s.formato).join(", "),
     color: C.rosso,
-    onClick: () => setModulo("magazzino")
+    onClick: () => setModuloNav("magazzino")
   }), cvScadute > 0 && /*#__PURE__*/React.createElement(KPI, {
     icon: "\uD83D\uDD14",
     val: cvScadute,
     label: "CV Scadute",
     sub: "Rendicontazione urgente",
     color: C.rosso,
-    onClick: () => setModulo("ordini")
+    onClick: () => setModuloNav("ordini")
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
@@ -7498,7 +7498,8 @@ function CostiMargini({
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 function App() {
-  const [modulo, setModulo] = useState("dashboard");
+  const _hashMod = window.location.hash.replace("#","") || "";
+  const [modulo, setModulo] = useState(_hashMod || "dashboard");
   const [sideOpen, setSideOpen] = useState(true);
   const [dati, setDati] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -7535,7 +7536,7 @@ function App() {
       }
     } catch (e) {}
     const access = ROLE_ACCESS[user.role];
-    setModulo(access.includes("oggi") ? "oggi" : access.includes("dashboard") ? "dashboard" : access[0]);
+    setModuloNav(access.includes("oggi") ? "oggi" : access.includes("dashboard") ? "dashboard" : access[0]);
   };
   const handleLogout = async () => {
     setCurrentUser(null);
@@ -7574,6 +7575,19 @@ function App() {
     } catch (e) {}
   }, [currentUser]);
   const isReadonly = mod => (ROLE_READONLY[currentUser?.role] || []).includes(mod);
+  // Hash routing: sync URL ↔ modulo
+  const setModuloNav = useCallback((mod) => {
+    setModulo(mod);
+    window.location.hash = mod;
+  }, []);
+  useEffect(() => {
+    const onHash = () => {
+      const m = window.location.hash.replace("#","");
+      if (m) setModulo(m);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
   const [supaWarn, setSupaWarn] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => {
@@ -7773,7 +7787,7 @@ function App() {
     }
   }, NAV.map(n => /*#__PURE__*/React.createElement("button", {
     key: n.k,
-    onClick: () => setModulo(n.k),
+    onClick: () => setModuloNav(n.k),
     title: !sideOpen ? n.l : undefined,
     style: {
       width: "100%",
@@ -7879,7 +7893,7 @@ function App() {
       gap: 12
     }
   }, alerts > 0 && /*#__PURE__*/React.createElement("button", {
-    onClick: () => setModulo("alerts"),
+    onClick: () => setModuloNav("alerts"),
     style: {
       display: "flex",
       alignItems: "center",
@@ -9426,7 +9440,7 @@ function OggiAzioni({
         marginBottom: 8,
         cursor: "pointer"
       },
-      onClick: () => { if(a.tipo==="richiama"&&a.prospect){ window._tnbNav={targetId:a.prospect.id}; if(setModulo) setModulo("pipeline"); } else if(a.cliente){ setSelectedClient(a.cliente); } }
+      onClick: () => { if(a.tipo==="richiama"&&a.prospect){ window._tnbNav={targetId:a.prospect.id}; if(setModuloNav) setModuloNav("pipeline"); } else if(a.cliente){ setSelectedClient(a.cliente); } }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 22,
@@ -10382,7 +10396,7 @@ function AlertsPage({
       ch: `${a.cta} →`,
       sz: "sm",
       v: "sec",
-      onClick: () => { if(a.targetId){ window._tnbNav={targetId:a.targetId}; } setModulo(a.modulo); },
+      onClick: () => { if(a.targetId){ window._tnbNav={targetId:a.targetId}; } setModuloNav(a.modulo); },
       style: {
         flexShrink: 0,
         color: a.color,
