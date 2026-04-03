@@ -4147,20 +4147,29 @@ function Pipeline({
     const idx = STATI_PROGRESSIONE.indexOf(statoAttuale);
     return (idx >= 0 && idx < STATI_PROGRESSIONE.length - 1) ? STATI_PROGRESSIONE[idx + 1] : null;
   };
-  const saveProspect = () => {
-    if (!form.ragioneSociale) return;
+  const _saveProspectData = () => {
+    const isValid = form.tipo === "Privato" ? (form.nome || form.cognome) : form.ragioneSociale;
+    if (!isValid) return false;
     const isNew = !form.id;
+    const label = form.tipo === "Privato"
+      ? ((form.nome||"") + " " + (form.cognome||"")).trim() || "Privato"
+      : form.ragioneSociale;
     setDati(d => ({
       ...d,
       prospect: form.id ? d.prospect.map(p => p.id === form.id ? form : p) : [...d.prospect, {
         ...form,
         id: uid(),
-        calls: []
+        calls: [],
+        azioni: []
       }]
     }));
-    if (logAction) logAction(isNew ? "Nuovo prospect" : "Modifica prospect", "pipeline", form.ragioneSociale);
-    setModal(null);
+    if (logAction) logAction(isNew ? "Nuovo prospect" : "Modifica prospect", "pipeline", label);
+    return true;
   };
+  const saveProspect = () => {
+    if (_saveProspectData()) setModal(null);
+  };
+  const saveProspectSilent = () => { _saveProspectData(); };
   const moveStato = (id, stato) => setDati(d => ({
     ...d,
     prospect: d.prospect.map(p => p.id !== id ? p : {
@@ -4535,11 +4544,26 @@ function Pipeline({
         style: { opacity: form.email ? 1 : 0.4 },
         onClick: () => {
           if(!form.email) return;
-          saveProspect();
-          var nome = form.referente || form.ragioneSociale || "";
+          saveProspectSilent();
+          var nomeRef = form.tipo === "Privato"
+            ? ((form.nome||"") + " " + (form.cognome||"")).trim()
+            : (form.referente || form.ragioneSociale || "");
+          var intestazione = nomeRef ? "Gentile " + nomeRef : "Buongiorno";
           var canaleLabel = CANALE[form.canale] || "";
-          var ogg = "Tenute Nonno Bruno - Olio EVO Biologico Toscano";
-          var corpo = "Gentile " + nome + ",\n\nLa ringraziamo per il tempo dedicatoci" + (canaleLabel ? " (" + canaleLabel + ")" : "") + ".\n\nCome anticipato, produciamo olio EVO biologico sulle colline di Fattucchia, Bagno a Ripoli (FI).\n\nVarieta: Frantoio, Moraiolo, Leccino. Raccolta manuale, frangitura a freddo, cert. biologica.\n\nFormati: 100ml, 250ml, 500ml, Latte 3L e 5L\n\nRimaniamo a disposizione per un incontro.\n\nCordiali saluti,\nIrene Paggetti - Tenute Nonno Bruno\nirene.paggetti@tenutenonnobruno.it  338 1427611";
+          var canaleTxt = canaleLabel ? " a seguito del nostro contatto" : "";
+          var ogg = "Olio EVO biologico di Fattucchia — Tenute Nonno Bruno";
+          var corpo = intestazione + "," + "\n\n" +
+"grazie per la disponibilità" + canaleTxt + ". Come anticipato, le invio qualche dettaglio sul nostro prodotto." + "\n\n" +
+"Tenute Nonno Bruno produce olio extravergine di oliva biologico sulle colline di Fattucchia, a Bagno a Ripoli — a pochi chilometri da Firenze, in un territorio con oliveti pluricentenari." + "\n\n" +
+"Il blend è Frantoio, Moraiolo e Leccino: raccolta rigorosamente manuale, frangitura a freddo entro poche ore. Produzione limitata, certificazione biologica." + "\n" +
+"Un olio a fruttato medio-intenso, equilibrato in amaro e piccante, che si distingue sia a crudo che nella valorizzazione in sala." + "\n\n" +
+"Formati disponibili: 100 ml · 250 ml · 500 ml · Latta 3 L · Latta 5 L" + "\n\n" +
+"Se è disponibile, le faccio recapitare un campione senza impegno: preferisco che sia il prodotto a presentarsi." + "\n\n" +
+"Resto a disposizione per qualsiasi domanda o per fissare un incontro." + "\n\n" +
+"Cordiali saluti," + "\n" +
+"Irene Paggetti" + "\n" +
+"Tenute Nonno Bruno — Fattucchia, Bagno a Ripoli (FI)" + "\n" +
+"irene.paggetti@tenutenonnobruno.it | 338 1427611";
           window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(form.email) + "&su=" + encodeURIComponent(ogg) + "&body=" + encodeURIComponent(corpo), "_blank");
           if(logAction) logAction("Mail pres.", "pipeline", form.ragioneSociale);
           if(form.id) {
@@ -9250,7 +9274,11 @@ function OggiAzioni({
   const prossimi = tutti.filter(a => a.gg !== null && a.gg > 0 && a.gg <= days);
   const renderAzione = (a, i) => {
     const sem = semaforo(a.gg);
-    const nome = a.cliente?.insegna || a.cliente?.ragioneSociale || "—";
+    const nome = a.tipo === "richiama" && a.prospect
+      ? (a.prospect.tipo === "Privato"
+          ? ((a.prospect.nome||"") + " " + (a.prospect.cognome||"")).trim() || a.prospect.ragioneSociale || "Privato"
+          : a.prospect.ragioneSociale || "—")
+      : (a.cliente?.insegna || a.cliente?.ragioneSociale || "—");
     return /*#__PURE__*/React.createElement("div", {
       key: i,
       style: {
@@ -9305,7 +9333,7 @@ function OggiAzioni({
         fontSize: 12,
         color: C.grigio600
       }
-    }, (a.tipo === "followup" || a.tipo === "richiama") && (a.nota || (a.tipo==="richiama"?(a.prospect?.ragioneSociale||"Prospect"):"Ricontattare")), a.tipo === "cv" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "firma" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "pagamento" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`)), /*#__PURE__*/React.createElement("div", {
+    }, (a.tipo === "followup" || a.tipo === "richiama") && (a.nota || (a.tipo==="richiama"?(a.prospect?.tipo==="Privato"?((a.prospect?.nome||"")+" "+(a.prospect?.cognome||"")).trim()||a.prospect?.ragioneSociale||"Privato":a.prospect?.ragioneSociale||"Prospect"):"Ricontattare")), a.tipo === "cv" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "firma" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "pagamento" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`)), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11,
         color: C.grigio400,
