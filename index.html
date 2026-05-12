@@ -1231,7 +1231,7 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260512-v48-pre15
+</script><script>// TNB-BUILD-20260512-v49-mag1
 // ─── TOAST GLOBALE ────────────────────────────────────────────────────────────
 window.tnbToast = (msg, kind) => {
   const id = "tnb_toast_" + Date.now();
@@ -1593,6 +1593,46 @@ const migrateOrdineV48 = (dataObj) => {
   return newData;
 };
 
+// v49-mag1: Magazzino event-sourced.
+// - Movimenti restano in dati.movimenti (globale) ma arricchiti con campi: ordineId, lottoId, auto, skuId, timestamp.
+// - Lotti produzione: aggiunti campi skuFinale, qtaProdotta, caricoMagazzino, dataCaricoMag (per collegamento Produzione→Magazzino).
+// Idempotente via flag _migration_v49.
+const migrateV49Magazzino = (dataObj) => {
+  if (!dataObj || dataObj._migration_v49) return dataObj;
+  const out = { ...dataObj };
+  // Movimenti globali: arricchimento campi
+  if (Array.isArray(out.movimenti)) {
+    out.movimenti = out.movimenti.map(mv => {
+      const dataStr = mv.data || "2025-01-01";
+      const ts = (typeof mv.timestamp === "number" && mv.timestamp > 0)
+        ? mv.timestamp
+        : new Date(dataStr).getTime();
+      return {
+        ...mv,
+        ordineId: mv.ordineId || null,
+        lottoId: mv.lottoId || null,
+        auto: typeof mv.auto === "boolean" ? mv.auto : false,
+        skuId: mv.skuId || mv.magId || null,
+        timestamp: ts
+      };
+    });
+  } else {
+    out.movimenti = [];
+  }
+  // Lotti produzione: nuovi campi per collegamento magazzino
+  if (Array.isArray(out.lotti)) {
+    out.lotti = out.lotti.map(l => ({
+      ...l,
+      skuFinale: l.skuFinale || null,
+      qtaProdotta: typeof l.qtaProdotta === "number" ? l.qtaProdotta : 0,
+      caricoMagazzino: typeof l.caricoMagazzino === "boolean" ? l.caricoMagazzino : false,
+      dataCaricoMag: l.dataCaricoMag || null
+    }));
+  }
+  out._migration_v49 = true;
+  return out;
+};
+
 // ─── HELPER CONSEGNE PER RIGA ─────────────────────────────────────────────────
 const qtaResiduaRiga = r => Math.max(0, (r.qta || 0) - (r.qtaConsegnata || 0));
 const qtaResiduaOrdine = o => (o.righe || []).reduce((s, r) => s + qtaResiduaRiga(r), 0);
@@ -1732,6 +1772,22 @@ const applicaMovimento = (mag, magId, tipo, qta) => {
         break;
       case "scarico_manuale":
         g.disponibile = Math.max(0, (g.disponibile || 0) - q);
+        break;
+      case "scarico_ordine":
+        g.disponibile = Math.max(0, (g.disponibile || 0) - q);
+        break;
+      case "resa_cv":
+        g.disponibile = (g.disponibile || 0) + q;
+        break;
+      case "carico_produzione":
+        g.disponibile = (g.disponibile || 0) + q;
+        break;
+      case "rettifica":
+        // qta positiva = aumento disponibile, negativa = diminuzione
+        g.disponibile = Math.max(0, (g.disponibile || 0) + q);
+        break;
+      case "annullo_ordine":
+        g.disponibile = (g.disponibile || 0) + q;
         break;
       default:
         break;
@@ -9488,16 +9544,37 @@ function Magazzino({
   }, {
     v: "scarico_manuale",
     l: "⚠️ Scarico manuale / perdita"
+  }, {
+    v: "scarico_ordine",
+    l: "📤 Scarico automatico per ordine"
+  }, {
+    v: "resa_cv",
+    l: "↩️ Resa conto vendita"
+  }, {
+    v: "carico_produzione",
+    l: "🫒 Carico da produzione"
+  }, {
+    v: "rettifica",
+    l: "✏️ Rettifica manuale"
+  }, {
+    v: "annullo_ordine",
+    l: "🔄 Annullo scarico ordine"
   }];
   const saveMov = () => {
     if (!form.magId || !form.tipo || !form.qta) return;
     if (!form.qta || Number(form.qta) <= 0) { window.alert('⚠ La quantità deve essere maggiore di 0'); return; }
     const sku = dati.magazzino.find(m => m.id === form.magId);
+    const dataMov = form.data || todayStr();
     const newMov = {
       ...form,
       id: uid(),
       qta: Number(form.qta),
-      data: form.data || todayStr()
+      data: dataMov,
+      ordineId: form.ordineId || null,
+      lottoId: form.lottoId || null,
+      auto: false,
+      skuId: form.magId,
+      timestamp: Date.now()
     };
     setDati(d => ({
       ...d,
@@ -11685,7 +11762,7 @@ function App() {
           if (u) setCurrentUser(u);
         }
         const r = await window.storage.get("tnb-pro-v2");
-        const parsed = migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))));
+        const parsed = migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0))))))));
         if (parsed.agendaState) {
           const validIds = new Set([
             ...parsed.ordini.map(o => `firma_${o.id}`),
