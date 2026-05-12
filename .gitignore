@@ -1,0 +1,6 @@
+.env.local
+deploy.sh
+tnb_deploy.sh
+backup_live_pre_*.html
+.claude/
+.env.local
