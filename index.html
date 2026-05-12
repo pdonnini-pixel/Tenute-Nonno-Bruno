@@ -811,6 +811,47 @@ window.tnbStorage = {
       );
       return resp.ok;
     } catch (_) { return false; }
+  },
+  // v48-pre11: helper generico per upload documenti (DDT/Fatture) sullo stesso bucket tnb-firme.
+  // prefix = "ddt" | "fattura" | "firma" (legacy uploadFirma usa path piatto)
+  uploadDocumento: async function(ordineId, file, prefix) {
+    if (!file) throw new Error("Nessun file selezionato");
+    if (file.size > 10 * 1024 * 1024) throw new Error("File troppo grande (max 10 MB)");
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const ts = Date.now();
+    const safePrefix = (prefix || 'doc').replace(/[^a-z0-9_-]/gi, '');
+    const path = safePrefix + '/' + ordineId + '/' + ts + (ext ? '.' + ext : '');
+    const resp = await fetch(
+      SUPA_URL + '/storage/v1/object/tnb-firme/' + path,
+      {
+        method: 'POST',
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': 'Bearer ' + SUPA_KEY,
+          'Content-Type': file.type || 'application/octet-stream',
+          'x-upsert': 'true'
+        },
+        body: file
+      }
+    );
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      throw new Error('Upload HTTP ' + resp.status + (body ? ' — ' + body.slice(0, 120) : ''));
+    }
+    return {
+      path: path,
+      mime: file.type || '',
+      nomeOriginale: file.name,
+      size: file.size,
+      uploadedAt: new Date().toISOString()
+    };
+  },
+  // Alias generici (riusano deleteFirma + getSignedUrl con path qualunque)
+  deleteDocumento: async function(path) {
+    return window.tnbStorage.deleteFirma(path);
+  },
+  openDocumento: async function(doc) {
+    return window.tnbStorage.openFirma(doc);
   }
 };
 
@@ -1190,7 +1231,7 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260512-v48-pre9
+</script><script>// TNB-BUILD-20260512-v48-pre15
 // ─── TOAST GLOBALE ────────────────────────────────────────────────────────────
 window.tnbToast = (msg, kind) => {
   const id = "tnb_toast_" + Date.now();
@@ -1509,16 +1550,28 @@ const migrateOrdineV46 = (dataObj) => {
 
 // ─── Migrazione v48: aggiunge campi firma + statoLog + spedizione agli ordini.
 //   Idempotente via flag _migration_v48.
+// v48-pre11 esteso: aggiunge ddt + ddtNote + fatture[] + fattureNote (idempotente, uso lo stesso flag).
 const migrateOrdineV48 = (dataObj) => {
   if (!dataObj || dataObj._migration_v48) return dataObj;
   const newData = { ...dataObj };
   const today = (function(){ try { return todayStr(); } catch(_) { return new Date().toISOString().slice(0,10); } })();
   if (Array.isArray(newData.ordini)) {
     newData.ordini = newData.ordini.map(o => {
+      // v48-pre12: DDT diventa array (multi-DDT). Retro-compat: se è oggetto singolo, wrappa in array.
+      let ddtArr;
+      if (Array.isArray(o.ddt)) ddtArr = o.ddt;
+      else if (o.ddt && typeof o.ddt === "object" && o.ddt.path) ddtArr = [{ id: o.ddt.id || (typeof uid === "function" ? uid() : "ddt_" + Date.now()), ...o.ddt }];
+      else ddtArr = [];
       const out = {
         ...o,
         firma: (o.firma && typeof o.firma === "object") ? o.firma : null,
-        spedizione: o.spedizione || "locale"
+        spedizione: o.spedizione || "locale",
+        // v48-pre12: DDT (N documenti per ordine) + nota manuale fallback
+        ddt: ddtArr,
+        ddtNote: typeof o.ddtNote === "string" ? o.ddtNote : "",
+        // v48-pre11: Fatture (N documenti per ordine) + nota manuale fallback
+        fatture: Array.isArray(o.fatture) ? o.fatture : [],
+        fattureNote: typeof o.fattureNote === "string" ? o.fattureNote : ""
       };
       // Backfill statoLog se assente o vuoto: aggiunge una entry sintetica per stato corrente
       if (!Array.isArray(o.statoLog) || o.statoLog.length === 0) {
@@ -3802,6 +3855,73 @@ const STATO_ORDINE = {
     c: C.rosso
   }
 };
+// ─── FLUSSO ORDINE — sequenza canonica per la timeline (annullato è fuori-flusso)
+const FLUSSO_ORDINE = ["da_firmare", "firmato", "consegnato", "fatturato"];
+
+// ─── Componente TimelineStato (v48 G4) ────────────────────────────────────────
+// Renderizza la progress bar 4-step + tooltip con data/utente dalla statoLog.
+// `compact` = versione condensata per le liste.
+function TimelineStato({ stato, statoLog, compact }) {
+  // Stato fuori-flusso: banner rosso
+  if (stato === "annullato") {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: compact ? "3px 8px" : "6px 12px",
+        background: C.rosso,
+        color: "#fff",
+        borderRadius: 6,
+        fontWeight: 700,
+        fontSize: compact ? 10 : 12,
+        textAlign: "center",
+        letterSpacing: 0.5
+      }
+    }, "❌ ANNULLATO");
+  }
+  const idx = FLUSSO_ORDINE.indexOf(stato);
+  const log = Array.isArray(statoLog) ? statoLog : [];
+  const labelFromLog = (s) => {
+    const entry = log.slice().reverse().find(e => e && e.stato === s);
+    if (!entry) return STATO_ORDINE[s]?.l || s;
+    const data = entry.data ? (typeof fmtD === "function" ? fmtD(entry.data.slice(0, 10)) : entry.data.slice(0, 10)) : "";
+    const utente = entry.utente || "";
+    return (STATO_ORDINE[s]?.l || s) + (data ? " · " + data : "") + (utente ? " · " + utente : "");
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: compact ? 2 : 3,
+      width: "100%",
+      alignItems: "stretch"
+    }
+  }, FLUSSO_ORDINE.map((s, i) => {
+    const so = STATO_ORDINE[s];
+    const done = i < idx;
+    const current = i === idx;
+    const future = i > idx;
+    const bg = (done || current) ? so.c : C.grigio200;
+    const txtColor = (done || current) ? "#fff" : C.grigio400;
+    return /*#__PURE__*/React.createElement("div", {
+      key: s,
+      title: labelFromLog(s),
+      style: {
+        flex: 1,
+        padding: compact ? "3px 6px" : "6px 10px",
+        borderRadius: 4,
+        textAlign: "center",
+        fontSize: compact ? 9.5 : 11,
+        fontWeight: current ? 700 : 500,
+        background: bg,
+        color: txtColor,
+        border: current ? `2px solid ${C.olivaScuro}` : "2px solid transparent",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        cursor: "help",
+        transition: "background 0.15s"
+      }
+    }, (done ? "✓ " : current ? "● " : "") + so.l);
+  }));
+}
 const STATO_PAG = {
   da_pagare: {
     l: "Da pagare",
@@ -7255,8 +7375,12 @@ function Ordini({
   const [pdfBusy, setPdfBusy] = useState(null); // null | "preview" | "download"
   const [uploadingFirma, setUploadingFirma] = useState(false);
   const [openingFirma, setOpeningFirma] = useState(false);
+  const [uploadingDdt, setUploadingDdt] = useState(false);
+  const [uploadingFattura, setUploadingFattura] = useState(false);
   const [formErrors, setFormErrors] = useState({});
   const [emailComposeModal, setEmailComposeModal] = useState(null);
+  // v48-pre13: wizard transizione stato (consegnato/fatturato) — permette upload DDT/Fatture + note prima di confermare
+  const [transizioneModal, setTransizioneModal] = useState(null); // null | { tipo: "consegnato"|"fatturato", uploadBusy: false }
 
   // Registra una consegna evasa: marca evaso=true nello schedule, aggiunge entry in consegne[],
   // ricalcola qtaConsegnata e prossimaConsegnaPrevista. Non rimuove la riga schedule (storico).
@@ -7456,8 +7580,27 @@ function Ordini({
     }
     setFormErrors({});
     const anno = (form.data || todayStr()).slice(0, 4);
+    // G4: rileva cambio stato manuale dal dropdown e appendi statoLog
+    const ordinePrev = form.id ? (dati.ordini || []).find(o => o.id === form.id) : null;
+    const statoCambiato = ordinePrev && ordinePrev.stato && form.stato && ordinePrev.stato !== form.stato;
+    let statoLogFinal = form.statoLog || [];
+    if (statoCambiato) {
+      // Se l'ultima entry non corrisponde già al nuovo stato (es. setForm già pushato), appendila
+      const last = statoLogFinal[statoLogFinal.length - 1];
+      if (!last || last.stato !== form.stato) {
+        statoLogFinal = [...statoLogFinal, {
+          stato: form.stato,
+          data: new Date().toISOString(),
+          utente: (currentUser && currentUser.username) || "irene",
+          auto: false,
+          trigger: "manual_dropdown",
+          prev: ordinePrev.stato
+        }];
+      }
+    }
     const ordine = {
       ...form,
+      statoLog: statoLogFinal,
       modalitaFattura: form.modalitaFattura || "unica",
       righe: (form.righe || []).map(r => {
         const mc = r.modalitaConsegna || "immediata";
@@ -7497,9 +7640,15 @@ function Ordini({
     window.tnbConfirm(
       "Eliminare definitivamente l'ordine " + label + "? Verrà cancellata anche l'eventuale firma allegata. L'operazione è irreversibile.",
       function() {
-        // Cleanup firma su Supabase Storage (best-effort)
-        if (o.firma && o.firma.path && window.tnbStorage) {
-          window.tnbStorage.deleteFirma(o.firma.path).catch(_=>{});
+        // Cleanup firma + DDT + fatture su Supabase Storage (best-effort)
+        if (window.tnbStorage) {
+          if (o.firma && o.firma.path) window.tnbStorage.deleteFirma(o.firma.path).catch(_=>{});
+          (Array.isArray(o.ddt) ? o.ddt : (o.ddt ? [o.ddt] : [])).forEach(d => {
+            if (d && d.path) window.tnbStorage.deleteDocumento(d.path).catch(_=>{});
+          });
+          (o.fatture || []).forEach(fat => {
+            if (fat && fat.path) window.tnbStorage.deleteDocumento(fat.path).catch(_=>{});
+          });
         }
         setDati(d => ({ ...d, ordini: (d.ordini || []).filter(x => x.id !== o.id) }));
         if (logAction) logAction("Elimina ordine (SuperAdmin)", "ordini", label);
@@ -7508,6 +7657,134 @@ function Ordini({
       },
       { title: "Conferma eliminazione ordine", okLabel: "Elimina", danger: true }
     );
+  };
+  // ── G4: cambio stato ordine con statoLog tracking ──
+  const updateStato = (ordineId, nuovoStato, opts) => {
+    opts = opts || {};
+    const now = new Date().toISOString();
+    const ord = (dati.ordini || []).find(x => x.id === ordineId);
+    if (!ord) return;
+    const vecchio = ord.stato;
+    if (vecchio === nuovoStato) return;
+    // Best-effort cleanup firma + DDT + fatture su Storage se passa ad annullato
+    if (nuovoStato === "annullato" && window.tnbStorage) {
+      if (ord.firma && ord.firma.path) window.tnbStorage.deleteFirma(ord.firma.path).catch(_ => {});
+      (Array.isArray(ord.ddt) ? ord.ddt : (ord.ddt ? [ord.ddt] : [])).forEach(d => {
+        if (d && d.path) window.tnbStorage.deleteDocumento(d.path).catch(_ => {});
+      });
+      (ord.fatture || []).forEach(fat => {
+        if (fat && fat.path) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
+      });
+    }
+    setDati(d => ({
+      ...d,
+      ordini: d.ordini.map(o => o.id !== ordineId ? o : {
+        ...o,
+        stato: nuovoStato,
+        statoLog: [...(o.statoLog || []), {
+          stato: nuovoStato,
+          data: now,
+          utente: (currentUser && currentUser.username) || "irene",
+          auto: !!opts.auto,
+          trigger: opts.trigger || "manual",
+          prev: vecchio
+        }],
+        firma: (nuovoStato === "annullato") ? null : o.firma,
+        ddt: (nuovoStato === "annullato") ? [] : o.ddt,
+        fatture: (nuovoStato === "annullato") ? [] : o.fatture
+      })
+    }));
+    if (logAction) logAction("Stato → " + (STATO_ORDINE[nuovoStato]?.l || nuovoStato), "ordini", ord.numero || ord.id);
+    if (window.tnbToast) window.tnbToast("Stato → " + (STATO_ORDINE[nuovoStato]?.l || nuovoStato));
+  };
+  // Variante per il modal aperto (modifica form locale invece di setDati)
+  const updateStatoForm = (nuovoStato, opts) => {
+    opts = opts || {};
+    if (!form.stato || form.stato === nuovoStato) return;
+    const now = new Date().toISOString();
+    const vecchio = form.stato;
+    // Best-effort cleanup allegati su Storage se passa ad annullato
+    if (nuovoStato === "annullato" && window.tnbStorage) {
+      if (form.firma && form.firma.path) window.tnbStorage.deleteFirma(form.firma.path).catch(_ => {});
+      (Array.isArray(form.ddt) ? form.ddt : (form.ddt ? [form.ddt] : [])).forEach(d => {
+        if (d && d.path) window.tnbStorage.deleteDocumento(d.path).catch(_ => {});
+      });
+      (form.fatture || []).forEach(fat => {
+        if (fat && fat.path) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
+      });
+    }
+    setForm(f => ({
+      ...f,
+      stato: nuovoStato,
+      statoLog: [...(f.statoLog || []), {
+        stato: nuovoStato,
+        data: now,
+        utente: (currentUser && currentUser.username) || "irene",
+        auto: !!opts.auto,
+        trigger: opts.trigger || "manual",
+        prev: vecchio
+      }],
+      firma: (nuovoStato === "annullato") ? null : f.firma,
+      ddt: (nuovoStato === "annullato") ? [] : f.ddt,
+      fatture: (nuovoStato === "annullato") ? [] : f.fatture
+    }));
+    if (window.tnbToast) window.tnbToast("Stato → " + (STATO_ORDINE[nuovoStato]?.l || nuovoStato));
+  };
+  // ── v48-pre14: rimozione documenti con rollback automatico stato ordine ──
+  // Logica: la firma autorizza "Firmato"; un DDT autorizza "Consegnato"; una fattura autorizza "Fatturato".
+  // Rimuovere l'ULTIMO documento di quel tipo (e nessuna nota manuale fallback) fa retrocedere lo stato.
+  // v48-pre15: rollback ESTESO. La firma è prerequisito di TUTTI gli stati ≥ firmato;
+  // il DDT è prerequisito di consegnato e fatturato; la fattura solo di fatturato.
+  // Rimuovere l'ultimo documento di un tipo (e nessuna nota manuale fallback) retrocede
+  // lo stato fino al primo stato che NON richiede più quel documento.
+  const STATI_RICHIEDONO_FIRMA = ["firmato", "consegnato", "fatturato"];
+  const STATI_RICHIEDONO_DDT = ["consegnato", "fatturato"];
+  const removeFirmaConRollback = () => {
+    const oldPath = form.firma && form.firma.path;
+    const ridurraStato = STATI_RICHIEDONO_FIRMA.includes(form.stato);
+    const labelAttuale = STATO_ORDINE[form.stato]?.l || form.stato;
+    const msg = ridurraStato
+      ? "Rimuovere la firma da questo ordine? L'ordine tornerà allo stato “Da firmare” (attualmente “" + labelAttuale + "”) perché senza firma non è autorizzato. Il file verrà cancellato dallo storage."
+      : "Rimuovere la firma da questo ordine? Il file verrà cancellato dallo storage.";
+    window.tnbConfirm(msg, function() {
+      if (oldPath) window.tnbStorage.deleteDocumento(oldPath).catch(_=>{});
+      setForm(f => ({ ...f, firma: null }));
+      if (ridurraStato) updateStatoForm("da_firmare", { trigger: "rollback_firma_rimossa" });
+      else if (window.tnbToast) window.tnbToast("Firma rimossa");
+    }, { title: "Conferma rimozione firma", okLabel: "Rimuovi", danger: true });
+  };
+  const removeDdtConRollback = (idx) => {
+    const arr = Array.isArray(form.ddt) ? form.ddt : [];
+    const item = arr[idx];
+    const restanti = arr.length - 1;
+    const noteResidue = (form.ddtNote || "").trim().length > 0;
+    const ridurraStato = restanti === 0 && STATI_RICHIEDONO_DDT.includes(form.stato) && !noteResidue;
+    const labelAttuale = STATO_ORDINE[form.stato]?.l || form.stato;
+    const msg = ridurraStato
+      ? "Rimuovere l'ultimo DDT? L'ordine tornerà allo stato “Firmato” (attualmente “" + labelAttuale + "”) perché non resterà alcuna prova di consegna (né file né nota manuale). Suggerimento: aggiungi prima una nota manuale per mantenere lo stato “" + labelAttuale + "”."
+      : "Rimuovere questo DDT?";
+    window.tnbConfirm(msg, function() {
+      if (item && item.path) window.tnbStorage.deleteDocumento(item.path).catch(_=>{});
+      setForm(f => ({ ...f, ddt: (f.ddt || []).filter((_, i) => i !== idx) }));
+      if (ridurraStato) updateStatoForm("firmato", { trigger: "rollback_ddt_rimosso" });
+      else if (window.tnbToast) window.tnbToast("DDT rimosso");
+    }, { title: "Conferma rimozione DDT", okLabel: "Rimuovi", danger: true });
+  };
+  const removeFatturaConRollback = (idx) => {
+    const arr = Array.isArray(form.fatture) ? form.fatture : [];
+    const item = arr[idx];
+    const restanti = arr.length - 1;
+    const noteResidue = (form.fattureNote || "").trim().length > 0;
+    const ridurraStato = restanti === 0 && form.stato === "fatturato" && !noteResidue;
+    const msg = ridurraStato
+      ? "Rimuovere l'ultima fattura? L'ordine tornerà allo stato “Consegnato” perché non resterà alcuna prova di fatturazione (né file né nota manuale). Suggerimento: aggiungi prima una nota manuale per mantenere lo stato “Fatturato”."
+      : "Rimuovere questa fattura?";
+    window.tnbConfirm(msg, function() {
+      if (item && item.path) window.tnbStorage.deleteDocumento(item.path).catch(_=>{});
+      setForm(f => ({ ...f, fatture: (f.fatture || []).filter((_, i) => i !== idx) }));
+      if (ridurraStato) updateStatoForm("consegnato", { trigger: "rollback_fattura_rimossa" });
+      else if (window.tnbToast) window.tnbToast("Fattura rimossa");
+    }, { title: "Conferma rimozione fattura", okLabel: "Rimuovi", danger: true });
   };
   const saveCv = () => {
     if (!cvForm.importoLiquidazione || Number(cvForm.importoLiquidazione) <= 0) {
@@ -7580,7 +7857,7 @@ function Ordini({
     if (r.modalitaConsegna === "schedule") return base + ' 📅';
     return base;
   };
-  const renderGruppoCliente = (gruppo) => { const cl = gruppo.cliente; const cid = cl?.id || '__nessuno__'; const isOpen = !!expandedClients[cid]; const ordini = gruppo.ordini; const totale = ordini.reduce((s,o) => s + totFinale(o), 0); const nDaPagare = ordini.filter(o => o.statoPagamento==='da_pagare'||o.statoPagamento==='parziale').length; const nDaFirmare = ordini.filter(o => o.stato==='da_firmare').length; const nCvScadute = ordini.filter(o => o.modalita==='conto_vendita'&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato').length; return React.createElement(React.Fragment, {key:cid}, React.createElement('tr',{onClick:()=>toggleClient(cid),style:{cursor:'pointer',background:isOpen?'#f0f4e8':((nDaPagare+nDaFirmare+nCvScadute>0)?'#fffbf0':'#fafaf8'),borderBottom:'1.5px solid #e8e6e0'}}, React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,color:'#2e3a1c'}},React.createElement('span',{style:{marginRight:8,fontSize:12}},isOpen?'▼':'▶'),cl?.insegna||cl?.ragioneSociale||'—'), React.createElement('td',{style:{padding:'10px 12px'}},React.createElement('span',{style:{background:'#e8f5e9',color:'#2e7d32',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11}},ordini.length+(ordini.length===1?' ordine':' ordini'))), React.createElement('td',{style:{padding:'10px 12px'}},nDaPagare>0&&React.createElement('span',{style:{background:'#fff3e0',color:'#e65100',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'💶 '+nDaPagare+' da pagare'),nDaFirmare>0&&React.createElement('span',{style:{background:'#e3f2fd',color:'#1565c0',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'✍️ '+nDaFirmare+' da firmare'),nCvScadute>0&&React.createElement('span',{style:{background:'#ffebee',color:'#c62828',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'⚠️ '+nCvScadute+' CV scadute')), React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,textAlign:'right'}},fmt(totale)), React.createElement('td',{style:{padding:'10px 12px',fontSize:11,color:'#888'},colSpan:4},ordini.map(o=>o.numero).join(' · '))), isOpen&&ordini.map(o=>{const isCV=o.modalita==='conto_vendita';const tot=totFinale(o);const scaduta=isCV&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato';const prodotti=(o.righe||[]).map(formatRigaConIcona).join(' · ')||'—';return React.createElement('tr',{key:o.id,style:{background:'#fafbf6',borderBottom:'1px solid #ececec'}},React.createElement('td',{colSpan:5,style:{padding:'10px 18px 10px 36px'}},React.createElement('div',{style:{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}},React.createElement('div',{style:{minWidth:115}},React.createElement('div',{style:{fontWeight:700,fontSize:12,color:'#2e3a1c'}},o.numero||'—'),React.createElement('div',{style:{fontSize:10,color:'#888'}},fmtD(o.data))),React.createElement('span',{style:{fontSize:10,background:isCV?'#7d4799':'#7a8c52',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},isCV?'C.Vendita':'Vendita'),React.createElement('div',{style:{flex:1,minWidth:140,fontSize:11,color:'#5f5e5a'}},prodotti),React.createElement('div',{style:{fontWeight:700,fontSize:13,color:'#2e3a1c',minWidth:90,textAlign:'right'}},fmt(tot)),React.createElement('span',{style:{fontSize:10,background:o.statoPagamento==='pagato'?'#2e7d32':o.statoPagamento==='parziale'?'#f57c00':'#c62828',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},o.statoPagamento==='pagato'?'PAGATO':o.statoPagamento==='parziale'?'PARZIALE':'DA PAGARE'),scaduta&&React.createElement('span',{style:{fontSize:10,background:'#fff3e0',color:'#e65100',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},'⚠ Scaduta'),React.createElement('div',{style:{display:'flex',gap:6,alignItems:'center'}},o.firma&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openFirma(o.firma);},title:'Vedi firma allegata',style:{background:'#e8f5e9',border:'1px solid #2e7d32',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#2e7d32',fontWeight:600}},'📎'),React.createElement('button',{onClick:e=>{e.stopPropagation();handleGeneraPDF(o);},title:'Stampa PDF',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 10px',fontSize:11,cursor:'pointer',color:'#5f5e5a',fontWeight:600}},'PDF'),React.createElement('button',{onClick:e=>{e.stopPropagation();setForm({...o});setModal('edit');},title:'Modifica ordine',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer'}},'✎'),isSuperAdmin&&React.createElement('button',{onClick:e=>{e.stopPropagation();deleteOrdine(o);},title:'Elimina ordine (Super Admin)',style:{background:'#fff',border:'1px solid #c0392b',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#c0392b',fontWeight:600}},'🗑'),React.createElement('select',{value:o.statoPagamento||'da_pagare',onChange:e=>{e.stopPropagation();setDati(d=>({...d,ordini:d.ordini.map(x=>x.id===o.id?{...x,statoPagamento:e.target.value}:x)}));},onClick:e=>e.stopPropagation(),style:{fontSize:11,padding:'4px 6px',border:'1px solid #d4d2cc',borderRadius:5,background:'#fff'}},React.createElement('option',{value:'da_pagare'},'Da pagare'),React.createElement('option',{value:'parziale'},'Parziale'),React.createElement('option',{value:'pagato'},'Pagato'))))));})); };
+  const renderGruppoCliente = (gruppo) => { const cl = gruppo.cliente; const cid = cl?.id || '__nessuno__'; const isOpen = !!expandedClients[cid]; const ordini = gruppo.ordini; const totale = ordini.reduce((s,o) => s + totFinale(o), 0); const nDaPagare = ordini.filter(o => o.statoPagamento==='da_pagare'||o.statoPagamento==='parziale').length; const nDaFirmare = ordini.filter(o => o.stato==='da_firmare').length; const nCvScadute = ordini.filter(o => o.modalita==='conto_vendita'&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato').length; return React.createElement(React.Fragment, {key:cid}, React.createElement('tr',{onClick:()=>toggleClient(cid),style:{cursor:'pointer',background:isOpen?'#f0f4e8':((nDaPagare+nDaFirmare+nCvScadute>0)?'#fffbf0':'#fafaf8'),borderBottom:'1.5px solid #e8e6e0'}}, React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,color:'#2e3a1c'}},React.createElement('span',{style:{marginRight:8,fontSize:12}},isOpen?'▼':'▶'),cl?.insegna||cl?.ragioneSociale||'—'), React.createElement('td',{style:{padding:'10px 12px'}},React.createElement('span',{style:{background:'#e8f5e9',color:'#2e7d32',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11}},ordini.length+(ordini.length===1?' ordine':' ordini'))), React.createElement('td',{style:{padding:'10px 12px'}},nDaPagare>0&&React.createElement('span',{style:{background:'#fff3e0',color:'#e65100',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'💶 '+nDaPagare+' da pagare'),nDaFirmare>0&&React.createElement('span',{style:{background:'#e3f2fd',color:'#1565c0',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'✍️ '+nDaFirmare+' da firmare'),nCvScadute>0&&React.createElement('span',{style:{background:'#ffebee',color:'#c62828',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'⚠️ '+nCvScadute+' CV scadute')), React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,textAlign:'right'}},fmt(totale)), React.createElement('td',{style:{padding:'10px 12px',fontSize:11,color:'#888'},colSpan:4},ordini.map(o=>o.numero).join(' · '))), isOpen&&ordini.map(o=>{const isCV=o.modalita==='conto_vendita';const tot=totFinale(o);const scaduta=isCV&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato';const prodotti=(o.righe||[]).map(formatRigaConIcona).join(' · ')||'—';return React.createElement('tr',{key:o.id,style:{background:'#fafbf6',borderBottom:'1px solid #ececec'}},React.createElement('td',{colSpan:5,style:{padding:'10px 18px 10px 36px'}},React.createElement('div',{style:{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}},React.createElement('div',{style:{minWidth:140}},React.createElement('div',{style:{fontWeight:700,fontSize:12,color:'#2e3a1c'}},o.numero||'—'),React.createElement('div',{style:{fontSize:10,color:'#888',marginBottom:3}},fmtD(o.data)),React.createElement(TimelineStato,{stato:o.stato,statoLog:o.statoLog,compact:true})),React.createElement('span',{style:{fontSize:10,background:isCV?'#7d4799':'#7a8c52',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},isCV?'C.Vendita':'Vendita'),React.createElement('div',{style:{flex:1,minWidth:140,fontSize:11,color:'#5f5e5a'}},prodotti),React.createElement('div',{style:{fontWeight:700,fontSize:13,color:'#2e3a1c',minWidth:90,textAlign:'right'}},fmt(tot)),React.createElement('span',{style:{fontSize:10,background:o.statoPagamento==='pagato'?'#2e7d32':o.statoPagamento==='parziale'?'#f57c00':'#c62828',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},o.statoPagamento==='pagato'?'PAGATO':o.statoPagamento==='parziale'?'PARZIALE':'DA PAGARE'),scaduta&&React.createElement('span',{style:{fontSize:10,background:'#fff3e0',color:'#e65100',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},'⚠ Scaduta'),React.createElement('div',{style:{display:'flex',gap:6,alignItems:'center'}},o.firma&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openFirma(o.firma);},title:'Vedi firma allegata',style:{background:'#e8f5e9',border:'1px solid #2e7d32',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#2e7d32',fontWeight:600}},'📎'),(Array.isArray(o.ddt)?o.ddt:(o.ddt?[o.ddt]:[])).length>0&&React.createElement('button',{onClick:e=>{e.stopPropagation();const arr=Array.isArray(o.ddt)?o.ddt:[o.ddt];window.tnbStorage.openDocumento(arr[0]);},title:(Array.isArray(o.ddt)?o.ddt:[o.ddt]).length+' DDT allegat'+((Array.isArray(o.ddt)?o.ddt:[o.ddt]).length===1?'o':'i'),style:{background:'#e3f2fd',border:'1px solid #1565c0',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#1565c0',fontWeight:600}},'🚚'+((Array.isArray(o.ddt)?o.ddt:[o.ddt]).length>1?(Array.isArray(o.ddt)?o.ddt:[o.ddt]).length:'')),(o.fatture||[]).length>0&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openDocumento(o.fatture[0]);},title:(o.fatture||[]).length+' fattur'+((o.fatture||[]).length===1?'a':'e')+' allegat'+((o.fatture||[]).length===1?'a':'e'),style:{background:'#f3e5f5',border:'1px solid #6a1b9a',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#6a1b9a',fontWeight:600}},'📄'+((o.fatture||[]).length>1?(o.fatture||[]).length:'')),React.createElement('button',{onClick:e=>{e.stopPropagation();handleGeneraPDF(o);},title:'Stampa PDF',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 10px',fontSize:11,cursor:'pointer',color:'#5f5e5a',fontWeight:600}},'PDF'),React.createElement('button',{onClick:e=>{e.stopPropagation();setForm({...o});setModal('edit');},title:'Modifica ordine',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer'}},'✎'),isSuperAdmin&&React.createElement('button',{onClick:e=>{e.stopPropagation();deleteOrdine(o);},title:'Elimina ordine (Super Admin)',style:{background:'#fff',border:'1px solid #c0392b',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#c0392b',fontWeight:600}},'🗑'),React.createElement('select',{value:o.statoPagamento||'da_pagare',onChange:e=>{e.stopPropagation();setDati(d=>({...d,ordini:d.ordini.map(x=>x.id===o.id?{...x,statoPagamento:e.target.value}:x)}));},onClick:e=>e.stopPropagation(),style:{fontSize:11,padding:'4px 6px',border:'1px solid #d4d2cc',borderRadius:5,background:'#fff'}},React.createElement('option',{value:'da_pagare'},'Da pagare'),React.createElement('option',{value:'parziale'},'Parziale'),React.createElement('option',{value:'pagato'},'Pagato'))))));})); };
 
   const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml", "Aceto 20 ml"];
   const ANNATE = ["2025", "2024"];
@@ -7591,25 +7868,37 @@ function Ordini({
     return /*#__PURE__*/React.createElement(TR, {
       key: o.id,
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TD, {
-        ch: /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontWeight: 700,
-            fontSize: 12,
-            color: C.olivaScuro,
-            display: "flex",
-            alignItems: "center",
-            gap: 6
-          }
-        }, o.numero || "—", o.firma && /*#__PURE__*/React.createElement("button", {
-          onClick: e => { e.stopPropagation(); window.tnbStorage.openFirma(o.firma); },
-          title: "Vedi firma allegata",
-          style: { background: "#e8f5e9", border: "1px solid #2e7d32", borderRadius: 4, padding: "1px 5px", fontSize: 10, cursor: "pointer", color: "#2e7d32", fontWeight: 600, lineHeight: 1 }
-        }, "📎")), /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 10,
-            color: C.grigio400
-          }
-        }, fmtD(o.data)))
+        ch: /*#__PURE__*/React.createElement("div", { style: { minWidth: 180 } },
+          /*#__PURE__*/React.createElement("div", {
+            style: {
+              fontWeight: 700,
+              fontSize: 12,
+              color: C.olivaScuro,
+              display: "flex",
+              alignItems: "center",
+              gap: 6
+            }
+          }, o.numero || "—", o.firma && /*#__PURE__*/React.createElement("button", {
+            onClick: e => { e.stopPropagation(); window.tnbStorage.openFirma(o.firma); },
+            title: "Vedi firma allegata",
+            style: { background: "#e8f5e9", border: "1px solid #2e7d32", borderRadius: 4, padding: "1px 5px", fontSize: 10, cursor: "pointer", color: "#2e7d32", fontWeight: 600, lineHeight: 1 }
+          }, "📎"), (() => {
+            const ddtArr = Array.isArray(o.ddt) ? o.ddt : (o.ddt ? [o.ddt] : []);
+            return ddtArr.length > 0 && /*#__PURE__*/React.createElement("button", {
+              onClick: e => { e.stopPropagation(); window.tnbStorage.openDocumento(ddtArr[0]); },
+              title: ddtArr.length + " DDT allegat" + (ddtArr.length === 1 ? "o" : "i"),
+              style: { background: "#e3f2fd", border: "1px solid #1565c0", borderRadius: 4, padding: "1px 5px", fontSize: 10, cursor: "pointer", color: "#1565c0", fontWeight: 600, lineHeight: 1 }
+            }, "🚚" + (ddtArr.length > 1 ? ddtArr.length : ""));
+          })(), (o.fatture || []).length > 0 && /*#__PURE__*/React.createElement("button", {
+            onClick: e => { e.stopPropagation(); window.tnbStorage.openDocumento(o.fatture[0]); },
+            title: (o.fatture || []).length + " fattur" + ((o.fatture || []).length === 1 ? "a" : "e") + " allegat" + ((o.fatture || []).length === 1 ? "a" : "e"),
+            style: { background: "#f3e5f5", border: "1px solid #6a1b9a", borderRadius: 4, padding: "1px 5px", fontSize: 10, cursor: "pointer", color: "#6a1b9a", fontWeight: 600, lineHeight: 1 }
+          }, "📄" + ((o.fatture || []).length > 1 ? (o.fatture || []).length : ""))),
+          /*#__PURE__*/React.createElement("div", {
+            style: { fontSize: 10, color: C.grigio400, marginBottom: 4 }
+          }, fmtD(o.data)),
+          /*#__PURE__*/React.createElement(TimelineStato, { stato: o.stato, statoLog: o.statoLog, compact: true })
+        )
       }), /*#__PURE__*/React.createElement(TD, {
         ch: /*#__PURE__*/React.createElement("span", {
           style: {
@@ -7792,12 +8081,25 @@ function Ordini({
                 /*#__PURE__*/React.createElement("td", { style: { padding: "10px 6px", fontWeight: 600 } }, fmtD(c.dataPrev)),
                 /*#__PURE__*/React.createElement("td", { style: { padding: "10px 6px" } }, cl?.insegna || cl?.ragioneSociale || "—"),
                 /*#__PURE__*/React.createElement("td", { style: { padding: "10px 6px", fontFamily: "monospace", color: C.grigio500 } },
-                  c.ordineNumero,
-                  ord && ord.firma && /*#__PURE__*/React.createElement("button", {
-                    onClick: e => { e.stopPropagation(); window.tnbStorage.openFirma(ord.firma); },
-                    title: "Vedi firma allegata",
-                    style: { marginLeft: 6, background: "#e8f5e9", border: "1px solid #2e7d32", borderRadius: 4, padding: "1px 5px", fontSize: 10, cursor: "pointer", color: "#2e7d32", fontWeight: 600, lineHeight: 1 }
-                  }, "📎")
+                  /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" } },
+                    c.ordineNumero,
+                    ord && ord.firma && /*#__PURE__*/React.createElement("button", {
+                      onClick: e => { e.stopPropagation(); window.tnbStorage.openFirma(ord.firma); },
+                      title: "Vedi firma allegata",
+                      style: { background: "#e8f5e9", border: "1px solid #2e7d32", borderRadius: 4, padding: "1px 5px", fontSize: 10, cursor: "pointer", color: "#2e7d32", fontWeight: 600, lineHeight: 1 }
+                    }, "📎"),
+                    ord && ord.stato && (() => {
+                      const so = STATO_ORDINE[ord.stato];
+                      if (!so) return null;
+                      const log = Array.isArray(ord.statoLog) ? ord.statoLog : [];
+                      const last = log.slice().reverse().find(e => e && e.stato === ord.stato);
+                      const tip = so.l + (last && last.data ? " · " + fmtD(last.data.slice(0, 10)) : "") + (last && last.utente ? " · " + last.utente : "");
+                      return /*#__PURE__*/React.createElement("span", {
+                        title: tip,
+                        style: { fontSize: 9.5, fontWeight: 700, color: "#fff", background: so.c, padding: "1px 6px", borderRadius: 4, fontFamily: "inherit", whiteSpace: "nowrap", cursor: "help" }
+                      }, so.l.toUpperCase());
+                    })()
+                  )
                 ),
                 /*#__PURE__*/React.createElement("td", { style: { padding: "10px 6px" } }, c.formato + (c.annata ? " · " + c.annata : "")),
                 /*#__PURE__*/React.createElement("td", { style: { padding: "10px 6px", fontWeight: 700, textAlign: "right" } }, c.qta + " pz"),
@@ -8276,6 +8578,64 @@ function Ordini({
     }, form.id && /*#__PURE__*/React.createElement("div", {
       style: { width: "100%", padding: "12px 14px", background: "#f7f7f3", borderRadius: 8, marginBottom: 10, border: "1px solid #e0e0d8" }
     },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#303432", letterSpacing: 0.6, marginBottom: 10 } }, "STATO ORDINE"),
+      /*#__PURE__*/React.createElement(TimelineStato, { stato: form.stato, statoLog: form.statoLog }),
+      // Azioni contestuali in base allo stato corrente
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" } },
+        form.stato === "da_firmare" && /*#__PURE__*/React.createElement("div", {
+          style: { fontSize: 11, color: C.grigio400, fontStyle: "italic", flex: 1 }
+        }, "Carica la firma del cliente per avanzare a “Firmato”."),
+        form.stato === "firmato" && /*#__PURE__*/React.createElement(Btn, {
+          ch: "✅ Segna come Consegnato",
+          sz: "sm",
+          onClick: () => setTransizioneModal({ tipo: "consegnato" })
+        }),
+        form.stato === "consegnato" && /*#__PURE__*/React.createElement(Btn, {
+          ch: "💰 Segna come Fatturato",
+          sz: "sm",
+          onClick: () => setTransizioneModal({ tipo: "fatturato" })
+        }),
+        form.stato === "fatturato" && /*#__PURE__*/React.createElement("div", {
+          style: { fontSize: 11, color: C.verde, fontWeight: 700, flex: 1 }
+        }, "✓ Ciclo ordine completato (stato terminale)."),
+        form.stato === "annullato" && /*#__PURE__*/React.createElement(Btn, {
+          ch: "↩ Riapri ordine",
+          v: "sec",
+          sz: "sm",
+          onClick: () => {
+            // Trova lo stato precedente da statoLog (l'ultimo `prev` non-annullato)
+            const log = (form.statoLog || []).slice().reverse();
+            let target = "da_firmare";
+            for (const e of log) {
+              if (e && e.prev && e.prev !== "annullato" && FLUSSO_ORDINE.includes(e.prev)) {
+                target = e.prev;
+                break;
+              }
+            }
+            window.tnbConfirm(
+              "Riaprire l'ordine riportandolo allo stato “" + (STATO_ORDINE[target]?.l || target) + "”?",
+              () => updateStatoForm(target, { trigger: "btn_riapri" }),
+              { title: "Conferma riapertura", okLabel: "Riapri", danger: false }
+            );
+          }
+        }),
+        // Bottone "Annulla ordine" sempre visibile tranne se già annullato/fatturato
+        form.stato !== "annullato" && form.stato !== "fatturato" && /*#__PURE__*/React.createElement(Btn, {
+          ch: "❌ Annulla ordine",
+          v: "dan",
+          sz: "sm",
+          style: { marginLeft: "auto" },
+          onClick: () => window.tnbConfirm(
+            "Annullare definitivamente l'ordine? Se è presente una firma allegata verrà cancellata da Storage.",
+            () => updateStatoForm("annullato", { trigger: "btn_annulla" }),
+            { title: "Conferma annullamento", okLabel: "Annulla ordine", danger: true }
+          )
+        })
+      )
+    ),
+    form.id && /*#__PURE__*/React.createElement("div", {
+      style: { width: "100%", padding: "12px 14px", background: "#f7f7f3", borderRadius: 8, marginBottom: 10, border: "1px solid #e0e0d8" }
+    },
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#303432", letterSpacing: 0.6, marginBottom: 10 } }, "DOCUMENTO FIRMATO"),
       form.firma ? /*#__PURE__*/React.createElement("div", {
         style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }
@@ -8341,18 +8701,7 @@ function Ordini({
         ),
         /*#__PURE__*/React.createElement("button", {
           type: "button",
-          onClick: () => {
-            const oldPath = form.firma && form.firma.path;
-            window.tnbConfirm(
-              "Rimuovere la firma da questo ordine? Il file verrà cancellato dallo storage.",
-              function() {
-                if (oldPath) window.tnbStorage.deleteFirma(oldPath).catch(_=>{});
-                setForm(f => ({ ...f, firma: null }));
-                if (window.tnbToast) window.tnbToast("Firma rimossa");
-              },
-              { title: "Conferma rimozione", okLabel: "Rimuovi", danger: true }
-            );
-          },
+          onClick: removeFirmaConRollback,
           style: { padding: "6px 12px", border: "1px solid #c0392b", background: "#fff", color: "#c0392b", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer" }
         }, "🗑 Rimuovi")
       ) : /*#__PURE__*/React.createElement("div", null,
@@ -8399,6 +8748,230 @@ function Ordini({
           })
         ),
         /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: "#888", marginTop: 6 } }, "Max 5 MB · JPG / PNG / WEBP / HEIC / PDF")
+      )
+    ),
+    // ─── DDT — visibile se stato consegnato o fatturato (N documenti) ───
+    form.id && (form.stato === "consegnato" || form.stato === "fatturato") && /*#__PURE__*/React.createElement("div", {
+      style: { width: "100%", padding: "12px 14px", background: "#f7f7f3", borderRadius: 8, marginBottom: 10, border: "1px solid #e0e0d8" }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#303432", letterSpacing: 0.6 } },
+          "DDT — DOCUMENTI DI TRASPORTO", (form.ddt || []).length > 0 && /*#__PURE__*/React.createElement("span", { style: { fontWeight: 400, color: C.grigio400, marginLeft: 6 } }, "(" + form.ddt.length + ")")
+        ),
+        /*#__PURE__*/React.createElement("label", {
+          style: { display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px", border: "1px dashed #303432", borderRadius: 6, fontSize: 11, fontWeight: 600, color: "#303432", cursor: uploadingDdt ? "wait" : "pointer", background: uploadingDdt ? "#f0f0ec" : "#fff", opacity: uploadingDdt ? 0.6 : 1 }
+        },
+          uploadingDdt ? "⏳ Carico..." : "+ Aggiungi DDT",
+          /*#__PURE__*/React.createElement("input", {
+            type: "file",
+            accept: "image/jpeg,image/png,image/webp,image/heic,application/pdf",
+            disabled: uploadingDdt,
+            style: { display: "none" },
+            onChange: async (e) => {
+              const file = e.target.files && e.target.files[0];
+              if (!file) return;
+              setUploadingDdt(true);
+              try {
+                const result = await window.tnbStorage.uploadDocumento(form.id, file, "ddt");
+                const ddtEntry = { id: uid(), ...result, numero: "", data: "", vettore: "", note: "" };
+                setForm(f => ({ ...f, ddt: [...(Array.isArray(f.ddt) ? f.ddt : []), ddtEntry] }));
+                if (window.tnbToast) window.tnbToast("✅ DDT aggiunto");
+              } catch (err) {
+                console.error("[DDT] upload error:", err);
+                if (window.tnbToast) window.tnbToast("⚠ Upload DDT fallito: " + (err && err.message ? err.message : err), "err");
+              } finally {
+                setUploadingDdt(false);
+                e.target.value = "";
+              }
+            }
+          })
+        )
+      ),
+      // Lista DDT
+      (form.ddt || []).length === 0
+        ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "#888", fontStyle: "italic", marginBottom: 8 } }, "Nessun DDT caricato. Aggiungine uno col bottone sopra o usa le note manuali.")
+        : /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 } },
+            (form.ddt || []).map((d, idx) => /*#__PURE__*/React.createElement("div", {
+              key: d.id || d.path || idx,
+              style: { background: "#fff", border: "1px solid #e0e0d8", borderRadius: 6, padding: "8px 10px" }
+            },
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 } },
+                /*#__PURE__*/React.createElement("span", { style: { fontSize: 14 } }, "🚚"),
+                /*#__PURE__*/React.createElement("div", { style: { flex: "1 1 180px", minWidth: 0, fontSize: 12 } },
+                  /*#__PURE__*/React.createElement("div", { style: { fontWeight: 600, color: "#303432", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.nomeOriginale || ("DDT " + (idx + 1))),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: "#888" } },
+                    (d.size ? (Math.round(d.size / 1024) + " KB") : ""),
+                    d.uploadedAt ? " · " + fmtD(d.uploadedAt.slice(0, 10)) : ""
+                  )
+                ),
+                /*#__PURE__*/React.createElement("button", {
+                  type: "button",
+                  onClick: () => window.tnbStorage.openDocumento(d),
+                  style: { padding: "4px 10px", border: "1px solid #303432", background: "#fff", color: "#303432", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer" }
+                }, "👁"),
+                /*#__PURE__*/React.createElement("button", {
+                  type: "button",
+                  onClick: () => removeDdtConRollback(idx),
+                  style: { padding: "4px 10px", border: "1px solid #c0392b", background: "#fff", color: "#c0392b", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer" }
+                }, "🗑")
+              ),
+              // Metadati DDT: numero, data, vettore, note
+              /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 4 } },
+                /*#__PURE__*/React.createElement("input", {
+                  type: "text",
+                  placeholder: "N° DDT",
+                  value: d.numero || "",
+                  onChange: e => setForm(f => ({ ...f, ddt: f.ddt.map((x, i) => i === idx ? { ...x, numero: e.target.value } : x) })),
+                  style: { padding: "5px 8px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, boxSizing: "border-box" }
+                }),
+                /*#__PURE__*/React.createElement("input", {
+                  type: "date",
+                  value: d.data || "",
+                  onChange: e => setForm(f => ({ ...f, ddt: f.ddt.map((x, i) => i === idx ? { ...x, data: e.target.value } : x) })),
+                  style: { padding: "5px 8px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, boxSizing: "border-box" }
+                }),
+                /*#__PURE__*/React.createElement("input", {
+                  type: "text",
+                  placeholder: "Vettore / corriere",
+                  value: d.vettore || "",
+                  onChange: e => setForm(f => ({ ...f, ddt: f.ddt.map((x, i) => i === idx ? { ...x, vettore: e.target.value } : x) })),
+                  style: { padding: "5px 8px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, boxSizing: "border-box" }
+                })
+              ),
+              /*#__PURE__*/React.createElement("input", {
+                type: "text",
+                placeholder: "Note (opzionale)",
+                value: d.note || "",
+                onChange: e => setForm(f => ({ ...f, ddt: f.ddt.map((x, i) => i === idx ? { ...x, note: e.target.value } : x) })),
+                style: { width: "100%", padding: "5px 8px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, boxSizing: "border-box" }
+              })
+            ))
+          ),
+      // Note manuali DDT (in assenza di file)
+      /*#__PURE__*/React.createElement("div", { style: { marginTop: 4 } },
+        /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: C.grigio400, letterSpacing: 0.5, display: "block", marginBottom: 4 } },
+          (form.ddt || []).length > 0 ? "NOTE AGGIUNTIVE TRASPORTO" : "OPPURE NOTE MANUALI (in assenza di DDT)"
+        ),
+        /*#__PURE__*/React.createElement("textarea", {
+          value: form.ddtNote || "",
+          onChange: e => setForm(f => ({ ...f, ddtNote: e.target.value })),
+          rows: 2,
+          placeholder: (form.ddt || []).length > 0 ? "Annotazioni sul trasporto" : "Es: DDT n. 123/2026 del 12/05/2026 — corriere XY",
+          style: { width: "100%", padding: 8, border: `1.5px solid ${C.grigio200}`, borderRadius: 6, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }
+        })
+      )
+    ),
+    // ─── FATTURE — visibile se stato consegnato o fatturato (N documenti) ───
+    form.id && (form.stato === "consegnato" || form.stato === "fatturato") && /*#__PURE__*/React.createElement("div", {
+      style: { width: "100%", padding: "12px 14px", background: "#f7f7f3", borderRadius: 8, marginBottom: 10, border: "1px solid #e0e0d8" }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#303432", letterSpacing: 0.6 } },
+          "FATTURE COLLEGATE", (form.fatture || []).length > 0 && /*#__PURE__*/React.createElement("span", { style: { fontWeight: 400, color: C.grigio400, marginLeft: 6 } }, "(" + form.fatture.length + ")")
+        ),
+        /*#__PURE__*/React.createElement("label", {
+          style: { display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px", border: "1px dashed #303432", borderRadius: 6, fontSize: 11, fontWeight: 600, color: "#303432", cursor: uploadingFattura ? "wait" : "pointer", background: uploadingFattura ? "#f0f0ec" : "#fff", opacity: uploadingFattura ? 0.6 : 1 }
+        },
+          uploadingFattura ? "⏳ Carico..." : "+ Aggiungi fattura",
+          /*#__PURE__*/React.createElement("input", {
+            type: "file",
+            accept: "image/jpeg,image/png,image/webp,image/heic,application/pdf",
+            disabled: uploadingFattura,
+            style: { display: "none" },
+            onChange: async (e) => {
+              const file = e.target.files && e.target.files[0];
+              if (!file) return;
+              setUploadingFattura(true);
+              try {
+                const result = await window.tnbStorage.uploadDocumento(form.id, file, "fattura");
+                const fatturaEntry = { id: uid(), ...result, numero: "", data: "", importo: 0, note: "" };
+                setForm(f => ({ ...f, fatture: [...(f.fatture || []), fatturaEntry] }));
+                if (window.tnbToast) window.tnbToast("✅ Fattura aggiunta");
+              } catch (err) {
+                console.error("[Fattura] upload error:", err);
+                if (window.tnbToast) window.tnbToast("⚠ Upload fattura fallito: " + (err && err.message ? err.message : err), "err");
+              } finally {
+                setUploadingFattura(false);
+                e.target.value = "";
+              }
+            }
+          })
+        )
+      ),
+      // Lista fatture
+      (form.fatture || []).length === 0
+        ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "#888", fontStyle: "italic", marginBottom: 8 } }, "Nessuna fattura caricata. Aggiungine una col bottone sopra o usa le note manuali.")
+        : /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 } },
+            (form.fatture || []).map((fat, idx) => /*#__PURE__*/React.createElement("div", {
+              key: fat.id || fat.path || idx,
+              style: { background: "#fff", border: "1px solid #e0e0d8", borderRadius: 6, padding: "8px 10px" }
+            },
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 } },
+                /*#__PURE__*/React.createElement("span", { style: { fontSize: 14 } }, "📄"),
+                /*#__PURE__*/React.createElement("div", { style: { flex: "1 1 180px", minWidth: 0, fontSize: 12 } },
+                  /*#__PURE__*/React.createElement("div", { style: { fontWeight: 600, color: "#303432", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, fat.nomeOriginale || ("Fattura " + (idx + 1))),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: "#888" } },
+                    (fat.size ? (Math.round(fat.size / 1024) + " KB") : ""),
+                    fat.uploadedAt ? " · " + fmtD(fat.uploadedAt.slice(0, 10)) : ""
+                  )
+                ),
+                /*#__PURE__*/React.createElement("button", {
+                  type: "button",
+                  onClick: () => window.tnbStorage.openDocumento(fat),
+                  style: { padding: "4px 10px", border: "1px solid #303432", background: "#fff", color: "#303432", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer" }
+                }, "👁"),
+                /*#__PURE__*/React.createElement("button", {
+                  type: "button",
+                  onClick: () => removeFatturaConRollback(idx),
+                  style: { padding: "4px 10px", border: "1px solid #c0392b", background: "#fff", color: "#c0392b", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer" }
+                }, "🗑")
+              ),
+              // Metadati editabili: numero, data, importo, note
+              /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 4 } },
+                /*#__PURE__*/React.createElement("input", {
+                  type: "text",
+                  placeholder: "N° fattura",
+                  value: fat.numero || "",
+                  onChange: e => setForm(f => ({ ...f, fatture: f.fatture.map((x, i) => i === idx ? { ...x, numero: e.target.value } : x) })),
+                  style: { padding: "5px 8px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, boxSizing: "border-box" }
+                }),
+                /*#__PURE__*/React.createElement("input", {
+                  type: "date",
+                  value: fat.data || "",
+                  onChange: e => setForm(f => ({ ...f, fatture: f.fatture.map((x, i) => i === idx ? { ...x, data: e.target.value } : x) })),
+                  style: { padding: "5px 8px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, boxSizing: "border-box" }
+                }),
+                /*#__PURE__*/React.createElement("input", {
+                  type: "number",
+                  min: 0,
+                  step: 0.01,
+                  placeholder: "Importo €",
+                  value: fat.importo || "",
+                  onChange: e => setForm(f => ({ ...f, fatture: f.fatture.map((x, i) => i === idx ? { ...x, importo: Number(e.target.value) || 0 } : x) })),
+                  style: { padding: "5px 8px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, boxSizing: "border-box" }
+                })
+              ),
+              /*#__PURE__*/React.createElement("input", {
+                type: "text",
+                placeholder: "Note (opzionale)",
+                value: fat.note || "",
+                onChange: e => setForm(f => ({ ...f, fatture: f.fatture.map((x, i) => i === idx ? { ...x, note: e.target.value } : x) })),
+                style: { width: "100%", padding: "5px 8px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, boxSizing: "border-box" }
+              })
+            ))
+          ),
+      // Note manuali fatture (in assenza di file)
+      /*#__PURE__*/React.createElement("div", { style: { marginTop: 4 } },
+        /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: C.grigio400, letterSpacing: 0.5, display: "block", marginBottom: 4 } },
+          (form.fatture || []).length > 0 ? "NOTE AGGIUNTIVE FATTURAZIONE" : "OPPURE NOTE MANUALI (in assenza di file)"
+        ),
+        /*#__PURE__*/React.createElement("textarea", {
+          value: form.fattureNote || "",
+          onChange: e => setForm(f => ({ ...f, fattureNote: e.target.value })),
+          rows: 2,
+          placeholder: (form.fatture || []).length > 0 ? "Annotazioni sulla fatturazione" : "Es: Fattura n. 45/2026 del 12/05/2026 — emessa solo cartacea",
+          style: { width: "100%", padding: 8, border: `1.5px solid ${C.grigio200}`, borderRadius: 6, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }
+        })
       )
     ),
     form.id && /*#__PURE__*/React.createElement("div", {
@@ -8635,7 +9208,186 @@ function Ordini({
         "Ricordati di ", /*#__PURE__*/React.createElement("strong", null, "allegare il PDF"), " già scaricato prima di inviare."
       )
     )
-  }), rigaConsegnaIndex !== null && form.righe?.[rigaConsegnaIndex] && /*#__PURE__*/React.createElement(RigaConsegnaModal, {
+  }),
+  // ─── WIZARD CONFERMA TRANSIZIONE STATO (Consegnato / Fatturato) ───
+  transizioneModal && (() => {
+    const isCons = transizioneModal.tipo === "consegnato";
+    const titolo = isCons ? "✅ Conferma consegna" : "💰 Conferma fatturazione";
+    const labelOk = isCons ? "Consegnato" : "Fatturato";
+    const subtitle = isCons
+      ? "Allega uno o più DDT (o scrivi una nota manuale) e poi conferma la consegna al cliente."
+      : "Allega una o più fatture (o scrivi una nota manuale) e poi conferma la fatturazione.";
+    const isUploadBusy = isCons ? uploadingDdt : uploadingFattura;
+    return /*#__PURE__*/React.createElement(Modal, {
+      title: titolo,
+      onClose: () => setTransizioneModal(null),
+      wide: true,
+      footer: /*#__PURE__*/React.createElement(React.Fragment, null,
+        /*#__PURE__*/React.createElement(Btn, {
+          ch: "Annulla",
+          v: "sec",
+          onClick: () => setTransizioneModal(null)
+        }),
+        /*#__PURE__*/React.createElement(Btn, {
+          ch: "✓ Conferma " + labelOk,
+          onClick: () => {
+            updateStatoForm(transizioneModal.tipo, { trigger: "btn_" + transizioneModal.tipo });
+            setTransizioneModal(null);
+          },
+          style: { background: C.olivaScuro, color: "#fff" }
+        })
+      ),
+      ch: /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.grigio600, lineHeight: 1.5 } }, subtitle),
+        // Sezione DDT (per consegnato) o Fatture (per fatturato)
+        isCons
+          ? /*#__PURE__*/React.createElement("div", { style: { padding: "10px 14px", background: "#f7f7f3", borderRadius: 8, border: "1px solid #e0e0d8" } },
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#303432", letterSpacing: 0.6 } },
+                  "DDT — DOCUMENTI DI TRASPORTO", (form.ddt || []).length > 0 && /*#__PURE__*/React.createElement("span", { style: { fontWeight: 400, color: C.grigio400, marginLeft: 6 } }, "(" + form.ddt.length + ")")
+                ),
+                /*#__PURE__*/React.createElement("label", {
+                  style: { display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px", border: "1px dashed #303432", borderRadius: 6, fontSize: 11, fontWeight: 600, color: "#303432", cursor: isUploadBusy ? "wait" : "pointer", background: isUploadBusy ? "#f0f0ec" : "#fff", opacity: isUploadBusy ? 0.6 : 1 }
+                },
+                  isUploadBusy ? "⏳ Carico..." : "+ Aggiungi DDT",
+                  /*#__PURE__*/React.createElement("input", {
+                    type: "file",
+                    accept: "image/jpeg,image/png,image/webp,image/heic,application/pdf",
+                    disabled: isUploadBusy,
+                    style: { display: "none" },
+                    onChange: async (e) => {
+                      const file = e.target.files && e.target.files[0];
+                      if (!file) return;
+                      setUploadingDdt(true);
+                      try {
+                        const result = await window.tnbStorage.uploadDocumento(form.id, file, "ddt");
+                        const ddtEntry = { id: uid(), ...result, numero: "", data: "", vettore: "", note: "" };
+                        setForm(f => ({ ...f, ddt: [...(Array.isArray(f.ddt) ? f.ddt : []), ddtEntry] }));
+                        if (window.tnbToast) window.tnbToast("✅ DDT aggiunto");
+                      } catch (err) {
+                        console.error("[DDT] upload error:", err);
+                        if (window.tnbToast) window.tnbToast("⚠ Upload DDT fallito: " + (err && err.message ? err.message : err), "err");
+                      } finally {
+                        setUploadingDdt(false);
+                        e.target.value = "";
+                      }
+                    }
+                  })
+                )
+              ),
+              (form.ddt || []).length === 0
+                ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "#888", fontStyle: "italic", marginBottom: 8 } }, "Nessun DDT caricato. Procedi senza, oppure usa le note manuali sotto.")
+                : /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 } },
+                    (form.ddt || []).map((d, idx) => /*#__PURE__*/React.createElement("div", {
+                      key: d.id || d.path || idx,
+                      style: { display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#fff", border: "1px solid #e0e0d8", borderRadius: 6, fontSize: 12 }
+                    },
+                      /*#__PURE__*/React.createElement("span", null, "🚚"),
+                      /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.nomeOriginale || ("DDT " + (idx + 1))),
+                      /*#__PURE__*/React.createElement("button", {
+                        type: "button",
+                        onClick: () => window.tnbStorage.openDocumento(d),
+                        style: { padding: "3px 8px", border: "1px solid #303432", background: "#fff", color: "#303432", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer" }
+                      }, "👁"),
+                      /*#__PURE__*/React.createElement("button", {
+                        type: "button",
+                        onClick: () => {
+                          const path = d.path;
+                          if (path) window.tnbStorage.deleteDocumento(path).catch(_=>{});
+                          setForm(f => ({ ...f, ddt: (f.ddt || []).filter((_, i) => i !== idx) }));
+                        },
+                        style: { padding: "3px 8px", border: "1px solid #c0392b", background: "#fff", color: "#c0392b", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer" }
+                      }, "🗑")
+                    ))
+                  ),
+              /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: C.grigio400, letterSpacing: 0.5, display: "block", marginBottom: 4 } },
+                (form.ddt || []).length > 0 ? "NOTE AGGIUNTIVE TRASPORTO" : "OPPURE NOTE MANUALI (in assenza di DDT cartaceo)"
+              ),
+              /*#__PURE__*/React.createElement("textarea", {
+                value: form.ddtNote || "",
+                onChange: e => setForm(f => ({ ...f, ddtNote: e.target.value })),
+                rows: 3,
+                placeholder: "Es: DDT n. 123/2026 del 12/05/2026 — corriere XY · consegnato a mano",
+                style: { width: "100%", padding: 8, border: `1.5px solid ${C.grigio200}`, borderRadius: 6, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }
+              })
+            )
+          : /*#__PURE__*/React.createElement("div", { style: { padding: "10px 14px", background: "#f7f7f3", borderRadius: 8, border: "1px solid #e0e0d8" } },
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#303432", letterSpacing: 0.6 } },
+                  "FATTURE COLLEGATE", (form.fatture || []).length > 0 && /*#__PURE__*/React.createElement("span", { style: { fontWeight: 400, color: C.grigio400, marginLeft: 6 } }, "(" + form.fatture.length + ")")
+                ),
+                /*#__PURE__*/React.createElement("label", {
+                  style: { display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px", border: "1px dashed #303432", borderRadius: 6, fontSize: 11, fontWeight: 600, color: "#303432", cursor: isUploadBusy ? "wait" : "pointer", background: isUploadBusy ? "#f0f0ec" : "#fff", opacity: isUploadBusy ? 0.6 : 1 }
+                },
+                  isUploadBusy ? "⏳ Carico..." : "+ Aggiungi fattura",
+                  /*#__PURE__*/React.createElement("input", {
+                    type: "file",
+                    accept: "image/jpeg,image/png,image/webp,image/heic,application/pdf",
+                    disabled: isUploadBusy,
+                    style: { display: "none" },
+                    onChange: async (e) => {
+                      const file = e.target.files && e.target.files[0];
+                      if (!file) return;
+                      setUploadingFattura(true);
+                      try {
+                        const result = await window.tnbStorage.uploadDocumento(form.id, file, "fattura");
+                        const fatEntry = { id: uid(), ...result, numero: "", data: "", importo: 0, note: "" };
+                        setForm(f => ({ ...f, fatture: [...(f.fatture || []), fatEntry] }));
+                        if (window.tnbToast) window.tnbToast("✅ Fattura aggiunta");
+                      } catch (err) {
+                        console.error("[Fattura] upload error:", err);
+                        if (window.tnbToast) window.tnbToast("⚠ Upload fattura fallito: " + (err && err.message ? err.message : err), "err");
+                      } finally {
+                        setUploadingFattura(false);
+                        e.target.value = "";
+                      }
+                    }
+                  })
+                )
+              ),
+              (form.fatture || []).length === 0
+                ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "#888", fontStyle: "italic", marginBottom: 8 } }, "Nessuna fattura caricata. Procedi senza, oppure usa le note manuali sotto.")
+                : /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 } },
+                    (form.fatture || []).map((fat, idx) => /*#__PURE__*/React.createElement("div", {
+                      key: fat.id || fat.path || idx,
+                      style: { display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#fff", border: "1px solid #e0e0d8", borderRadius: 6, fontSize: 12 }
+                    },
+                      /*#__PURE__*/React.createElement("span", null, "📄"),
+                      /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, fat.nomeOriginale || ("Fattura " + (idx + 1))),
+                      /*#__PURE__*/React.createElement("button", {
+                        type: "button",
+                        onClick: () => window.tnbStorage.openDocumento(fat),
+                        style: { padding: "3px 8px", border: "1px solid #303432", background: "#fff", color: "#303432", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer" }
+                      }, "👁"),
+                      /*#__PURE__*/React.createElement("button", {
+                        type: "button",
+                        onClick: () => {
+                          const path = fat.path;
+                          if (path) window.tnbStorage.deleteDocumento(path).catch(_=>{});
+                          setForm(f => ({ ...f, fatture: (f.fatture || []).filter((_, i) => i !== idx) }));
+                        },
+                        style: { padding: "3px 8px", border: "1px solid #c0392b", background: "#fff", color: "#c0392b", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer" }
+                      }, "🗑")
+                    ))
+                  ),
+              /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: C.grigio400, letterSpacing: 0.5, display: "block", marginBottom: 4 } },
+                (form.fatture || []).length > 0 ? "NOTE AGGIUNTIVE FATTURAZIONE" : "OPPURE NOTE MANUALI (in assenza di fattura allegata)"
+              ),
+              /*#__PURE__*/React.createElement("textarea", {
+                value: form.fattureNote || "",
+                onChange: e => setForm(f => ({ ...f, fattureNote: e.target.value })),
+                rows: 3,
+                placeholder: "Es: Fattura n. 45/2026 del 12/05/2026 — emessa solo cartacea",
+                style: { width: "100%", padding: 8, border: `1.5px solid ${C.grigio200}`, borderRadius: 6, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }
+              })
+            ),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "#888", fontStyle: "italic" } },
+          "💡 Puoi anche confermare senza allegati: i dettagli si possono caricare in qualsiasi momento dopo la transizione di stato."
+        )
+      )
+    });
+  })(),
+  rigaConsegnaIndex !== null && form.righe?.[rigaConsegnaIndex] && /*#__PURE__*/React.createElement(RigaConsegnaModal, {
     riga: form.righe[rigaConsegnaIndex],
     onClose: () => setRigaConsegnaIndex(null),
     onSave: configConsegna => {
@@ -15384,7 +16136,13 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
                   setDangerBusy("ordini");
                   try {
                     // Cleanup firme su Storage (best-effort, parallelo)
-                    const paths = (dati.ordini || []).filter(o => o.firma && o.firma.path).map(o => o.firma.path);
+                    const paths = (dati.ordini || []).flatMap(o => {
+                      const ps = [];
+                      if (o.firma && o.firma.path) ps.push(o.firma.path);
+                      (Array.isArray(o.ddt) ? o.ddt : (o.ddt ? [o.ddt] : [])).forEach(d => { if (d && d.path) ps.push(d.path); });
+                      (o.fatture || []).forEach(fat => { if (fat && fat.path) ps.push(fat.path); });
+                      return ps;
+                    });
                     if (paths.length > 0 && window.tnbStorage) {
                       await Promise.all(paths.map(p => window.tnbStorage.deleteFirma(p).catch(_=>{})));
                     }
@@ -15438,7 +16196,13 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
                 async function() {
                   setDangerBusy("reset");
                   try {
-                    const paths = (dati.ordini || []).filter(o => o.firma && o.firma.path).map(o => o.firma.path);
+                    const paths = (dati.ordini || []).flatMap(o => {
+                      const ps = [];
+                      if (o.firma && o.firma.path) ps.push(o.firma.path);
+                      (Array.isArray(o.ddt) ? o.ddt : (o.ddt ? [o.ddt] : [])).forEach(d => { if (d && d.path) ps.push(d.path); });
+                      (o.fatture || []).forEach(fat => { if (fat && fat.path) ps.push(fat.path); });
+                      return ps;
+                    });
                     if (paths.length > 0 && window.tnbStorage) {
                       await Promise.all(paths.map(p => window.tnbStorage.deleteFirma(p).catch(_=>{})));
                     }
