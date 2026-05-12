@@ -1596,30 +1596,63 @@ const migrateOrdineV48 = (dataObj) => {
 // v49-mag1: Magazzino event-sourced.
 // - Movimenti restano in dati.movimenti (globale) ma arricchiti con campi: ordineId, lottoId, auto, skuId, timestamp.
 // - Lotti produzione: aggiunti campi skuFinale, qtaProdotta, caricoMagazzino, dataCaricoMag (per collegamento Produzione→Magazzino).
+// - Per ogni SKU con discrepanza tra m.giacenza e ricalcolaGiacenza(movimenti), emette movimento sintetico
+//   "apertura" datato 1970-01-01 (timestamp=0) per riconciliare lo storico event-sourced.
 // Idempotente via flag _migration_v49.
 const migrateV49Magazzino = (dataObj) => {
   if (!dataObj || dataObj._migration_v49) return dataObj;
   const out = { ...dataObj };
-  // Movimenti globali: arricchimento campi
-  if (Array.isArray(out.movimenti)) {
-    out.movimenti = out.movimenti.map(mv => {
-      const dataStr = mv.data || "2025-01-01";
-      const ts = (typeof mv.timestamp === "number" && mv.timestamp > 0)
-        ? mv.timestamp
-        : new Date(dataStr).getTime();
-      return {
-        ...mv,
-        ordineId: mv.ordineId || null,
-        lottoId: mv.lottoId || null,
-        auto: typeof mv.auto === "boolean" ? mv.auto : false,
-        skuId: mv.skuId || mv.magId || null,
-        timestamp: ts
-      };
+  // 1. Movimenti globali: arricchimento campi
+  let mov = Array.isArray(out.movimenti) ? out.movimenti : [];
+  mov = mov.map(mv => {
+    const dataStr = mv.data || "2025-01-01";
+    const ts = (typeof mv.timestamp === "number" && mv.timestamp > 0)
+      ? mv.timestamp
+      : new Date(dataStr).getTime();
+    return {
+      ...mv,
+      ordineId: mv.ordineId || null,
+      lottoId: mv.lottoId || null,
+      auto: typeof mv.auto === "boolean" ? mv.auto : false,
+      skuId: mv.skuId || mv.magId || null,
+      timestamp: ts
+    };
+  });
+  // 2. Aperture sintetiche per riconciliare m.giacenza con ricalcolaGiacenza(movimenti).
+  //    Per ogni SKU calcola delta = m.giacenza - ricalcolaGiacenza(movimentiSku); se non-zero su almeno
+  //    uno stato, emette un movimento "apertura" con timestamp=0 (precede tutti i movimenti reali).
+  const aperture = [];
+  if (Array.isArray(out.magazzino)) {
+    out.magazzino.forEach(m => {
+      if (!m || !m.giacenza) return;
+      const mvSku = mov.filter(x => (x.skuId || x.magId) === m.id);
+      const calc = ricalcolaGiacenza(mvSku);
+      const delta = {};
+      let hasDelta = false;
+      Object.keys(m.giacenza).forEach(k => {
+        const d = (Number(m.giacenza[k]) || 0) - (Number(calc[k]) || 0);
+        if (d !== 0) { delta[k] = d; hasDelta = true; }
+      });
+      if (hasDelta) {
+        aperture.push({
+          id: (typeof uid === "function" ? uid() : "ap_" + m.id + "_" + Date.now()),
+          tipo: "apertura",
+          qta: 0,
+          stati: delta,
+          data: "1970-01-01",
+          nota: "Apertura storica v49 (riconciliazione migrazione)",
+          ordineId: null,
+          lottoId: null,
+          auto: true,
+          skuId: m.id,
+          magId: m.id,
+          timestamp: 0
+        });
+      }
     });
-  } else {
-    out.movimenti = [];
   }
-  // Lotti produzione: nuovi campi per collegamento magazzino
+  out.movimenti = [...aperture, ...mov];
+  // 3. Lotti produzione: nuovi campi per collegamento magazzino
   if (Array.isArray(out.lotti)) {
     out.lotti = out.lotti.map(l => ({
       ...l,
@@ -1798,6 +1831,108 @@ const applicaMovimento = (mag, magId, tipo, qta) => {
     };
   });
 };
+
+// ─── EVENT-SOURCED GIACENZA (v49) ─────────────────────────────────────────────
+// Ricostruisce lo stato giacenza completo dalla cronologia dei movimenti.
+// `movimenti` è già filtrato per SKU (usa `movimentiSku` per filtrarlo).
+const ricalcolaGiacenza = (movimenti) => {
+  const g = {
+    disponibile: 0,
+    in_frantoio: 0,
+    da_etichettare: 0,
+    in_confezionamento: 0,
+    riservato: 0,
+    in_spedizione: 0
+  };
+  if (!Array.isArray(movimenti) || movimenti.length === 0) return g;
+  const sorted = [...movimenti].sort((a, b) => {
+    const ta = (typeof a.timestamp === "number" ? a.timestamp : new Date(a.data || 0).getTime()) || 0;
+    const tb = (typeof b.timestamp === "number" ? b.timestamp : new Date(b.data || 0).getTime()) || 0;
+    return ta - tb;
+  });
+  sorted.forEach(mv => {
+    const q = Number(mv.qta) || 0;
+    switch (mv.tipo) {
+      case "apertura":
+        // Movimento sintetico (migrazione v49): somma delta-stati allo stato corrente.
+        // mv.stati è un oggetto con chiavi STATI_MAG e valori delta (possono essere negativi).
+        if (mv.stati && typeof mv.stati === "object") {
+          Object.keys(mv.stati).forEach(k => {
+            if (k in g) g[k] = (g[k] || 0) + (Number(mv.stati[k]) || 0);
+          });
+        }
+        break;
+      case "carico":
+      case "carico_produzione":
+        g.disponibile += q;
+        break;
+      case "frantoio_ok":
+        g.disponibile += q;
+        g.in_frantoio = Math.max(0, g.in_frantoio - q);
+        break;
+      case "etichettatura_ok":
+        g.disponibile += q;
+        g.da_etichettare = Math.max(0, g.da_etichettare - q);
+        break;
+      case "confezionamento_ok":
+        g.disponibile += q;
+        g.in_confezionamento = Math.max(0, g.in_confezionamento - q);
+        break;
+      case "riserva":
+        g.riservato += q;
+        g.disponibile = Math.max(0, g.disponibile - q);
+        break;
+      case "riserva_annullata":
+        g.disponibile += q;
+        g.riservato = Math.max(0, g.riservato - q);
+        break;
+      case "affido_spedizioniere":
+        g.in_spedizione += q;
+        g.riservato = Math.max(0, g.riservato - q);
+        g.in_confezionamento = Math.max(0, g.in_confezionamento - q);
+        break;
+      case "consegnato":
+        g.in_spedizione = Math.max(0, g.in_spedizione - q);
+        break;
+      case "scarico_manuale":
+      case "scarico_ordine":
+        g.disponibile = Math.max(0, g.disponibile - q);
+        break;
+      case "resa_cv":
+      case "annullo_ordine":
+        // Rientro del prodotto verso disponibile (cliente reso / ordine annullato post-firma).
+        // Non tocca `riservato` perché lo scarico originale era da `disponibile`.
+        g.disponibile += q;
+        break;
+      case "rettifica":
+        // qta può essere positiva o negativa
+        g.disponibile = g.disponibile + q;
+        break;
+      default:
+        break;
+    }
+  });
+  // Sanitize finale: nessun valore negativo (apertura potrebbe lasciare temporanei negativi).
+  Object.keys(g).forEach(k => { g[k] = Math.max(0, g[k] || 0); });
+  return g;
+};
+
+// Ricostruisce la giacenza alla fine del giorno `dataLimite` (YYYY-MM-DD).
+// Se dataLimite è falsy, equivale a ricalcolaGiacenza.
+const giacenzaAllaData = (movimenti, dataLimite) => {
+  if (!dataLimite) return ricalcolaGiacenza(movimenti);
+  const limit = new Date(dataLimite).getTime() + 86400000; // fine giornata inclusiva
+  const filtered = (movimenti || []).filter(mv => {
+    const ts = (typeof mv.timestamp === "number" ? mv.timestamp : new Date(mv.data || 0).getTime()) || 0;
+    return ts < limit;
+  });
+  return ricalcolaGiacenza(filtered);
+};
+
+// Filtra `dati.movimenti` (globali) per SKU.
+const movimentiSku = (movimentiGlobali, magId) =>
+  (movimentiGlobali || []).filter(mv => (mv.skuId || mv.magId) === magId);
+
 const totOrdine = ord => (ord.righe || []).reduce((s, r) => s + (r.qta || 0) * (r.prezzoUnitario || 0), 0);
 const totIVA = t => Math.round(t * 0.04 * 100) / 100;
 
