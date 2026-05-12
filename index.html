@@ -1947,29 +1947,47 @@ const skuPerRiga = (magazzino, r) => {
 
 // Verifica che il disponibile copra le richieste di tutte le righe di un ordine.
 // Aggrega le righe per SKU (più righe sullo stesso SKU sommano le qta).
-// Ritorna { ok: bool, errors: [{ skuId, nome, disp, richiesti }] }.
+// Ritorna { ok: bool, errors: [{ tipo: "stock"|"sku_mancante", nome, disp, richiesti }] }.
+// Se la riga ha (formato+annata) ma nessuno SKU corrispondente, viene segnalata come errore
+// "sku_mancante" — altrimenti firmeremmo silenziosamente ordini senza tracciare scarico magazzino.
 const verificaDisponibilitaOrdine = (ordine, magazzino) => {
+  const DEBUG = (typeof window !== "undefined" && window.TNB_DEBUG_MAG);
   if (!ordine || !Array.isArray(ordine.righe)) return { ok: true, errors: [] };
   const richiesteSku = new Map();
-  ordine.righe.forEach(r => {
-    const sku = skuPerRiga(magazzino, r);
-    if (!sku) return;
+  const missing = [];
+  ordine.righe.forEach((r, idx) => {
     const qtaTot = (Number(r.qta) || 0) + (Number(r.omaggio) || 0);
-    if (qtaTot <= 0) return;
+    if (qtaTot <= 0) {
+      if (DEBUG) console.log(`[TNB_DEBUG_MAG] riga ${idx} skippata: qta+omaggio=${qtaTot}`);
+      return;
+    }
+    const sku = skuPerRiga(magazzino, r);
+    if (DEBUG) console.log(`[TNB_DEBUG_MAG] riga ${idx}: formato="${r.formato}" annata="${r.annata}" qta=${r.qta} omaggio=${r.omaggio||0} → sku=${sku ? sku.id : "(none)"}`);
+    if (!sku) {
+      missing.push({
+        tipo: "sku_mancante",
+        nome: `${r.formato || "?"} · annata ${r.annata || "?"}`,
+        disp: 0,
+        richiesti: qtaTot
+      });
+      return;
+    }
     if (richiesteSku.has(sku.id)) {
       richiesteSku.get(sku.id).qta += qtaTot;
     } else {
       richiesteSku.set(sku.id, { sku, qta: qtaTot });
     }
   });
-  const errors = [];
+  const errors = [...missing];
   richiesteSku.forEach(({ sku, qta }) => {
     const disp = (sku.giacenza && sku.giacenza.disponibile) || 0;
+    if (DEBUG) console.log(`[TNB_DEBUG_MAG] sku ${sku.id} (${sku.prodotto} ${sku.formato} ${sku.annata}): disp=${disp} richiesti=${qta}`);
     if (disp < qta) {
       const nome = [sku.prodotto, sku.formato, sku.annata].filter(Boolean).join(" ");
-      errors.push({ skuId: sku.id, nome, disp, richiesti: qta });
+      errors.push({ tipo: "stock", skuId: sku.id, nome, disp, richiesti: qta });
     }
   });
+  if (DEBUG) console.log(`[TNB_DEBUG_MAG] verificaDisponibilitaOrdine → ok=${errors.length===0} errors=`, errors);
   return { ok: errors.length === 0, errors };
 };
 
@@ -7991,11 +8009,16 @@ function Ordini({
     // l'ordineId, verifico disponibile. Se insufficiente, blocco il save con toast e abort.
     if (vecchioStato !== "firmato" && ordine.stato === "firmato") {
       const giaScaricato = (dati.movimenti || []).some(mv => mv.ordineId === ordine.id && mv.tipo === "scarico_ordine");
+      if (window.TNB_DEBUG_MAG) console.log(`[TNB_DEBUG_MAG] saveOrdine transizione → firmato. ordineId=${ordine.id} vecchio=${vecchioStato} giaScaricato=${giaScaricato} righe=`, ordine.righe);
       if (!giaScaricato) {
         const check = verificaDisponibilitaOrdine(ordine, dati.magazzino);
         if (!check.ok) {
-          const msg = check.errors.map(e => `${e.nome}: disp. ${e.disp}, richiesti ${e.richiesti}`).join(" · ");
-          if (window.tnbToast) window.tnbToast(`⚠️ Stock insufficiente — ${msg}`, "err");
+          const stock = check.errors.filter(e => e.tipo === "stock");
+          const missing = check.errors.filter(e => e.tipo === "sku_mancante");
+          const parti = [];
+          if (stock.length) parti.push("Stock insufficiente — " + stock.map(e => `${e.nome}: disp. ${e.disp}, richiesti ${e.richiesti}`).join(" · "));
+          if (missing.length) parti.push("SKU non trovato — " + missing.map(e => `${e.nome} (richiesti ${e.richiesti})`).join(" · "));
+          if (window.tnbToast) window.tnbToast(`⚠️ ${parti.join(" | ")}`, "err");
           return;
         }
       }
@@ -13997,11 +14020,16 @@ function OggiAzioni({
       // v49-mag1: check stock prima della transizione → firmato. Skip se ci sono già scarichi
       // pregressi per questo ordineId (caso anomalo: idempotenza già garantita più sotto).
       const giaScaricato = (dati.movimenti || []).some(mv => mv.ordineId === a.ordine.id && mv.tipo === "scarico_ordine");
+      if (window.TNB_DEBUG_MAG) console.log(`[TNB_DEBUG_MAG] quickComplete firma. ordineId=${a.ordine.id} giaScaricato=${giaScaricato}`);
       if (!giaScaricato) {
         const check = verificaDisponibilitaOrdine(a.ordine, dati.magazzino);
         if (!check.ok) {
-          const msg = check.errors.map(e => `${e.nome}: disp. ${e.disp}, richiesti ${e.richiesti}`).join(" · ");
-          if (window.tnbToast) window.tnbToast(`⚠️ Stock insufficiente — ${msg}`, "err");
+          const stock = check.errors.filter(e => e.tipo === "stock");
+          const missing = check.errors.filter(e => e.tipo === "sku_mancante");
+          const parti = [];
+          if (stock.length) parti.push("Stock insufficiente — " + stock.map(e => `${e.nome}: disp. ${e.disp}, richiesti ${e.richiesti}`).join(" · "));
+          if (missing.length) parti.push("SKU non trovato — " + missing.map(e => `${e.nome} (richiesti ${e.richiesti})`).join(" · "));
+          if (window.tnbToast) window.tnbToast(`⚠️ ${parti.join(" | ")}`, "err");
           return;
         }
       }
