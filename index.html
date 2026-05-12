@@ -1945,6 +1945,34 @@ const skuPerRiga = (magazzino, r) => {
   ) || null;
 };
 
+// Verifica che il disponibile copra le richieste di tutte le righe di un ordine.
+// Aggrega le righe per SKU (più righe sullo stesso SKU sommano le qta).
+// Ritorna { ok: bool, errors: [{ skuId, nome, disp, richiesti }] }.
+const verificaDisponibilitaOrdine = (ordine, magazzino) => {
+  if (!ordine || !Array.isArray(ordine.righe)) return { ok: true, errors: [] };
+  const richiesteSku = new Map();
+  ordine.righe.forEach(r => {
+    const sku = skuPerRiga(magazzino, r);
+    if (!sku) return;
+    const qtaTot = (Number(r.qta) || 0) + (Number(r.omaggio) || 0);
+    if (qtaTot <= 0) return;
+    if (richiesteSku.has(sku.id)) {
+      richiesteSku.get(sku.id).qta += qtaTot;
+    } else {
+      richiesteSku.set(sku.id, { sku, qta: qtaTot });
+    }
+  });
+  const errors = [];
+  richiesteSku.forEach(({ sku, qta }) => {
+    const disp = (sku.giacenza && sku.giacenza.disponibile) || 0;
+    if (disp < qta) {
+      const nome = [sku.prodotto, sku.formato, sku.annata].filter(Boolean).join(" ");
+      errors.push({ skuId: sku.id, nome, disp, richiesti: qta });
+    }
+  });
+  return { ok: errors.length === 0, errors };
+};
+
 // Genera i movimenti di scarico_ordine per tutte le righe di un ordine.
 // Quantità fisica scaricata = r.qta + r.omaggio (i pezzi omaggio escono dal magazzino come gli altri).
 const generaMovimentiOrdine = (ordine, magazzino) => {
@@ -7911,6 +7939,19 @@ function Ordini({
     // v49-mag1: per nuovi ordini, anticipo l'id qui per poter passarlo a applicaTransizioneOrdineMagazzino
     if (!ordine.id) ordine.id = uid();
     const vecchioStato = ordinePrev ? ordinePrev.stato : null;
+    // v49-mag1: check stock prima della transizione → firmato. Se non ho scarichi pregressi per
+    // l'ordineId, verifico disponibile. Se insufficiente, blocco il save con toast e abort.
+    if (vecchioStato !== "firmato" && ordine.stato === "firmato") {
+      const giaScaricato = (dati.movimenti || []).some(mv => mv.ordineId === ordine.id && mv.tipo === "scarico_ordine");
+      if (!giaScaricato) {
+        const check = verificaDisponibilitaOrdine(ordine, dati.magazzino);
+        if (!check.ok) {
+          const msg = check.errors.map(e => `${e.nome}: disp. ${e.disp}, richiesti ${e.richiesti}`).join(" · ");
+          if (window.tnbToast) window.tnbToast(`⚠️ Stock insufficiente — ${msg}`, "err");
+          return;
+        }
+      }
+    }
     setDati(d => {
       const ordiniAggiornati = isNew
         ? [ordine, ...d.ordini]
@@ -13886,6 +13927,17 @@ function OggiAzioni({
     } else if (a.tipo === "richiama" && a.prospect) {
       setDati(d => ({ ...d, prospect: d.prospect.map(p => p.id === a.prospect.id ? { ...p, nextCall: null } : p) }));
     } else if (a.tipo === "firma" && a.ordine) {
+      // v49-mag1: check stock prima della transizione → firmato. Skip se ci sono già scarichi
+      // pregressi per questo ordineId (caso anomalo: idempotenza già garantita più sotto).
+      const giaScaricato = (dati.movimenti || []).some(mv => mv.ordineId === a.ordine.id && mv.tipo === "scarico_ordine");
+      if (!giaScaricato) {
+        const check = verificaDisponibilitaOrdine(a.ordine, dati.magazzino);
+        if (!check.ok) {
+          const msg = check.errors.map(e => `${e.nome}: disp. ${e.disp}, richiesti ${e.richiesti}`).join(" · ");
+          if (window.tnbToast) window.tnbToast(`⚠️ Stock insufficiente — ${msg}`, "err");
+          return;
+        }
+      }
       setDati(d => {
         const vecchioStato = a.ordine.stato;
         const ordineFirmato = { ...a.ordine, stato: "firmato" };
