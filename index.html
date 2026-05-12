@@ -1234,11 +1234,40 @@ function HBarChartSVG({
 </script><script>// TNB-BUILD-20260512-v49-mag1
 // ─── TOAST GLOBALE ────────────────────────────────────────────────────────────
 window.tnbToast = (msg, kind) => {
+  // Errori: overlay centrato vistoso (top-center, backdrop, click-to-dismiss, timeout lungo).
+  if (kind === "err") {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:flex-start;justify-content:center;padding-top:18vh;z-index:999999;opacity:0;transition:opacity 0.18s;cursor:pointer";
+    const card = document.createElement("div");
+    card.style.cssText = "background:#c0392b;color:#fff;padding:20px 28px;border-radius:12px;max-width:560px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.35);font-size:15px;font-weight:600;line-height:1.45;display:flex;gap:14px;align-items:flex-start;transform:scale(0.96);transition:transform 0.18s;cursor:default";
+    const icon = document.createElement("div");
+    icon.textContent = "⚠️";
+    icon.style.cssText = "font-size:28px;flex-shrink:0;line-height:1";
+    const body = document.createElement("div");
+    body.textContent = msg;
+    body.style.cssText = "flex:1;word-break:break-word";
+    const close = document.createElement("button");
+    close.textContent = "✕";
+    close.style.cssText = "background:rgba(255,255,255,0.18);border:none;color:#fff;width:28px;height:28px;border-radius:6px;font-size:14px;cursor:pointer;font-weight:700;flex-shrink:0;line-height:1";
+    card.appendChild(icon);
+    card.appendChild(body);
+    card.appendChild(close);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => { overlay.style.opacity = "1"; card.style.transform = "scale(1)"; });
+    card.addEventListener("click", e => e.stopPropagation());
+    const dismiss = () => { overlay.style.opacity = "0"; card.style.transform = "scale(0.96)"; setTimeout(() => overlay.remove(), 200); };
+    overlay.onclick = dismiss;
+    close.onclick = dismiss;
+    setTimeout(dismiss, 6000);
+    return;
+  }
+  // Successo/info: toast classico in basso (non disturba).
   const id = "tnb_toast_" + Date.now();
   const el = document.createElement("div");
   el.id = id;
   el.textContent = msg;
-  el.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:" + (kind === "err" ? "#c0392b" : "#2e3a1c") + ";color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.2);opacity:0;transition:opacity 0.2s";
+  el.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2e3a1c;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.2);opacity:0;transition:opacity 0.2s";
   document.body.appendChild(el);
   requestAnimationFrame(() => el.style.opacity = "1");
   setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 220); }, 2000);
@@ -8005,11 +8034,12 @@ function Ordini({
     // v49-mag1: per nuovi ordini, anticipo l'id qui per poter passarlo a applicaTransizioneOrdineMagazzino
     if (!ordine.id) ordine.id = uid();
     const vecchioStato = ordinePrev ? ordinePrev.stato : null;
-    // v49-mag1: check stock prima della transizione → firmato. Se non ho scarichi pregressi per
-    // l'ordineId, verifico disponibile. Se insufficiente, blocco il save con toast e abort.
-    if (vecchioStato !== "firmato" && ordine.stato === "firmato") {
+    // v49-mag1: check stock al SALVATAGGIO di ogni ordine non annullato e senza scarichi pregressi.
+    // Garantisce che non si possa creare/modificare un ordine con prodotti non disponibili a magazzino,
+    // a prescindere dallo stato (anche da_firmare). La firma resta coperta come doppia sicurezza.
+    if (ordine.stato !== "annullato") {
       const giaScaricato = (dati.movimenti || []).some(mv => mv.ordineId === ordine.id && mv.tipo === "scarico_ordine");
-      if (window.TNB_DEBUG_MAG) console.log(`[TNB_DEBUG_MAG] saveOrdine transizione → firmato. ordineId=${ordine.id} vecchio=${vecchioStato} giaScaricato=${giaScaricato} righe=`, ordine.righe);
+      if (window.TNB_DEBUG_MAG) console.log(`[TNB_DEBUG_MAG] saveOrdine check. ordineId=${ordine.id} stato=${ordine.stato} vecchio=${vecchioStato} giaScaricato=${giaScaricato} righe=`, ordine.righe);
       if (!giaScaricato) {
         const check = verificaDisponibilitaOrdine(ordine, dati.magazzino);
         if (!check.ok) {
@@ -8018,7 +8048,7 @@ function Ordini({
           const parti = [];
           if (stock.length) parti.push("Stock insufficiente — " + stock.map(e => `${e.nome}: disp. ${e.disp}, richiesti ${e.richiesti}`).join(" · "));
           if (missing.length) parti.push("SKU non trovato — " + missing.map(e => `${e.nome} (richiesti ${e.richiesti})`).join(" · "));
-          if (window.tnbToast) window.tnbToast(`⚠️ ${parti.join(" | ")}`, "err");
+          if (window.tnbToast) window.tnbToast(parti.join(" | "), "err");
           return;
         }
       }
