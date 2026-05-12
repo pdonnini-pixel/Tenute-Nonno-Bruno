@@ -1933,6 +1933,105 @@ const giacenzaAllaData = (movimenti, dataLimite) => {
 const movimentiSku = (movimentiGlobali, magId) =>
   (movimentiGlobali || []).filter(mv => (mv.skuId || mv.magId) === magId);
 
+// Risolve il magId per una riga ordine usando (formato, annata) → primo SKU che matcha.
+// Resto v49: le righe ordine non hanno prodottoId; questa è la sorgente di verità per il match.
+const skuPerRiga = (magazzino, r) => {
+  const fmt = String(r && r.formato || "").trim();
+  const ann = String(r && r.annata || "").trim();
+  if (!fmt || !ann) return null;
+  return (magazzino || []).find(m =>
+    String(m.formato || "").trim() === fmt &&
+    String(m.annata || "").trim() === ann
+  ) || null;
+};
+
+// Genera i movimenti di scarico_ordine per tutte le righe di un ordine.
+// Quantità fisica scaricata = r.qta + r.omaggio (i pezzi omaggio escono dal magazzino come gli altri).
+const generaMovimentiOrdine = (ordine, magazzino) => {
+  if (!ordine || !Array.isArray(ordine.righe)) return [];
+  const dataMov = todayStr();
+  const ts0 = Date.now();
+  const out = [];
+  ordine.righe.forEach((r, i) => {
+    const sku = skuPerRiga(magazzino, r);
+    if (!sku) return;
+    const qtaTot = (Number(r.qta) || 0) + (Number(r.omaggio) || 0);
+    if (qtaTot <= 0) return;
+    out.push({
+      id: uid(),
+      tipo: "scarico_ordine",
+      qta: qtaTot,
+      data: dataMov,
+      nota: `Auto: ordine ${ordine.numero || ordine.id}`,
+      ordineId: ordine.id,
+      lottoId: null,
+      auto: true,
+      skuId: sku.id,
+      magId: sku.id,
+      timestamp: ts0 + i
+    });
+  });
+  return out;
+};
+
+// Hook unico di transizione magazzino su cambio stato ordine.
+// Da chiamare dentro setDati(d => applicaTransizioneOrdineMagazzino(d, ordine, vecchioStato)).
+// Idempotente: skip se per l'ordineId esistono già movimenti del tipo target.
+// - vecchio !== "firmato" && nuovo === "firmato"     → genera scarico_ordine per ogni riga
+// - vecchio !== "annullato" && nuovo === "annullato" → genera annullo_ordine per ogni scarico_ordine esistente
+const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
+  if (!prevDati || !ordine || !ordine.id) return prevDati;
+  const nuovoStato = ordine.stato;
+  if (vecchioStato === nuovoStato) return prevDati;
+  let newMov = Array.isArray(prevDati.movimenti) ? prevDati.movimenti : [];
+  const skuToccati = new Set();
+  let cambiato = false;
+  // Auto-scarico al primo passaggio → firmato
+  if (vecchioStato !== "firmato" && nuovoStato === "firmato") {
+    const giaScaricato = newMov.some(mv => mv.ordineId === ordine.id && mv.tipo === "scarico_ordine");
+    if (!giaScaricato) {
+      const scarichi = generaMovimentiOrdine(ordine, prevDati.magazzino);
+      if (scarichi.length > 0) {
+        newMov = [...scarichi, ...newMov];
+        scarichi.forEach(s => skuToccati.add(s.skuId));
+        cambiato = true;
+      }
+    }
+  }
+  // Auto-annullo al primo passaggio → annullato (rollback degli scarichi auto esistenti)
+  if (vecchioStato !== "annullato" && nuovoStato === "annullato") {
+    const scarichiOrdine = newMov.filter(mv => mv.ordineId === ordine.id && mv.tipo === "scarico_ordine");
+    const giaAnnullati = newMov.some(mv => mv.ordineId === ordine.id && mv.tipo === "annullo_ordine");
+    if (scarichiOrdine.length > 0 && !giaAnnullati) {
+      const dataAnn = todayStr();
+      const ts0 = Date.now();
+      const annulli = scarichiOrdine.map((s, i) => ({
+        id: uid(),
+        tipo: "annullo_ordine",
+        qta: s.qta,
+        data: dataAnn,
+        nota: `Auto: annullo ordine ${ordine.numero || ordine.id}`,
+        ordineId: ordine.id,
+        lottoId: null,
+        auto: true,
+        skuId: s.skuId,
+        magId: s.skuId,
+        timestamp: ts0 + i
+      }));
+      newMov = [...annulli, ...newMov];
+      annulli.forEach(a => skuToccati.add(a.skuId));
+      cambiato = true;
+    }
+  }
+  if (!cambiato) return prevDati;
+  const newMag = (prevDati.magazzino || []).map(m =>
+    skuToccati.has(m.id)
+      ? { ...m, giacenza: ricalcolaGiacenza(newMov.filter(mv => (mv.skuId || mv.magId) === m.id)) }
+      : m
+  );
+  return { ...prevDati, movimenti: newMov, magazzino: newMag };
+};
+
 const totOrdine = ord => (ord.righe || []).reduce((s, r) => s + (r.qta || 0) * (r.prezzoUnitario || 0), 0);
 const totIVA = t => Math.round(t * 0.04 * 100) / 100;
 
@@ -7809,13 +7908,17 @@ function Ordini({
     const isNew = !ordine.id;
     if (!ordine.numero) ordine.numero = nextNum(anno);
     const cl = dati.clienti.find(c => c.id === ordine.clienteId);
-    setDati(d => ({
-      ...d,
-      ordini: ordine.id ? d.ordini.map(o => o.id === ordine.id ? ordine : o) : [{
-        ...ordine,
-        id: uid()
-      }, ...d.ordini]
-    }));
+    // v49-mag1: per nuovi ordini, anticipo l'id qui per poter passarlo a applicaTransizioneOrdineMagazzino
+    if (!ordine.id) ordine.id = uid();
+    const vecchioStato = ordinePrev ? ordinePrev.stato : null;
+    setDati(d => {
+      const ordiniAggiornati = isNew
+        ? [ordine, ...d.ordini]
+        : d.ordini.map(o => o.id === ordine.id ? ordine : o);
+      const d1 = { ...d, ordini: ordiniAggiornati };
+      // Auto-scarico/annullo magazzino su cambio stato (firmato / annullato)
+      return applicaTransizioneOrdineMagazzino(d1, ordine, vecchioStato);
+    });
     if (logAction) logAction(isNew ? "Nuovo ordine" : "Modifica ordine", "ordini", `${ordine.numero} — ${cl?.insegna || cl?.ragioneSociale} — ${ordine.modalita}`);
     setModal(null);
   };
@@ -13783,7 +13886,13 @@ function OggiAzioni({
     } else if (a.tipo === "richiama" && a.prospect) {
       setDati(d => ({ ...d, prospect: d.prospect.map(p => p.id === a.prospect.id ? { ...p, nextCall: null } : p) }));
     } else if (a.tipo === "firma" && a.ordine) {
-      setDati(d => ({ ...d, ordini: d.ordini.map(o => o.id === a.ordine.id ? { ...o, stato: "firmato" } : o) }));
+      setDati(d => {
+        const vecchioStato = a.ordine.stato;
+        const ordineFirmato = { ...a.ordine, stato: "firmato" };
+        const d1 = { ...d, ordini: d.ordini.map(o => o.id === a.ordine.id ? { ...o, stato: "firmato" } : o) };
+        // v49-mag1: auto-scarico magazzino al passaggio → firmato
+        return applicaTransizioneOrdineMagazzino(d1, ordineFirmato, vecchioStato);
+      });
     } else if ((a.tipo === "pagamento" || a.tipo === "cv") && a.ordine) {
       setDati(d => ({ ...d, ordini: d.ordini.map(o => o.id === a.ordine.id ? { ...o, statoPagamento: "pagato" } : o) }));
     }
