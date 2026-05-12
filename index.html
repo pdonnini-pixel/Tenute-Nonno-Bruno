@@ -2002,6 +2002,54 @@ const generaMovimentiOrdine = (ordine, magazzino) => {
   return out;
 };
 
+// Genera movimenti resa_cv distribuendo `qtaDeltaResa` proporzionalmente sulle righe dell'ordine,
+// aggregate per SKU. Arrotondamento intero con largest-remainder method (no unità perse o duplicate).
+const generaMovimentiResaCv = (ordine, magazzino, qtaDeltaResa) => {
+  const deltaTot = Number(qtaDeltaResa) || 0;
+  if (deltaTot <= 0 || !ordine || !Array.isArray(ordine.righe)) return [];
+  const aggrSku = new Map();
+  ordine.righe.forEach(r => {
+    const sku = skuPerRiga(magazzino, r);
+    if (!sku) return;
+    const qtaOrig = (Number(r.qta) || 0) + (Number(r.omaggio) || 0);
+    if (qtaOrig <= 0) return;
+    if (aggrSku.has(sku.id)) {
+      aggrSku.get(sku.id).qtaOrig += qtaOrig;
+    } else {
+      aggrSku.set(sku.id, { sku, qtaOrig });
+    }
+  });
+  const totOrig = Array.from(aggrSku.values()).reduce((s, x) => s + x.qtaOrig, 0);
+  if (totOrig <= 0) return [];
+  const items = Array.from(aggrSku.values()).map(x => {
+    const raw = (deltaTot * x.qtaOrig) / totOrig;
+    return { sku: x.sku, qta: Math.floor(raw), frac: raw - Math.floor(raw) };
+  });
+  let leftover = deltaTot - items.reduce((s, x) => s + x.qta, 0);
+  const sortedByFrac = items.slice().sort((a, b) => b.frac - a.frac);
+  for (let i = 0; i < sortedByFrac.length && leftover > 0; i++) {
+    sortedByFrac[i].qta += 1;
+    leftover -= 1;
+  }
+  const ts0 = Date.now();
+  const dataMov = todayStr();
+  return items
+    .filter(x => x.qta > 0)
+    .map((x, i) => ({
+      id: uid(),
+      tipo: "resa_cv",
+      qta: x.qta,
+      data: dataMov,
+      nota: `Auto: resa CV ordine ${ordine.numero || ordine.id}`,
+      ordineId: ordine.id,
+      lottoId: null,
+      auto: true,
+      skuId: x.sku.id,
+      magId: x.sku.id,
+      timestamp: ts0 + i
+    }));
+};
+
 // Hook unico di transizione magazzino su cambio stato ordine.
 // Da chiamare dentro setDati(d => applicaTransizioneOrdineMagazzino(d, ordine, vecchioStato)).
 // Idempotente: skip se per l'ordineId esistono già movimenti del tipo target.
@@ -8125,13 +8173,32 @@ function Ordini({
     if (!cvForm.importoLiquidazione || Number(cvForm.importoLiquidazione) <= 0) {
       window.alert('⚠ Inserire un importo di liquidazione valido'); return;
     }
-    setDati(d => ({
-      ...d,
-      ordini: d.ordini.map(o => o.id === cvModal.id ? {
-        ...o,
-        ...cvForm
-      } : o)
-    }));
+    // v49-mag1: rileva delta bottiglieRese; se positivo, genera movimenti resa_cv.
+    // (Delta negativo = correzione manuale = nessun movimento auto; l'utente può rettificare a mano.)
+    const ordPrev = (dati.ordini || []).find(o => o.id === cvModal.id);
+    const oldRese = Number(ordPrev && ordPrev.bottiglieRese) || 0;
+    const newRese = Number(cvForm.bottiglieRese) || 0;
+    const deltaRese = newRese - oldRese;
+    setDati(d => {
+      const ordini = d.ordini.map(o => o.id === cvModal.id ? { ...o, ...cvForm } : o);
+      let d1 = { ...d, ordini };
+      if (deltaRese > 0) {
+        const ordineAggiornato = ordini.find(o => o.id === cvModal.id);
+        const nuoviMov = generaMovimentiResaCv(ordineAggiornato, d.magazzino, deltaRese);
+        if (nuoviMov.length > 0) {
+          const skuToccati = new Set(nuoviMov.map(mv => mv.skuId));
+          const movimentiTot = [...nuoviMov, ...(d.movimenti || [])];
+          const newMag = (d.magazzino || []).map(m =>
+            skuToccati.has(m.id)
+              ? { ...m, giacenza: ricalcolaGiacenza(movimentiTot.filter(mv => (mv.skuId || mv.magId) === m.id)) }
+              : m
+          );
+          d1 = { ...d1, movimenti: movimentiTot, magazzino: newMag };
+        }
+      }
+      return d1;
+    });
+    if (deltaRese > 0 && window.tnbToast) window.tnbToast(`↩️ Resa CV: +${deltaRese} pz rientrati in magazzino`);
     setCvModal(null);
   };
   const addRiga = () => setForm(f => ({
