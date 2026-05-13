@@ -1231,7 +1231,11 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260513-v50-prod1
+</script><script>// TNB-BUILD-20260513-v51-forn1
+// v51 Fornitori (in progress): hub relazionale con documenti (Supabase Storage),
+// soft-disable (attivo), audit trail (dataCreazione/Modifica), link bidirezionali
+// a lotti/bottiglie, delete protetto da connessioni, filtri ricerca/categoria/stato,
+// modal 4-sezioni con merge-safe save.
 // v50 Produzione: workflow 7 stati, BOM bottiglie, multi-imbottigliamenti per lotto,
 // litriUsati auto-calcolato, costi olio + packaging, timeline + avanzamento rapido,
 // raggruppamento card per annata. Migrazione idempotente in 4 step: v50, v50_imbott,
@@ -1994,6 +1998,26 @@ const migrateV50LitriUsati = (dataObj) => {
     })
   }));
   out._migration_v50_litri = true;
+  return out;
+};
+
+// v51-forn1: Fornitori — hub relazionale con documenti, soft-disable, audit trail.
+// Aggiunge: documenti[] (upload Supabase Storage), attivo (toggle soft-disable),
+// dataCreazione, dataModifica. Preserva i campi esistenti (ragioneSociale, partitaIva,
+// sitoWeb, cellulare, ecc) per retrocompatibilità — non rinomina niente.
+// Idempotente via _migration_v51_fornitori.
+const migrateV51Fornitori = (dataObj) => {
+  if (!dataObj || dataObj._migration_v51_fornitori) return dataObj;
+  const out = { ...dataObj };
+  const today = (typeof todayStr === "function" ? todayStr() : new Date().toISOString().slice(0, 10));
+  out.fornitori = (out.fornitori || []).map(f => ({
+    ...f,
+    documenti: Array.isArray(f.documenti) ? f.documenti : [],
+    attivo: typeof f.attivo === "boolean" ? f.attivo : true,
+    dataCreazione: f.dataCreazione || today,
+    dataModifica: f.dataModifica || today
+  }));
+  out._migration_v51_fornitori = true;
   return out;
 };
 
@@ -12610,6 +12634,14 @@ const CATEGORIE_FORNITORE = [
   { v: "logistica", l: "🚛 Logistica" },
   { v: "altro", l: "Altro" }
 ];
+// v51-forn1: tipi documento allegabili al fornitore (caricati su Supabase Storage)
+const TIPI_DOCUMENTO_FORNITORE = [
+  { v: "contratto", l: "📄 Contratto" },
+  { v: "certificazione", l: "🏅 Certificazione" },
+  { v: "ddt", l: "🚚 DDT" },
+  { v: "fattura", l: "🧾 Fattura" },
+  { v: "altro", l: "📎 Altro" }
+];
 function Fornitori({
   dati,
   setDati
@@ -13836,7 +13868,7 @@ function App() {
           if (u) setCurrentUser(u);
         }
         const r = await window.storage.get("tnb-pro-v2");
-        const parsed = migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0))))))))))));
+        const parsed = migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))))))));
         if (parsed.agendaState) {
           const validIds = new Set([
             ...parsed.ordini.map(o => `firma_${o.id}`),
