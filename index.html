@@ -15060,7 +15060,7 @@ function App() {
     dati: dati
   }), modulo === "log" && /*#__PURE__*/React.createElement(ActivityLog, {
     currentUser: currentUser
-  }), modulo === "listino" && /*#__PURE__*/React.createElement(ListinoPage, { dati: dati, setDati: setDati }), modulo === "alerts" && /*#__PURE__*/React.createElement(AlertsPage, {
+  }), modulo === "listino" && /*#__PURE__*/React.createElement(ListinoPage, { dati: dati, setDati: setDatiSave }), modulo === "alerts" && /*#__PURE__*/React.createElement(AlertsPage, {
     dati: dati,
     setDati: setDatiSave,
     setModulo: setModulo
@@ -19117,9 +19117,19 @@ function ListinoPage({ dati, setDati }) {
   const [editId, setEditId] = useState(null);
   const [draft, setDraft] = useState({});
   const listino = Array.isArray(dati && dati.listino) ? dati.listino : [];
+  // v52-fix: match formato robusto (normalizza spazi/case) per evitare miss su "500 ml" vs "500ml"
+  const normFormato = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  // Audit debug (window.TNB_DEBUG_LISTINO = true in console)
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.TNB_DEBUG_LISTINO) return;
+    console.log("[TNB_DEBUG_LISTINO] listino formats:", listino.map(l => l.formato));
+    console.log("[TNB_DEBUG_LISTINO] bottiglie formats:", (dati.bottiglie || []).map(b => b.formato));
+    console.log("[TNB_DEBUG_LISTINO] lotti con imbottigliamenti:", (dati.lotti || []).filter(l => (l.imbottigliamenti || []).length > 0).length);
+  }, []);
   // Helper: costo BOM medio per formato (media ponderata su tutti gli imbottigliamenti)
   const costoBomFormato = (formato) => {
-    const bot = (dati.bottiglie || []).find(b => b.formato === formato);
+    const target = normFormato(formato);
+    const bot = (dati.bottiglie || []).find(b => normFormato(b.formato) === target);
     if (!bot) return null;
     const pack = costoPackaging(bot);
     // Media ponderata costo olio/L su tutti gli imbottigliamenti che usano questa bottiglia
