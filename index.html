@@ -9933,6 +9933,66 @@ function Magazzino({
   const [editSogliaId, setEditSogliaId] = useState(null);
   const [sogliaVal, setSogliaVal] = useState("");
   const saveSoglia = (mId) => { setDati(d => ({...d, magazzino: d.magazzino.map(x => x.id===mId ? {...x, soglia: Number(sogliaVal)} : x)})); setEditSogliaId(null); };
+  // v49-mag1: state per UI rinnovata (date picker, filtri movimenti, form rettifiche)
+  const [dataVista, setDataVista] = useState("");           // "" = oggi/corrente
+  const [filtroTipo, setFiltroTipo] = useState("");
+  const [filtroDa, setFiltroDa] = useState("");
+  const [filtroA, setFiltroA] = useState("");
+  const [filtroAuto, setFiltroAuto] = useState("tutti");     // tutti | auto | manuali
+  const [filtroOrdine, setFiltroOrdine] = useState("");
+  const [rettForm, setRettForm] = useState({});
+  // Ricalcolo forzato giacenze: safety net per coerenza con il log movimenti.
+  const ricalcolaTutteGiacenze = () => {
+    setDati(d => ({
+      ...d,
+      magazzino: (d.magazzino || []).map(m => ({
+        ...m,
+        giacenza: ricalcolaGiacenza((d.movimenti || []).filter(mv => (mv.skuId || mv.magId) === m.id))
+      }))
+    }));
+    if (window.tnbToast) window.tnbToast("✅ Giacenze ricalcolate dai movimenti");
+  };
+  // Salva rettifica manuale (tipo "rettifica" con auto:false)
+  const saveRettifica = () => {
+    if (!rettForm.magId || !rettForm.qta || Number(rettForm.qta) === 0) {
+      if (window.tnbToast) window.tnbToast("Seleziona SKU e inserisci una quantità (positiva o negativa)", "err");
+      return;
+    }
+    if (!String(rettForm.motivo || "").trim()) {
+      if (window.tnbToast) window.tnbToast("Motivo obbligatorio per la rettifica", "err");
+      return;
+    }
+    const dataMov = rettForm.data || todayStr();
+    const mv = {
+      id: uid(),
+      tipo: "rettifica",
+      qta: Number(rettForm.qta),
+      data: dataMov,
+      nota: String(rettForm.motivo).trim(),
+      ordineId: null,
+      lottoId: null,
+      auto: false,
+      skuId: rettForm.magId,
+      magId: rettForm.magId,
+      timestamp: Date.now()
+    };
+    setDati(d => {
+      const movimentiTot = [mv, ...(d.movimenti || [])];
+      return {
+        ...d,
+        movimenti: movimentiTot,
+        magazzino: d.magazzino.map(m =>
+          m.id === rettForm.magId
+            ? { ...m, giacenza: ricalcolaGiacenza(movimentiTot.filter(x => (x.skuId || x.magId) === m.id)) }
+            : m
+        )
+      };
+    });
+    const sku = dati.magazzino.find(m => m.id === rettForm.magId);
+    if (logAction) logAction(`Rettifica magazzino`, "magazzino", `${sku?.prodotto || ""} ${sku?.formato || ""} ${sku?.annata || ""} — ${mv.qta > 0 ? "+" : ""}${mv.qta} pz · ${mv.nota}`);
+    if (window.tnbToast) window.tnbToast(`✏️ Rettifica registrata (${mv.qta > 0 ? "+" : ""}${mv.qta} pz)`);
+    setRettForm({});
+  };
   const TIPI_MOV = [{
     v: "carico",
     l: "📥 Carico (nuova produzione)"
@@ -10047,6 +10107,12 @@ function Magazzino({
         gap: 8
       }
     }, /*#__PURE__*/React.createElement(Btn, {
+      ch: "\uD83D\uDD04 Ricalcola",
+      v: "gh",
+      sz: "sm",
+      title: "Ricalcola le giacenze dalla cronologia movimenti (safety net)",
+      onClick: ricalcolaTutteGiacenze
+    }), /*#__PURE__*/React.createElement(Btn, {
       ch: "\u26A1 Movimento",
       v: "sec",
       sz: "sm",
@@ -10138,6 +10204,9 @@ function Magazzino({
     }, {
       k: "movimenti",
       l: `Movimenti (${(dati.movimenti || []).length})`
+    }, {
+      k: "rettifiche",
+      l: "✏️ Rettifiche"
     }],
     active: tab,
     onSelect: setTab
@@ -10150,9 +10219,10 @@ function Magazzino({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 8,
+      gap: 12,
       alignItems: "center",
-      padding: "6px 4px"
+      padding: "6px 4px",
+      flexWrap: "wrap"
     }
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setFilterSottoSoglia(v => !v),
@@ -10168,10 +10238,30 @@ function Magazzino({
     }
   }, filterSottoSoglia ? "✓ Solo sotto soglia" : "🔴 Solo sotto soglia"), filterSottoSoglia && /*#__PURE__*/React.createElement("span", {
     style: { fontSize: 11, color: "#7a7a7a" }
-  }, dati.magazzino.filter(m => giacenzaDisp(m) <= m.soglia).length, " voci sotto soglia su ", dati.magazzino.length)), dati.magazzino.filter(m => filterSottoSoglia ? giacenzaDisp(m) <= m.soglia : true).map(m => {
-    const g = m.giacenza || {};
-    const tot = giacenzaTot(m);
-    const disp = giacenzaDisp(m);
+  }, dati.magazzino.filter(m => giacenzaDisp(m) <= m.soglia).length, " voci sotto soglia su ", dati.magazzino.length),
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" } },
+      /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, color: C.grigio600, fontWeight: 600 } }, "Giacenza al:"),
+      /*#__PURE__*/React.createElement("input", {
+        type: "date",
+        value: dataVista,
+        onChange: e => setDataVista(e.target.value),
+        style: { padding: "4px 8px", border: "1px solid #d4d2cc", borderRadius: 6, fontSize: 12 }
+      }),
+      dataVista && /*#__PURE__*/React.createElement("button", {
+        onClick: () => setDataVista(""),
+        style: { padding: "4px 10px", border: "1px solid #d4d2cc", background: "#fff", color: "#5f5e5a", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer" }
+      }, "📅 Oggi")
+    )
+  ), dataVista && /*#__PURE__*/React.createElement("div", {
+    style: { padding: "6px 12px", background: "#e3f2fd", border: "1px solid #90caf9", borderRadius: 6, fontSize: 12, color: "#1565c0", fontWeight: 600 }
+  }, "📅 Visualizzazione storica: giacenze al " + fmtD(dataVista) + " (ricostruite da cronologia movimenti)"),
+  dati.magazzino.filter(m => filterSottoSoglia ? giacenzaDisp(m) <= m.soglia : true).map(m => {
+    const gReal = m.giacenza || {};
+    const g = dataVista
+      ? giacenzaAllaData((dati.movimenti || []).filter(mv => (mv.skuId || mv.magId) === m.id), dataVista)
+      : gReal;
+    const tot = Object.values(g).reduce((s, v) => s + (v || 0), 0);
+    const disp = g.disponibile || 0;
     const inLav = (g.in_frantoio || 0) + (g.da_etichettare || 0) + (g.in_confezionamento || 0);
     const isExpanded = expandedId === m.id;
     const hasAlert = disp <= m.soglia;
@@ -10474,47 +10564,187 @@ function Magazzino({
         }
       }))))
     });
-  })), tab === "movimenti" && /*#__PURE__*/React.createElement(Card, {
-    ch: /*#__PURE__*/React.createElement(Tbl, {
-      cols: ["Data", "Tipo", "SKU", "Qtà", "Nota"],
-      data: movimentiOrdinati,
-      renderRow: mov => {
-        const sku = dati.magazzino.find(s => s.id === mov.magId);
-        const tipoInfo = TIPI_MOV.find(t => t.v === mov.tipo);
-        return /*#__PURE__*/React.createElement(TR, {
-          key: mov.id,
-          ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TD, {
-            ch: fmtD(mov.data)
-          }), /*#__PURE__*/React.createElement(TD, {
-            ch: /*#__PURE__*/React.createElement("span", {
-              style: {
-                fontSize: 11,
-                fontWeight: 600
-              }
-            }, tipoInfo?.l || mov.tipo)
-          }), /*#__PURE__*/React.createElement(TD, {
-            ch: sku ? /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, sku.formato), " ", /*#__PURE__*/React.createElement("span", {
-              style: {
-                color: C.grigio400
-              }
-            }, "R.", sku.annata)) : "—"
-          }), /*#__PURE__*/React.createElement(TD, {
-            ch: /*#__PURE__*/React.createElement("strong", {
-              style: {
-                color: C.olivaScuro
-              }
-            }, mov.qta, " pz")
-          }), /*#__PURE__*/React.createElement(TD, {
-            ch: /*#__PURE__*/React.createElement("span", {
-              style: {
-                fontSize: 11,
-                color: C.grigio600
-              }
-            }, mov.nota || "—")
-          }))
-        });
-      }
-    })
+  })), tab === "movimenti" && (() => {
+    // v49-mag1: filtri tabella movimenti + indicatori auto/manuale + link ordine/lotto
+    const tuttiMovimenti = (dati.movimenti || []).map(mv => {
+      const sku = dati.magazzino.find(s => s.id === (mv.skuId || mv.magId));
+      return { ...mv, skuNome: sku ? `${sku.prodotto} ${sku.formato} R.${sku.annata}` : "—", skuObj: sku };
+    });
+    const movimentiFiltrati = tuttiMovimenti
+      .filter(mv => !filtroTipo || mv.tipo === filtroTipo)
+      .filter(mv => !filtroDa || (mv.data || "") >= filtroDa)
+      .filter(mv => !filtroA || (mv.data || "") <= filtroA)
+      .filter(mv => filtroAuto === "tutti" || (filtroAuto === "auto" ? !!mv.auto : !mv.auto))
+      .filter(mv => !filtroOrdine || String(mv.ordineId || "").toLowerCase().includes(String(filtroOrdine).toLowerCase()) || (mv.ordineId && (dati.ordini || []).find(o => o.id === mv.ordineId && String(o.numero || "").toLowerCase().includes(String(filtroOrdine).toLowerCase()))))
+      .sort((a, b) => (b.timestamp || new Date(b.data || 0).getTime() || 0) - (a.timestamp || new Date(a.data || 0).getTime() || 0));
+    return /*#__PURE__*/React.createElement(React.Fragment, null,
+      /*#__PURE__*/React.createElement("div", {
+        style: { display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr 1fr auto", gap: 8, alignItems: "end", padding: "8px 4px", marginBottom: 6 }
+      },
+        /*#__PURE__*/React.createElement(Sel, {
+          label: "Tipo",
+          v: filtroTipo,
+          on: v => setFiltroTipo(v),
+          opts: [{ v: "", l: "Tutti i tipi" }].concat(TIPI_MOV)
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Da",
+          type: "date",
+          v: filtroDa,
+          on: v => setFiltroDa(v)
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "A",
+          type: "date",
+          v: filtroA,
+          on: v => setFiltroA(v)
+        }),
+        /*#__PURE__*/React.createElement(Sel, {
+          label: "Origine",
+          v: filtroAuto,
+          on: v => setFiltroAuto(v),
+          opts: [{ v: "tutti", l: "Tutti" }, { v: "auto", l: "🤖 Solo automatici" }, { v: "manuali", l: "✋ Solo manuali" }]
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Ordine",
+          v: filtroOrdine,
+          on: v => setFiltroOrdine(v),
+          ph: "numero / id"
+        }),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: () => { setFiltroTipo(""); setFiltroDa(""); setFiltroA(""); setFiltroAuto("tutti"); setFiltroOrdine(""); },
+          style: { padding: "8px 14px", border: "1px solid #d4d2cc", background: "#fff", color: "#5f5e5a", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", height: 38 },
+          title: "Reset filtri"
+        }, "✕ Reset")
+      ),
+      /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 11, color: C.grigio600, padding: "0 4px 8px 4px" }
+      }, `${movimentiFiltrati.length} movimenti${movimentiFiltrati.length !== tuttiMovimenti.length ? ` (su ${tuttiMovimenti.length} totali)` : ""}`),
+      /*#__PURE__*/React.createElement(Card, {
+        ch: /*#__PURE__*/React.createElement(Tbl, {
+          cols: ["Data", "Origine", "Tipo", "SKU", "Qtà", "Riferimento", "Nota"],
+          data: movimentiFiltrati,
+          renderRow: mov => {
+            const tipoInfo = TIPI_MOV.find(t => t.v === mov.tipo);
+            const ordRef = mov.ordineId && (dati.ordini || []).find(o => o.id === mov.ordineId);
+            const lotRef = mov.lottoId && (dati.lotti || []).find(l => l.id === mov.lottoId);
+            const qtaColor = mov.qta < 0 ? C.rosso : C.olivaScuro;
+            return /*#__PURE__*/React.createElement(TR, {
+              key: mov.id,
+              ch: /*#__PURE__*/React.createElement(React.Fragment, null,
+                /*#__PURE__*/React.createElement(TD, { ch: fmtD(mov.data) }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: /*#__PURE__*/React.createElement("span", {
+                    style: { fontSize: 16 },
+                    title: mov.auto ? "Movimento automatico (sistema)" : "Movimento manuale"
+                  }, mov.auto ? "🤖" : "✋")
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 600 } }, tipoInfo?.l || mov.tipo)
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: mov.skuObj
+                    ? /*#__PURE__*/React.createElement("span", null,
+                        /*#__PURE__*/React.createElement("strong", null, mov.skuObj.formato), " ",
+                        /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "R.", mov.skuObj.annata))
+                    : "—"
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: /*#__PURE__*/React.createElement("strong", { style: { color: qtaColor } }, (mov.qta > 0 ? "+" : ""), mov.qta, " pz")
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: ordRef
+                    ? /*#__PURE__*/React.createElement("span", {
+                        style: { fontSize: 11, background: "#e3f2fd", color: "#1565c0", borderRadius: 4, padding: "2px 6px", fontWeight: 600 },
+                        title: `Ordine ${ordRef.numero || ordRef.id}`
+                      }, "📋 ", ordRef.numero || ordRef.id.slice(0, 6))
+                    : lotRef
+                      ? /*#__PURE__*/React.createElement("span", {
+                          style: { fontSize: 11, background: "#e8f5e9", color: "#2e7d32", borderRadius: 4, padding: "2px 6px", fontWeight: 600 },
+                          title: `Lotto raccolta ${lotRef.annata}`
+                        }, "🫒 Lotto ", lotRef.annata)
+                      : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio400 } }, "—")
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio600 } }, mov.nota || "—")
+                })
+              )
+            });
+          }
+        })
+      })
+    );
+  })(),
+  tab === "rettifiche" && /*#__PURE__*/React.createElement(Card, {
+    ch: /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 16 } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.grigio600 } },
+        "Le rettifiche manuali servono a correggere il disponibile a magazzino in seguito a inventari, perdite, ammanchi o errori. Lascia traccia con un motivo obbligatorio. Quantità positiva → ",
+        /*#__PURE__*/React.createElement("strong", { style: { color: C.verde } }, "aumenta disponibile"),
+        "; negativa → ",
+        /*#__PURE__*/React.createElement("strong", { style: { color: C.rosso } }, "diminuisce disponibile"),
+        "."
+      ),
+      /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr 1fr 2fr auto", gap: 10, alignItems: "end" } },
+        /*#__PURE__*/React.createElement(Sel, {
+          label: "SKU",
+          v: rettForm.magId || "",
+          on: v => setRettForm(f => ({ ...f, magId: v })),
+          req: true,
+          opts: [{ v: "", l: "— seleziona —" }].concat(dati.magazzino.map(m => ({ v: m.id, l: `${m.prodotto} ${m.formato} R.${m.annata}` })))
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Quantità (+/-)",
+          type: "number",
+          step: 1,
+          v: rettForm.qta != null ? rettForm.qta : "",
+          on: v => setRettForm(f => ({ ...f, qta: Number(v) })),
+          ph: "es. -3 o +12",
+          req: true
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Data",
+          type: "date",
+          v: rettForm.data || todayStr(),
+          on: v => setRettForm(f => ({ ...f, data: v }))
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Motivo",
+          v: rettForm.motivo || "",
+          on: v => setRettForm(f => ({ ...f, motivo: v })),
+          ph: "es. inventario, rottura, errore",
+          req: true
+        }),
+        !readonly && /*#__PURE__*/React.createElement(Btn, {
+          ch: "✏️ Registra rettifica",
+          onClick: saveRettifica
+        })
+      ),
+      /*#__PURE__*/React.createElement("div", { style: { borderTop: `1px solid ${C.grigio200}`, paddingTop: 12 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: C.grigio600, letterSpacing: 0.5, marginBottom: 8 } }, "STORICO RETTIFICHE"),
+        (() => {
+          const rettifiche = (dati.movimenti || []).filter(mv => mv.tipo === "rettifica").sort((a, b) => (b.timestamp || new Date(b.data || 0).getTime() || 0) - (a.timestamp || new Date(a.data || 0).getTime() || 0));
+          if (rettifiche.length === 0) return /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.grigio400, fontStyle: "italic" } }, "Nessuna rettifica registrata.");
+          return /*#__PURE__*/React.createElement(Tbl, {
+            cols: ["Data", "SKU", "Quantità", "Motivo"],
+            data: rettifiche,
+            renderRow: mv => {
+              const sku = dati.magazzino.find(s => s.id === (mv.skuId || mv.magId));
+              return /*#__PURE__*/React.createElement(TR, {
+                key: mv.id,
+                ch: /*#__PURE__*/React.createElement(React.Fragment, null,
+                  /*#__PURE__*/React.createElement(TD, { ch: fmtD(mv.data) }),
+                  /*#__PURE__*/React.createElement(TD, { ch: sku ? `${sku.prodotto} ${sku.formato} R.${sku.annata}` : "—" }),
+                  /*#__PURE__*/React.createElement(TD, {
+                    ch: /*#__PURE__*/React.createElement("strong", { style: { color: mv.qta < 0 ? C.rosso : C.verde } }, (mv.qta > 0 ? "+" : ""), mv.qta, " pz")
+                  }),
+                  /*#__PURE__*/React.createElement(TD, { ch: mv.nota || "—" })
+                )
+              });
+            }
+          });
+        })()
+      )
+    )
   }), modal === "mov" && /*#__PURE__*/React.createElement(Modal, {
     title: "Registra Movimento",
     onClose: () => setModal(null),
