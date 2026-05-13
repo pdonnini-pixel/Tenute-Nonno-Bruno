@@ -11125,19 +11125,78 @@ function Produzione({
   const [filtroAnnata, setFiltroAnnata] = useState("");
   const [filtroSearch, setFiltroSearch] = useState("");
   const [expandedLotto, setExpandedLotto] = useState(null);
-  // v50-prod1: audit diagnostico una sola volta al mount per debug dati live
+  // v50-prod1: audit diagnostico (solo se window.TNB_DEBUG_PROD = true)
   useEffect(() => {
+    if (typeof window === "undefined" || !window.TNB_DEBUG_PROD) return;
     console.log("[TNB_PROD_AUDIT] dati.lotti =", (dati.lotti || []).map(l => ({
       id: l.id, annata: l.annata,
       frantoio: l.frantoio, frantoioId: l.frantoioId,
       qtaOlive: l.qtaOlive, qtaOlio: l.qtaOlio,
       costoFrantoio_top: l.costoFrantoio,
       costi_obj: l.costi,
-      stato: l.stato,
-      _migration_v49: dati._migration_v49,
-      _migration_v50: dati._migration_v50
+      stato: l.stato
     })));
   }, []);
+  // P3 — state per navigazione tab interna al modal
+  const [modalSection, setModalSection] = useState("generale");
+  // P3 — calcola prossimo codice lotto sequenziale per l'annata
+  const nextCodLotto = (annata) => {
+    if (!annata) return "";
+    const prefisso = "L" + annata + "-";
+    const max = (dati.lotti || [])
+      .map(l => String(l.codLotto || ""))
+      .filter(s => s.startsWith(prefisso))
+      .map(s => parseInt(s.slice(prefisso.length), 10))
+      .filter(n => Number.isFinite(n))
+      .reduce((a, b) => Math.max(a, b), 0);
+    return prefisso + String(max + 1).padStart(3, "0");
+  };
+  // P3 — elenco certificazioni standard (toggle multi-select)
+  const CERTIFICAZIONI = ["Extravergine", "BIO", "IGP Toscano", "DOP Chianti Classico"];
+  // P3 — auto-popola resa quando cambia qtaOlive o qtaOlio
+  useEffect(() => {
+    if (!modal) return;
+    const ol = Number(form.qtaOlive) || 0;
+    const oi = Number(form.qtaOlio) || 0;
+    if (ol > 0 && oi > 0) {
+      const nuova = parseFloat((oi / ol * 100).toFixed(2));
+      if (form.resa !== nuova) setForm(f => ({ ...f, resa: nuova }));
+    }
+  }, [form.qtaOlive, form.qtaOlio, modal]);
+  // P3 — auto-popola data corrente al cambio stato (se manca) — usato in P4 ma definito qui
+  const stateAutoDate = {
+    in_raccolta: "dataRaccolta",
+    in_frantoio: "dataFrangitura",
+    in_imbottigliamento: "dataImbottigliamento",
+    in_etichettatura: "dataEtichettatura"
+  };
+  // P3 — toggle certificazione
+  const toggleCert = (cert) => {
+    setForm(f => {
+      const lista = Array.isArray(f.certificazioni) ? f.certificazioni : [];
+      const has = lista.indexOf(cert) >= 0;
+      return { ...f, certificazioni: has ? lista.filter(c => c !== cert) : [...lista, cert] };
+    });
+  };
+  // P3 — elimina lotto (solo se non già in magazzino)
+  const deleteLotto = () => {
+    if (!form.id) return;
+    if (form.caricoMagazzino) {
+      if (window.tnbToast) window.tnbToast("Impossibile eliminare: il lotto è già stato caricato in magazzino. Annulla prima il carico.", "err");
+      return;
+    }
+    if (!window.tnbConfirm) return;
+    window.tnbConfirm(
+      `Eliminare definitivamente il lotto raccolta ${form.annata}${form.codLotto ? " (" + form.codLotto + ")" : ""}? L'operazione non è reversibile.`,
+      () => {
+        setDati(d => ({ ...d, lotti: (d.lotti || []).filter(l => l.id !== form.id) }));
+        setModal(null);
+        setModalSection("generale");
+        if (window.tnbToast) window.tnbToast("🗑 Lotto eliminato");
+      },
+      { title: "Conferma eliminazione lotto", okLabel: "Elimina", danger: true }
+    );
+  };
   // v49-mag1: carica il lotto in magazzino generando un movimento carico_produzione
   const caricaInMagazzino = (l) => {
     if (!l || !l.skuFinale || !Number(l.qtaProdotta) || l.caricoMagazzino) return;
@@ -11170,21 +11229,42 @@ function Produzione({
     });
     if (window.tnbToast) window.tnbToast("✅ Caricato in magazzino: " + Number(l.qtaProdotta) + " pz");
   };
+  // P3 — save con validazione + merge sicuro (preserva campi non in form per non perdere dati).
   const save = () => {
-    if (!form.annata) return;
-    if (Number(form.qtaOlive) < 0 || Number(form.qtaOlio) < 0) {
-      window.alert('⚠ Le quantità non possono essere negative'); return;
+    const errors = [];
+    if (!form.annata) errors.push("Annata obbligatoria");
+    if (Number(form.qtaOlive) < 0) errors.push("Quantità olive non può essere negativa");
+    if (Number(form.qtaOlio) < 0) errors.push("Quantità olio non può essere negativa");
+    if (Number(form.qtaProdotta) < 0) errors.push("Quantità prodotta non può essere negativa");
+    const q = form.qualita || {};
+    if (q.acidita != null && q.acidita !== "" && Number(q.acidita) < 0) errors.push("Acidità non può essere negativa");
+    if (q.perossidi != null && q.perossidi !== "" && Number(q.perossidi) < 0) errors.push("Perossidi non può essere negativo");
+    if (q.polifenoli != null && q.polifenoli !== "" && Number(q.polifenoli) < 0) errors.push("Polifenoli non può essere negativo");
+    const c = form.costi || {};
+    ["costoOlive", "costoFrantoio", "costoImbottigliamento", "costoEtichettatura", "costoAltro"].forEach(k => {
+      if (c[k] != null && c[k] !== "" && Number(c[k]) < 0) errors.push(`${k.replace("costo", "Costo ")} non può essere negativo`);
+    });
+    if (errors.length > 0) {
+      if (window.tnbToast) window.tnbToast(errors.join(" · "), "err");
+      return;
     }
-    var resaNum = parseFloat(form.resa);
-    var formNorm = isNaN(resaNum) ? Object.assign({}, form, { resa: 0 }) : form;
-    setDati(d => ({
-      ...d,
-      lotti: formNorm.id ? d.lotti.map(l => l.id === formNorm.id ? formNorm : l) : [...d.lotti, {
-        ...formNorm,
-        id: uid()
-      }]
-    }));
+    // Normalizza resa numerica (se per qualche motivo è ancora string/NaN)
+    const resaNum = Number(form.resa);
+    const formNorm = { ...form, resa: isFinite(resaNum) ? resaNum : 0 };
+    setDati(d => {
+      const isNew = !formNorm.id;
+      if (isNew) {
+        return { ...d, lotti: [...(d.lotti || []), { ...formNorm, id: uid() }] };
+      }
+      // Merge sicuro: parte dal lotto esistente e sovrascrive con i campi del form.
+      // Previene la perdita di campi che eventualmente non sono presenti nel form.
+      return {
+        ...d,
+        lotti: (d.lotti || []).map(l => l.id === formNorm.id ? { ...l, ...formNorm } : l)
+      };
+    });
     setModal(null);
+    setModalSection("generale");
   };
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83C\uDF3F Produzione \u2014 Lotti",
@@ -11192,7 +11272,16 @@ function Produzione({
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Nuova annata"),
       sz: "sm",
       onClick: () => {
-        setForm({});
+        // P3 — inizializza form con i nuovi campi default per evitare null/undefined
+        setForm({
+          stato: "pianificato",
+          annata: String(new Date().getFullYear()),
+          qualita: { acidita: null, perossidi: null, polifenoli: null, note: "" },
+          costi: { costoOlive: null, costoFrantoio: null, costoImbottigliamento: null, costoEtichettatura: null, costoAltro: null, noteAltro: "" },
+          certificazioni: [],
+          caricoMagazzino: false
+        });
+        setModalSection("generale");
         setModal("new");
       }
     })
@@ -11306,7 +11395,7 @@ function Produzione({
                 ch: /*#__PURE__*/React.createElement(I.edit, null),
                 v: "gh",
                 sz: "sm",
-                onClick: () => { setForm(l); setModal("new"); }
+                onClick: () => { setForm(l); setModalSection("generale"); setModal("new"); }
               })
             )
           ),
@@ -11456,110 +11545,276 @@ function Produzione({
       });
     }));
   })(), modal && /*#__PURE__*/React.createElement(Modal, {
-    title: form.id ? `Modifica ${form.annata}` : "Nuova Annata",
-    onClose: () => setModal(null),
-    ch: /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 14
-      }
-    }, /*#__PURE__*/React.createElement(Inp, {
-      label: "Annata",
-      v: form.annata || "",
-      on: v => setForm(f => ({
-        ...f,
-        annata: v
-      })),
-      req: true,
-      ph: "es. 2026"
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Variet\xE0",
-      v: form.varieta || "",
-      on: v => setForm(f => ({
-        ...f,
-        varieta: v
-      })),
-      ph: "Frantoio, Moraiolo, Leccino"
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Olive raccolte (kg)",
-      type: "number",
-      v: form.qtaOlive || "",
-      on: v => setForm(f => ({
-        ...f,
-        qtaOlive: Number(v)
-      }))
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Olio prodotto (L)",
-      type: "number",
-      v: form.qtaOlio || "",
-      on: v => setForm(f => ({
-        ...f,
-        qtaOlio: Number(v)
-      }))
-    }), /*#__PURE__*/React.createElement(Sel, {
-      label: "Prodotto finale (SKU magazzino)",
-      v: form.skuFinale || "",
-      on: v => setForm(f => ({ ...f, skuFinale: v })),
-      opts: [{ v: "", l: "— nessuno —" }].concat((dati.magazzino || []).map(m => ({ v: m.id, l: `${m.prodotto} ${m.formato} ${m.annata}` })))
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Quantità prodotta (pezzi)",
-      type: "number",
-      min: 0,
-      step: 1,
-      v: form.qtaProdotta || "",
-      on: v => setForm(f => ({ ...f, qtaProdotta: Number(v) })),
-      ph: "es. 920"
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Resa %",
-      v: form.resa || "",
-      on: v => setForm(f => ({
-        ...f,
-        resa: v
-      })),
-      ph: "es. 14.5%"
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Data raccolta",
-      type: "date",
-      v: form.dataRaccolta || "",
-      on: v => setForm(f => ({
-        ...f,
-        dataRaccolta: v
-      }))
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Data frangitura",
-      type: "date",
-      v: form.dataFrangitura || "",
-      on: v => setForm(f => ({
-        ...f,
-        dataFrangitura: v
-      }))
-    }), /*#__PURE__*/React.createElement("div", {
-      style: { gridColumn: "span 2" }
-    }, /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 4 } },
-      /*#__PURE__*/React.createElement(Inp, { label: "Frantoio", v: form.frantoio||"", on: v => setForm(f=>({...f,frantoio:v})), ph: "es. Frantoio Bardi" }),
-      /*#__PURE__*/React.createElement(Inp, { label: "N° frangiture", type: "number", v: form.nFrangiture||"", on: v => setForm(f=>({...f,nFrangiture:Number(v)})) }),
-      /*#__PURE__*/React.createElement(Inp, { label: "Costo frantoio (€)", type: "number", v: form.costoFrantoio||"", on: v => setForm(f=>({...f,costoFrantoio:Number(v)})) })
-    ), /*#__PURE__*/React.createElement(Inp, {
-      label: "Note campagna",
-      v: form.note || "",
-      on: v => setForm(f => ({...f, note: v})),
-      rows: 2
-    })), /*#__PURE__*/React.createElement("div", {
-      style: {
-        gridColumn: "span 2",
-        display: "flex",
-        justifyContent: "flex-end",
-        gap: 8
-      }
-    }, /*#__PURE__*/React.createElement(Btn, {
-      ch: "Annulla",
-      v: "sec",
-      onClick: () => setModal(null)
-    }), /*#__PURE__*/React.createElement(Btn, {
-      ch: "Salva",
-      onClick: save
-    })))
+    title: form.id ? `Modifica lotto raccolta ${form.annata || ""}` : "Nuovo lotto",
+    onClose: () => { setModal(null); setModalSection("generale"); },
+    wide: true,
+    ch: /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+      // ── Tab di navigazione interna ────────────────────────────────────────
+      /*#__PURE__*/React.createElement("div", {
+        style: { display: "flex", gap: 4, borderBottom: `1px solid ${C.grigio200}`, flexWrap: "wrap" }
+      },
+        [
+          ["generale", "📝 Generale"],
+          ["raccolta", "🌿 Raccolta & Frangitura"],
+          ["qualita", "🧪 Qualità"],
+          ["imbott", "🍾 Imbottigliamento"],
+          ["costi", "💰 Costi"]
+        ].map(([k, label]) => /*#__PURE__*/React.createElement("button", {
+          key: k,
+          type: "button",
+          onClick: () => setModalSection(k),
+          style: {
+            padding: "8px 14px", border: "none", background: "transparent",
+            color: modalSection === k ? C.olivaScuro : C.grigio400,
+            borderBottom: modalSection === k ? `2px solid ${C.olivaScuro}` : "2px solid transparent",
+            fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: -1
+          }
+        }, label))
+      ),
+      // ── Sezione 1: Generale ───────────────────────────────────────────────
+      modalSection === "generale" && /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Annata", req: true, v: form.annata || "",
+          on: v => setForm(f => ({ ...f, annata: v })), ph: "es. 2026"
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Varietà", v: form.varieta || "",
+          on: v => setForm(f => ({ ...f, varieta: v })),
+          ph: "es. Frantoio, Moraiolo, Leccino"
+        }),
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Codice lotto", v: form.codLotto || "",
+            on: v => setForm(f => ({ ...f, codLotto: v })),
+            ph: "es. L2025-001"
+          }),
+          !form.codLotto && form.annata && /*#__PURE__*/React.createElement("button", {
+            type: "button",
+            onClick: () => setForm(f => ({ ...f, codLotto: nextCodLotto(f.annata) })),
+            style: { marginTop: 4, padding: "3px 8px", fontSize: 10, background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 4, color: C.grigio600, cursor: "pointer", fontWeight: 600 }
+          }, "✨ Genera (" + nextCodLotto(form.annata) + ")")
+        ),
+        /*#__PURE__*/React.createElement(Sel, {
+          label: "Stato", v: form.stato || "pianificato",
+          on: v => setForm(f => {
+            const next = { ...f, stato: v };
+            const dateField = stateAutoDate[v];
+            if (dateField && !f[dateField]) next[dateField] = todayStr();
+            return next;
+          }),
+          opts: Object.entries(STATI_LOTTO).map(([k, info]) => ({ v: k, l: info.emoji + " " + info.l }))
+        }),
+        /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
+          /*#__PURE__*/React.createElement("label", {
+            style: { fontSize: 11, fontWeight: 600, color: C.grigio600, letterSpacing: 0.5, display: "block", marginBottom: 6 }
+          }, "Certificazioni"),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 } },
+            CERTIFICAZIONI.map(c => {
+              const active = (form.certificazioni || []).indexOf(c) >= 0;
+              return /*#__PURE__*/React.createElement("button", {
+                key: c, type: "button",
+                onClick: () => toggleCert(c),
+                style: {
+                  padding: "5px 12px", fontSize: 11, fontWeight: 600, borderRadius: 4,
+                  border: active ? `1.5px solid ${C.oro}` : `1px solid ${C.grigio200}`,
+                  background: active ? "#fff8e1" : "#fff",
+                  color: active ? "#7a5900" : C.grigio600,
+                  cursor: "pointer"
+                }
+              }, active ? "✓ " + c : c);
+            })
+          )
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Note campagna", v: form.note || "",
+            on: v => setForm(f => ({ ...f, note: v })), rows: 2
+          })
+        )
+      ),
+      // ── Sezione 2: Raccolta & Frangitura ──────────────────────────────────
+      modalSection === "raccolta" && /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
+        (() => {
+          const fornitoriOlive = (dati.fornitori || []).filter(f => f.categoria === "fornitore_olive");
+          return /*#__PURE__*/React.createElement(Sel, {
+            label: "Fornitore olive",
+            v: form.fornitoreOliveId || "",
+            on: v => setForm(f => ({ ...f, fornitoreOliveId: v || null })),
+            opts: [{ v: "", l: fornitoriOlive.length === 0 ? "— Nessun fornitore olive in anagrafica —" : "— Nessuno —" }].concat(
+              fornitoriOlive.map(f => ({ v: f.id, l: f.ragioneSociale || f.nome || "—" }))
+            )
+          });
+        })(),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Data raccolta", type: "date", v: form.dataRaccolta || "",
+          on: v => setForm(f => ({ ...f, dataRaccolta: v }))
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Olive raccolte (kg)", type: "number", min: 0, step: 1,
+          v: form.qtaOlive != null ? form.qtaOlive : "",
+          on: v => setForm(f => ({ ...f, qtaOlive: Number(v) || 0 }))
+        }),
+        (() => {
+          const frantoi = (dati.fornitori || []).filter(f => f.categoria === "frantoio");
+          return /*#__PURE__*/React.createElement(Sel, {
+            label: "Frantoio (anagrafica fornitori)",
+            v: form.frantoioId || "",
+            on: v => setForm(f => ({ ...f, frantoioId: v || null })),
+            opts: [{ v: "", l: frantoi.length === 0 ? "— Nessun frantoio in anagrafica —" : "— Nessuno —" }].concat(
+              frantoi.map(f => ({ v: f.id, l: f.ragioneSociale || f.nome || "—" }))
+            )
+          });
+        })(),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Frantoio (testo libero, se non in anagrafica)",
+          v: form.frantoio || "",
+          on: v => setForm(f => ({ ...f, frantoio: v })),
+          disabled: !!form.frantoioId,
+          ph: "es. Frantoio Sociale di Bagno a Ripoli"
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Data frangitura", type: "date", v: form.dataFrangitura || "",
+          on: v => setForm(f => ({ ...f, dataFrangitura: v }))
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "N° frangiture", type: "number", min: 0, step: 1,
+          v: form.nFrangiture != null ? form.nFrangiture : "",
+          on: v => setForm(f => ({ ...f, nFrangiture: Number(v) || 0 }))
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Olio prodotto (L)", type: "number", min: 0, step: 1,
+          v: form.qtaOlio != null ? form.qtaOlio : "",
+          on: v => setForm(f => ({ ...f, qtaOlio: Number(v) || 0 }))
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Resa % (auto)", v: form.resa != null && form.resa !== 0 ? form.resa : "",
+          on: () => {}, disabled: true, ph: "calcolata da olio/olive"
+        })
+      ),
+      // ── Sezione 3: Qualità ────────────────────────────────────────────────
+      modalSection === "qualita" && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+        /*#__PURE__*/React.createElement("div", {
+          style: { padding: "10px 14px", background: isExtravergine(form) ? "#e8f5e9" : C.grigio50, borderRadius: 8, borderLeft: `3px solid ${isExtravergine(form) ? C.verde : C.grigio300}`, fontSize: 12, color: isExtravergine(form) ? "#2e7d32" : C.grigio600 }
+        }, isExtravergine(form)
+          ? "✅ Parametri rientrano nei limiti per extravergine (acidità ≤ 0.8%, perossidi ≤ 20 meq O₂/kg)"
+          : "Compila acidità e perossidi per il check automatico extravergine."
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 } },
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Acidità %", type: "number", step: 0.01, min: 0,
+            v: (form.qualita || {}).acidita != null ? (form.qualita || {}).acidita : "",
+            on: v => setForm(f => ({ ...f, qualita: { ...(f.qualita || {}), acidita: v === "" ? null : Number(v) } })),
+            ph: "es. 0.3 (max 0.8 EVO)"
+          }),
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Perossidi (meq O₂/kg)", type: "number", step: 0.1, min: 0,
+            v: (form.qualita || {}).perossidi != null ? (form.qualita || {}).perossidi : "",
+            on: v => setForm(f => ({ ...f, qualita: { ...(f.qualita || {}), perossidi: v === "" ? null : Number(v) } })),
+            ph: "es. 8 (max 20 EVO)"
+          }),
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Polifenoli (mg/kg)", type: "number", step: 1, min: 0,
+            v: (form.qualita || {}).polifenoli != null ? (form.qualita || {}).polifenoli : "",
+            on: v => setForm(f => ({ ...f, qualita: { ...(f.qualita || {}), polifenoli: v === "" ? null : Number(v) } })),
+            ph: "es. 350"
+          })
+        ),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Note laboratorio / degustazione",
+          v: (form.qualita || {}).note || "",
+          on: v => setForm(f => ({ ...f, qualita: { ...(f.qualita || {}), note: v } })),
+          rows: 3, ph: "Profilo organolettico, certificato di analisi, ecc."
+        })
+      ),
+      // ── Sezione 4: Imbottigliamento & Etichettatura ───────────────────────
+      modalSection === "imbott" && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Data imbottigliamento", type: "date", v: form.dataImbottigliamento || "",
+            on: v => setForm(f => ({ ...f, dataImbottigliamento: v }))
+          }),
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Data etichettatura", type: "date", v: form.dataEtichettatura || "",
+            on: v => setForm(f => ({ ...f, dataEtichettatura: v }))
+          }),
+          /*#__PURE__*/React.createElement(Sel, {
+            label: "Prodotto finale (SKU magazzino)", v: form.skuFinale || "",
+            on: v => setForm(f => ({ ...f, skuFinale: v || null })),
+            opts: [{ v: "", l: "— Nessuno —" }].concat((dati.magazzino || []).map(m => ({
+              v: m.id, l: `${m.prodotto} ${m.formato} R.${m.annata}`
+            })))
+          }),
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Quantità prodotta (pezzi)", type: "number", min: 0, step: 1,
+            v: form.qtaProdotta != null ? form.qtaProdotta : "",
+            on: v => setForm(f => ({ ...f, qtaProdotta: Number(v) || 0 })),
+            ph: "es. 920"
+          })
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { padding: 12, background: C.grigio50, borderRadius: 8 } },
+          !form.id && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, fontStyle: "italic" } }, "Salva il lotto prima per poterlo caricare in magazzino."),
+          form.id && !form.caricoMagazzino && form.skuFinale && Number(form.qtaProdotta) > 0 && /*#__PURE__*/React.createElement(Btn, {
+            ch: "📥 Carica in magazzino (" + Number(form.qtaProdotta) + " pz)",
+            sz: "sm", onClick: () => caricaInMagazzino(form)
+          }),
+          form.id && !form.caricoMagazzino && (!form.skuFinale || !Number(form.qtaProdotta)) && /*#__PURE__*/React.createElement("div", {
+            style: { fontSize: 11, color: C.grigio400, fontStyle: "italic" }
+          }, "Imposta SKU finale e quantità prodotta per abilitare il carico in magazzino."),
+          form.caricoMagazzino && /*#__PURE__*/React.createElement("div", {
+            style: { fontSize: 12, color: C.verde, fontWeight: 700 }
+          }, "✅ Già caricato in magazzino il " + fmtD(form.dataCaricoMag))
+        )
+      ),
+      // ── Sezione 5: Costi ──────────────────────────────────────────────────
+      modalSection === "costi" && (() => {
+        const c = form.costi || {};
+        const upd = (k, v) => setForm(f => ({ ...f, costi: { ...(f.costi || {}), [k]: v === "" ? null : Number(v) } }));
+        const tot = costoTotaleLotto(form);
+        const lit = costoPerLitroLotto(form);
+        return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+          /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
+            /*#__PURE__*/React.createElement(Inp, { label: "Costo olive (€)", type: "number", min: 0, step: 0.01, v: c.costoOlive != null ? c.costoOlive : "", on: v => upd("costoOlive", v) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Costo frantoio (€)", type: "number", min: 0, step: 0.01, v: c.costoFrantoio != null ? c.costoFrantoio : "", on: v => upd("costoFrantoio", v) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Costo imbottigliamento (€)", type: "number", min: 0, step: 0.01, v: c.costoImbottigliamento != null ? c.costoImbottigliamento : "", on: v => upd("costoImbottigliamento", v) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Costo etichettatura (€)", type: "number", min: 0, step: 0.01, v: c.costoEtichettatura != null ? c.costoEtichettatura : "", on: v => upd("costoEtichettatura", v) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Altri costi (€)", type: "number", min: 0, step: 0.01, v: c.costoAltro != null ? c.costoAltro : "", on: v => upd("costoAltro", v) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Note altri costi", v: c.noteAltro || "", on: v => setForm(f => ({ ...f, costi: { ...(f.costi || {}), noteAltro: v } })), ph: "descrizione" })
+          ),
+          /*#__PURE__*/React.createElement("div", {
+            style: { padding: "12px 16px", background: "#f5f7f0", borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }
+          },
+            /*#__PURE__*/React.createElement("div", null,
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, "Totale costi"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: C.olivaScuro } }, fmt(tot))
+            ),
+            lit != null && /*#__PURE__*/React.createElement("div", { style: { textAlign: "right" } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, "Costo per litro (su " + Number(form.qtaOlio || 0) + " L)"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: C.olivaScuro } }, fmt(lit), "/L")
+            )
+          )
+        );
+      })(),
+      // ── Footer: Elimina | Annulla | Salva ─────────────────────────────────
+      /*#__PURE__*/React.createElement("div", {
+        style: { display: "flex", justifyContent: "flex-end", gap: 8, borderTop: `1px solid ${C.grigio200}`, paddingTop: 14, marginTop: 4 }
+      },
+        form.id && !form.caricoMagazzino && /*#__PURE__*/React.createElement(Btn, {
+          ch: "🗑 Elimina lotto", v: "dan", sz: "sm",
+          style: { marginRight: "auto" }, onClick: deleteLotto
+        }),
+        form.id && form.caricoMagazzino && /*#__PURE__*/React.createElement("div", {
+          style: { marginRight: "auto", fontSize: 11, color: C.grigio400, alignSelf: "center", fontStyle: "italic" }
+        }, "Non eliminabile: già in magazzino"),
+        /*#__PURE__*/React.createElement(Btn, {
+          ch: "Annulla", v: "sec",
+          onClick: () => { setModal(null); setModalSection("generale"); }
+        }),
+        /*#__PURE__*/React.createElement(Btn, {
+          ch: form.id ? "💾 Salva modifiche" : "💾 Crea lotto",
+          onClick: save
+        })
+      )
+    )
   }));
 }
 
