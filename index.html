@@ -1432,16 +1432,23 @@ const FLUSSO_LOTTO = {
 };
 const STATI_LOTTO_ORDER = Object.keys(STATI_LOTTO);
 // Helper costi: somma di tutte le voci `costi.*` del lotto.
-// Fallback su `l.costoFrantoio` top-level (campo legacy pre-v50) se costi.costoFrantoio mancante,
-// così la card mostra il costo anche se la migrazione v50 non ha ancora valorizzato `costi`.
+// Tollera valori stringa, fallback su `l.costoFrantoio` top-level (campo legacy pre-v50).
+const _parseNum = (v) => {
+  if (v == null || v === "") return 0;
+  if (typeof v === "number") return isFinite(v) ? v : 0;
+  // stringa: gestisce sia "558" che "558,50" e "558.50 €"
+  const n = parseFloat(String(v).replace(",", ".").replace(/[^0-9.\-]/g, ""));
+  return isFinite(n) ? n : 0;
+};
 const costoTotaleLotto = (l) => {
-  const c = (l && l.costi) || {};
-  const cFrantoio = (Number(c.costoFrantoio) || 0) || (Number(l && l.costoFrantoio) || 0);
-  return (Number(c.costoOlive) || 0) +
+  if (!l) return 0;
+  const c = l.costi || {};
+  const cFrantoio = _parseNum(c.costoFrantoio) || _parseNum(l.costoFrantoio);
+  return _parseNum(c.costoOlive) +
          cFrantoio +
-         (Number(c.costoImbottigliamento) || 0) +
-         (Number(c.costoEtichettatura) || 0) +
-         (Number(c.costoAltro) || 0);
+         _parseNum(c.costoImbottigliamento) +
+         _parseNum(c.costoEtichettatura) +
+         _parseNum(c.costoAltro);
 };
 const costoPerLitroLotto = (l) => {
   const qta = Number(l && l.qtaOlio) || 0;
@@ -11118,6 +11125,19 @@ function Produzione({
   const [filtroAnnata, setFiltroAnnata] = useState("");
   const [filtroSearch, setFiltroSearch] = useState("");
   const [expandedLotto, setExpandedLotto] = useState(null);
+  // v50-prod1: audit diagnostico una sola volta al mount per debug dati live
+  useEffect(() => {
+    console.log("[TNB_PROD_AUDIT] dati.lotti =", (dati.lotti || []).map(l => ({
+      id: l.id, annata: l.annata,
+      frantoio: l.frantoio, frantoioId: l.frantoioId,
+      qtaOlive: l.qtaOlive, qtaOlio: l.qtaOlio,
+      costoFrantoio_top: l.costoFrantoio,
+      costi_obj: l.costi,
+      stato: l.stato,
+      _migration_v49: dati._migration_v49,
+      _migration_v50: dati._migration_v50
+    })));
+  }, []);
   // v49-mag1: carica il lotto in magazzino generando un movimento carico_produzione
   const caricaInMagazzino = (l) => {
     if (!l || !l.skuFinale || !Number(l.qtaProdotta) || l.caricoMagazzino) return;
@@ -11252,7 +11272,11 @@ function Produzione({
       const evo = isExtravergine(l);
       const fornitoreOlive = l.fornitoreOliveId && dati.fornitori.find(f => f.id === l.fornitoreOliveId);
       const frantoioObj = l.frantoioId && dati.fornitori.find(f => f.id === l.frantoioId);
-      const frantoioNome = (frantoioObj && (frantoioObj.ragioneSociale || frantoioObj.nome)) || l.frantoio || "—";
+      // Risoluzione robusta del nome frantoio: prima dal collegamento fornitori, poi campo legacy
+      // testo libero, sotto vari nomi (frantoio, frantoioNome, fornitoreFrantoio).
+      let frantoioNome = (frantoioObj && (frantoioObj.ragioneSociale || frantoioObj.nome)) || "";
+      if (!frantoioNome) frantoioNome = String(l.frantoio || l.frantoioNome || l.fornitoreFrantoio || "").trim();
+      if (!frantoioNome) frantoioNome = "—";
       const q = l.qualita || {};
       return /*#__PURE__*/React.createElement(Card, {
         key: l.id,
@@ -11394,14 +11418,14 @@ function Produzione({
                 if (cTot <= 0) return /*#__PURE__*/React.createElement("div", { style: { fontStyle: "italic", color: C.grigio400 } }, "Nessun costo registrato.");
                 const c = l.costi || {};
                 // Fallback frantoio: campo legacy l.costoFrantoio se costi.costoFrantoio non valorizzato
-                const cfFront = (Number(c.costoFrantoio) || 0) || (Number(l.costoFrantoio) || 0);
+                const cfFront = _parseNum(c.costoFrantoio) || _parseNum(l.costoFrantoio);
                 const voci = [
-                  ["Olive", c.costoOlive],
+                  ["Olive", _parseNum(c.costoOlive)],
                   ["Frantoio", cfFront],
-                  ["Imbottigliam.", c.costoImbottigliamento],
-                  ["Etichettatura", c.costoEtichettatura],
-                  ["Altro" + (c.noteAltro ? " (" + c.noteAltro + ")" : ""), c.costoAltro]
-                ].filter(([, v]) => Number(v) > 0);
+                  ["Imbottigliam.", _parseNum(c.costoImbottigliamento)],
+                  ["Etichettatura", _parseNum(c.costoEtichettatura)],
+                  ["Altro" + (c.noteAltro ? " (" + c.noteAltro + ")" : ""), _parseNum(c.costoAltro)]
+                ].filter(([, v]) => v > 0);
                 return /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", gap: "2px 12px" } },
                   voci.flatMap(([k, v]) => [
                     /*#__PURE__*/React.createElement("div", { key: k + "_k" }, k),
