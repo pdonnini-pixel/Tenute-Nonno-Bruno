@@ -1231,7 +1231,7 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260513-v51-forn1
+</script><script>// TNB-BUILD-20260513-v52-costi1
 // v51 Fornitori: hub relazionale completo.
 // - Migrazione idempotente migrateV51Fornitori (flag _migration_v51_fornitori):
 //   aggiunge documenti[], attivo, dataCreazione, dataModifica. Preserva campi legacy.
@@ -2032,6 +2032,44 @@ const migrateV51Fornitori = (dataObj) => {
     dataModifica: f.dataModifica || today
   }));
   out._migration_v51_fornitori = true;
+  return out;
+};
+
+// v52-costi1: Costi & Margini agganciati al BOM v50 + Listino editabile.
+// - Popola dati.listino[] dalla const LISTINO se vuoto.
+// - Schema: { id, formato, prezzoBase, scaglioni, canali, attivo, note,
+//   pezziCollo, scatola, usi, scontoSenzaConfezione, noteSconto, combo, annata }
+// - Preserva dati.costiConfig come fallback per SKU senza BOM (NON elimina).
+// Idempotente via _migration_v52_costi.
+const migrateV52CostiMargini = (dataObj) => {
+  if (!dataObj || dataObj._migration_v52_costi) return dataObj;
+  const out = { ...dataObj };
+  if (!Array.isArray(out.listino)) out.listino = [];
+  // Popola listino da LISTINO const se non già fatto
+  if (out.listino.length === 0 && typeof LISTINO === "object" && LISTINO !== null) {
+    out.listino = Object.entries(LISTINO).map(([fmt, l]) => ({
+      id: (typeof uid === "function" ? uid() : "lst_" + fmt.replace(/\W/g, "_")),
+      formato: fmt,
+      prezzoBase: Number(l.pubblico) || 0,
+      scaglioni: Array.isArray(l.scaglioni) ? l.scaglioni.map(s => ({
+        colli: Number(s.colli) || 1,
+        qta: Number(s.qta) || 0,
+        prezzo: Number(s.prezzo) || 0
+      })) : [],
+      canali: {},
+      attivo: true,
+      note: "",
+      // Preservo metadata di LISTINO per ListinoPage e PDF ordini
+      annata: l.annata || "",
+      pezziCollo: Number(l.pezziCollo) || 1,
+      scatola: !!l.scatola,
+      usi: l.usi || "",
+      scontoSenzaConfezione: Number(l.scontoSenzaConfezione) || 0,
+      noteSconto: l.noteSconto || "",
+      combo: l.combo || ""
+    }));
+  }
+  out._migration_v52_costi = true;
   return out;
 };
 
@@ -4893,6 +4931,40 @@ const LISTINO = {
 const SPEDIZIONE = {
   firenze_provincia: 0,
   fuori_provincia: 15.00
+};
+// v52-costi1: prezzo listino unificato. Legge da dati.listino[] se presente, altrimenti
+// fallback alla const LISTINO. Ritorna { pubblico, horeca/scaglioni }.
+const getListino = (formato, dati) => {
+  if (dati && Array.isArray(dati.listino)) {
+    const entry = dati.listino.find(l => l.formato === formato && l.attivo !== false);
+    if (entry) {
+      return {
+        pubblico: Number(entry.prezzoBase) || 0,
+        scaglioni: Array.isArray(entry.scaglioni) ? entry.scaglioni : [],
+        annata: entry.annata || "",
+        pezziCollo: entry.pezziCollo || 1,
+        scatola: !!entry.scatola,
+        usi: entry.usi || "",
+        scontoSenzaConfezione: Number(entry.scontoSenzaConfezione) || 0,
+        noteSconto: entry.noteSconto || "",
+        combo: entry.combo || ""
+      };
+    }
+  }
+  // Fallback alla const hardcoded
+  const l = (typeof LISTINO === "object" && LISTINO !== null) ? LISTINO[formato] : null;
+  if (!l) return null;
+  return {
+    pubblico: Number(l.pubblico) || 0,
+    scaglioni: l.scaglioni || [],
+    annata: l.annata || "",
+    pezziCollo: l.pezziCollo || 1,
+    scatola: !!l.scatola,
+    usi: l.usi || "",
+    scontoSenzaConfezione: Number(l.scontoSenzaConfezione) || 0,
+    noteSconto: l.noteSconto || "",
+    combo: l.combo || ""
+  };
 };
 const getPrezzoListino = (formato, qta, conConfezione = true) => {
   const l = LISTINO[formato];
@@ -14474,7 +14546,7 @@ function App() {
           if (u) setCurrentUser(u);
         }
         const r = await window.storage.get("tnb-pro-v2");
-        const parsed = migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))))))));
+        const parsed = migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0))))))))))))));
         if (parsed.agendaState) {
           const validIds = new Set([
             ...parsed.ordini.map(o => `firma_${o.id}`),
@@ -14988,7 +15060,7 @@ function App() {
     dati: dati
   }), modulo === "log" && /*#__PURE__*/React.createElement(ActivityLog, {
     currentUser: currentUser
-  }), modulo === "listino" && /*#__PURE__*/React.createElement(ListinoPage, null), modulo === "alerts" && /*#__PURE__*/React.createElement(AlertsPage, {
+  }), modulo === "listino" && /*#__PURE__*/React.createElement(ListinoPage, { dati: dati, setDati: setDati }), modulo === "alerts" && /*#__PURE__*/React.createElement(AlertsPage, {
     dati: dati,
     setDati: setDatiSave,
     setModulo: setModulo
@@ -19038,18 +19110,114 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
 }
 
 // ─── LISTINO PAGE ─────────────────────────────────────────────────────────────
-function ListinoPage() {
+// v52-costi1: ListinoPage editabile. Riceve dati + setDati, legge da dati.listino[]
+// (popolato dalla migrazione v52). Mostra anche il costo BOM medio e il margine
+// vs prezzo base per ogni formato, calcolato dai lotti reali.
+function ListinoPage({ dati, setDati }) {
+  const [editId, setEditId] = useState(null);
+  const [draft, setDraft] = useState({});
+  const listino = Array.isArray(dati && dati.listino) ? dati.listino : [];
+  // Helper: costo BOM medio per formato (media ponderata su tutti gli imbottigliamenti)
+  const costoBomFormato = (formato) => {
+    const bot = (dati.bottiglie || []).find(b => b.formato === formato);
+    if (!bot) return null;
+    const pack = costoPackaging(bot);
+    // Media ponderata costo olio/L su tutti gli imbottigliamenti che usano questa bottiglia
+    let totL = 0, totC = 0;
+    (dati.lotti || []).forEach(l => {
+      (l.imbottigliamenti || []).forEach(imb => {
+        if (imb.bottigliaId === bot.id) {
+          const litri = _parseNum(imb.litriUsati);
+          const cpl = costoOlioPerLitroLotto(l);
+          totL += litri;
+          totC += cpl * litri;
+        }
+      });
+    });
+    const costoOlio = totL > 0 ? totC / totL : 0;
+    const litri = litriPerFormato(formato);
+    return { packaging: pack, olio: costoOlio * litri, totale: pack + costoOlio * litri, hasOlio: totL > 0 };
+  };
+  // Avvia editing di una entry
+  const startEdit = (entry) => {
+    setEditId(entry.id);
+    setDraft({
+      ...entry,
+      scaglioni: Array.isArray(entry.scaglioni) ? entry.scaglioni.map(s => ({ ...s })) : []
+    });
+  };
+  const cancelEdit = () => { setEditId(null); setDraft({}); };
+  const saveEdit = () => {
+    const errors = [];
+    if (!draft.formato || !String(draft.formato).trim()) errors.push("Formato obbligatorio");
+    if (draft.prezzoBase != null && Number(draft.prezzoBase) < 0) errors.push("Prezzo base non negativo");
+    (draft.scaglioni || []).forEach((s, i) => {
+      if (Number(s.colli) < 0) errors.push(`Scaglione ${i + 1}: colli non negativi`);
+      if (Number(s.qta) < 0) errors.push(`Scaglione ${i + 1}: qta non negativa`);
+      if (Number(s.prezzo) < 0) errors.push(`Scaglione ${i + 1}: prezzo non negativo`);
+    });
+    if (errors.length > 0) {
+      if (window.tnbToast) window.tnbToast(errors.join(" \u00B7 "), "err");
+      return;
+    }
+    setDati(d => ({
+      ...d,
+      listino: (d.listino || []).map(l => l.id === editId ? {
+        ...l,
+        ...draft,
+        prezzoBase: Number(draft.prezzoBase) || 0,
+        scaglioni: (draft.scaglioni || []).map(s => ({
+          colli: Number(s.colli) || 0,
+          qta: Number(s.qta) || 0,
+          prezzo: Number(s.prezzo) || 0
+        })),
+        scontoSenzaConfezione: Number(draft.scontoSenzaConfezione) || 0,
+        pezziCollo: Number(draft.pezziCollo) || 1,
+        attivo: draft.attivo !== false
+      } : l)
+    }));
+    setEditId(null); setDraft({});
+    if (window.tnbToast) window.tnbToast("\u2713 Listino aggiornato");
+  };
+  const toggleAttivo = (id) => {
+    setDati(d => ({
+      ...d,
+      listino: (d.listino || []).map(l => l.id === id ? { ...l, attivo: l.attivo === false ? true : false } : l)
+    }));
+  };
+  const addScaglione = () => setDraft(d => ({
+    ...d,
+    scaglioni: [...(d.scaglioni || []), { colli: 1, qta: 1, prezzo: 0 }]
+  }));
+  const updScaglione = (idx, k, v) => setDraft(d => ({
+    ...d,
+    scaglioni: (d.scaglioni || []).map((s, i) => i === idx ? { ...s, [k]: Number(v) || 0 } : s)
+  }));
+  const removeScaglione = (idx) => setDraft(d => ({
+    ...d,
+    scaglioni: (d.scaglioni || []).filter((_, i) => i !== idx)
+  }));
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83D\uDCCB Listino Commerciale 2026"
   }), /*#__PURE__*/React.createElement(PageSummary, { items: (() => {
-    const entries = Object.entries(LISTINO);
-    const prezzi = entries.map(([k, l]) => l.pubblico || 0).filter(p => p > 0);
-    const scaglioniMin = entries.flatMap(([k, l]) => (l.scaglioni || []).map(s => s.prezzo)).filter(p => p > 0);
+    const attivi = listino.filter(l => l.attivo !== false);
+    const prezzi = attivi.map(l => Number(l.prezzoBase) || 0).filter(p => p > 0);
+    const scaglioniMin = attivi.flatMap(l => (l.scaglioni || []).map(s => s.prezzo)).filter(p => p > 0);
+    // Margine medio sui formati con BOM disponibile
+    const margini = attivi.map(l => {
+      const bom = costoBomFormato(l.formato);
+      if (!bom || !bom.hasOlio) return null;
+      const m = Number(l.prezzoBase) - bom.totale;
+      return l.prezzoBase > 0 ? (m / l.prezzoBase) * 100 : null;
+    }).filter(x => x != null);
+    const margMedio = margini.length > 0 ? (margini.reduce((s, x) => s + x, 0) / margini.length) : null;
     return [
-      { label: "Formati", value: entries.length, color: "#3a3a3a" },
-      { label: "Prezzo pubblico medio", value: prezzi.length ? fmt(prezzi.reduce((s,p) => s+p, 0) / prezzi.length) : "\u2014", color: "#3a3a3a" },
+      { label: "Formati attivi", value: attivi.length + " / " + listino.length, color: "#3a3a3a" },
+      { label: "Prezzo pubblico medio", value: prezzi.length ? fmt(prezzi.reduce((s, p) => s + p, 0) / prezzi.length) : "\u2014", color: "#3a3a3a" },
       { label: "Range pubblico", value: prezzi.length ? `${fmt(Math.min(...prezzi))} \u2014 ${fmt(Math.max(...prezzi))}` : "\u2014", color: "#7a7a7a" },
-      { label: "Prezzo HoReCa min", value: scaglioniMin.length ? fmt(Math.min(...scaglioniMin)) : "\u2014", color: "#4a5c2f" }
+      { label: margMedio != null ? "Margine medio BOM" : "Prezzo HoReCa min",
+        value: margMedio != null ? margMedio.toFixed(1) + "%" : (scaglioniMin.length ? fmt(Math.min(...scaglioniMin)) : "\u2014"),
+        color: margMedio != null ? (margMedio > 40 ? "#4a5c2f" : margMedio > 0 ? "#c9a84c" : "#c0392b") : "#4a5c2f" }
     ];
   })() }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -19068,9 +19236,34 @@ function ListinoPage() {
       gap: 16,
       marginBottom: 16
     }
-  }, Object.entries(LISTINO).map(([formato, l]) => /*#__PURE__*/React.createElement(Card, {
-    key: formato,
-    ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }, listino.map((l) => {
+    const formato = l.formato;
+    const isEditing = editId === l.id;
+    const bom = costoBomFormato(formato);
+    const margine = bom && l.prezzoBase > 0 ? Number(l.prezzoBase) - bom.totale : null;
+    const marginePct = margine != null && Number(l.prezzoBase) > 0 ? (margine / Number(l.prezzoBase)) * 100 : null;
+    return /*#__PURE__*/React.createElement(Card, {
+    key: l.id,
+    style: { opacity: l.attivo === false ? 0.55 : 1, border: isEditing ? `2px solid ${C.olivaScuro}` : `1px solid ${C.grigio200}` },
+    ch: /*#__PURE__*/React.createElement(React.Fragment, null,
+      // Banner BOM + margine (sopra l'header)
+      bom && bom.hasOlio && /*#__PURE__*/React.createElement("div", {
+        style: { padding: "6px 10px", background: marginePct >= 50 ? "#e8f5e9" : marginePct >= 20 ? "#fff8e1" : "#ffebee", borderRadius: 6, marginBottom: 10, fontSize: 11, display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", border: `1px solid ${marginePct >= 50 ? "#2e7d3244" : marginePct >= 20 ? C.oro + "44" : "#c0392b44"}` }
+      },
+        /*#__PURE__*/React.createElement("span", null,
+          /*#__PURE__*/React.createElement("strong", null, "🟢 BOM"),
+          " · Costo ", fmt(bom.totale), " (pack ", fmt(bom.packaging), " + olio ", fmt(bom.olio), ")"
+        ),
+        /*#__PURE__*/React.createElement("strong", { style: { color: marginePct >= 50 ? "#2e7d32" : marginePct >= 20 ? "#7a5900" : "#c0392b" } },
+          fmt(margine), " (", marginePct.toFixed(0), "%)"
+        )
+      ),
+      bom && !bom.hasOlio && /*#__PURE__*/React.createElement("div", {
+        style: { padding: "6px 10px", background: "#fff8e1", borderRadius: 6, marginBottom: 10, fontSize: 10, color: "#7a5900", border: `1px solid ${C.oro}44` }
+      },
+        "🟡 BOM packaging ", fmt(bom.packaging), "/bott · costo olio non disponibile (compila lotti)"
+      ),
+      /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         justifyContent: "space-between",
@@ -19088,16 +19281,33 @@ function ListinoPage() {
         fontSize: 11,
         color: C.grigio400
       }
-    }, "Raccolta ", l.annata, " \xB7 Prezzo al pubblico: ", fmt(l.pubblico))), l.scatola && /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 10,
-        background: C.oliva + "22",
-        color: C.oliva,
-        borderRadius: 4,
-        padding: "2px 7px",
-        fontWeight: 700
-      }
-    }, "CON SCATOLA")), /*#__PURE__*/React.createElement("table", {
+    }, "Raccolta ", l.annata || "—", " · Prezzo al pubblico: ",
+      isEditing
+        ? /*#__PURE__*/React.createElement("input", {
+            type: "number", step: 0.01,
+            value: draft.prezzoBase != null ? draft.prezzoBase : "",
+            onChange: e => setDraft(d => ({ ...d, prezzoBase: e.target.value })),
+            style: { width: 80, padding: "2px 6px", border: `1px solid ${C.olivaScuro}`, borderRadius: 4, fontSize: 12, fontWeight: 700, marginLeft: 4 }
+          })
+        : fmt(l.prezzoBase)
+    )), /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 } },
+      l.attivo === false && /*#__PURE__*/React.createElement("span", {
+        style: { fontSize: 10, background: "#eee", color: "#888", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }
+      }, "⏸ INATTIVO"),
+      l.scatola && !isEditing && /*#__PURE__*/React.createElement("span", {
+        style: { fontSize: 10, background: C.oliva + "22", color: C.oliva, borderRadius: 4, padding: "2px 7px", fontWeight: 700 }
+      }, "CON SCATOLA"),
+      !isEditing && /*#__PURE__*/React.createElement(Btn, {
+        ch: /*#__PURE__*/React.createElement(I.edit, null), v: "gh", sz: "sm",
+        onClick: () => startEdit(l)
+      }),
+      !isEditing && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => toggleAttivo(l.id),
+        title: l.attivo === false ? "Attiva" : "Disattiva",
+        style: { padding: "3px 8px", fontSize: 10, border: `1px solid ${C.grigio200}`, background: "#fff", color: C.grigio600, borderRadius: 4, cursor: "pointer", fontWeight: 600 }
+      }, l.attivo === false ? "✅ Attiva" : "⏸ Disattiva")
+    )), /*#__PURE__*/React.createElement("table", {
       style: {
         width: "100%",
         borderCollapse: "collapse",
@@ -19180,8 +19390,32 @@ function ListinoPage() {
         borderTop: `1px solid ${C.grigio100}`,
         paddingTop: 8
       }
-    }, "\uD83D\uDCA1 ", l.usi))
-  }))), /*#__PURE__*/React.createElement(Card, {
+    }, "\uD83D\uDCA1 ", l.usi),
+    // Editor scaglioni quando in editing
+    isEditing && /*#__PURE__*/React.createElement("div", {
+      style: { borderTop: `1px dashed ${C.olivaScuro}33`, marginTop: 10, paddingTop: 10 }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.olivaScuro, letterSpacing: 0.5, marginBottom: 6 } }, "\u270F\uFE0F SCAGLIONI HORECA"),
+      (draft.scaglioni || []).map((s, idx) => /*#__PURE__*/React.createElement("div", {
+        key: idx,
+        style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 6, marginBottom: 4 }
+      },
+        /*#__PURE__*/React.createElement("input", { type: "number", value: s.colli, onChange: e => updScaglione(idx, "colli", e.target.value), placeholder: "Colli", style: { padding: "3px 6px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11 } }),
+        /*#__PURE__*/React.createElement("input", { type: "number", value: s.qta, onChange: e => updScaglione(idx, "qta", e.target.value), placeholder: "Qta", style: { padding: "3px 6px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11 } }),
+        /*#__PURE__*/React.createElement("input", { type: "number", step: 0.01, value: s.prezzo, onChange: e => updScaglione(idx, "prezzo", e.target.value), placeholder: "\u20AC/pz", style: { padding: "3px 6px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11 } }),
+        /*#__PURE__*/React.createElement("button", { type: "button", onClick: () => removeScaglione(idx), style: { padding: "2px 8px", border: `1px solid ${C.rosso}44`, background: "#fff", color: C.rosso, borderRadius: 4, fontSize: 12, cursor: "pointer", fontWeight: 700 } }, "\uD83D\uDDD1")
+      )),
+      /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: addScaglione,
+        style: { marginTop: 4, padding: "3px 10px", fontSize: 10, border: `1px dashed ${C.olivaScuro}`, background: "#fff", color: C.olivaScuro, borderRadius: 4, cursor: "pointer", fontWeight: 600 }
+      }, "\u2795 Aggiungi scaglione"),
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 10 } },
+        /*#__PURE__*/React.createElement(Btn, { ch: "Annulla", v: "sec", sz: "sm", onClick: cancelEdit }),
+        /*#__PURE__*/React.createElement(Btn, { ch: "\uD83D\uDCBE Salva", sz: "sm", onClick: saveEdit })
+      )
+    ))
+  });})), /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
