@@ -1231,7 +1231,7 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260512-v49-mag1
+</script><script>// TNB-BUILD-20260513-v49-mag1
 // ─── TOAST GLOBALE ────────────────────────────────────────────────────────────
 window.tnbToast = (msg, kind) => {
   // Errori: overlay centrato vistoso (top-center, backdrop, click-to-dismiss, timeout lungo).
@@ -9930,6 +9930,31 @@ function Magazzino({
   const [expandedId, setExpandedId] = useState(null);
   const [filterSottoSoglia, setFilterSottoSoglia] = useState(false);
   useEffect(() => { setTimeout(() => { if(window._tnbNav){ if(window._tnbNav.soloSottoSoglia){ setFilterSottoSoglia(true); } window._tnbNav=null; } }, 80); }, []);
+  // v49-mag1: audit coerenza al mount. Logga (non auto-corregge) gli SKU il cui m.giacenza
+  // diverge da ricalcolaGiacenza(movimentiSku). L'utente può cliccare "🔄 Ricalcola" per
+  // sincronizzare. Visibile in console come [TNB_MAG_AUDIT].
+  useEffect(() => {
+    const discr = [];
+    (dati.magazzino || []).forEach(m => {
+      const mvSku = (dati.movimenti || []).filter(mv => (mv.skuId || mv.magId) === m.id);
+      const calc = ricalcolaGiacenza(mvSku);
+      const diffs = {};
+      Object.keys(calc).forEach(k => {
+        const a = Number((m.giacenza || {})[k]) || 0;
+        const b = Number(calc[k]) || 0;
+        if (a !== b) diffs[k] = { stored: a, recomputed: b };
+      });
+      if (Object.keys(diffs).length > 0) {
+        discr.push({ skuId: m.id, nome: `${m.prodotto} ${m.formato} ${m.annata}`, diffs });
+      }
+    });
+    if (discr.length > 0) {
+      console.warn("[TNB_MAG_AUDIT] Discrepanze giacenza vs ricalcolo:", discr,
+        "→ Premi '🔄 Ricalcola' nel Magazzino per sincronizzare.");
+    } else if (window.TNB_DEBUG_MAG) {
+      console.log("[TNB_MAG_AUDIT] OK — tutte le giacenze coerenti con il log movimenti.");
+    }
+  }, []);
   const [editSogliaId, setEditSogliaId] = useState(null);
   const [sogliaVal, setSogliaVal] = useState("");
   const saveSoglia = (mId) => { setDati(d => ({...d, magazzino: d.magazzino.map(x => x.id===mId ? {...x, soglia: Number(sogliaVal)} : x)})); setEditSogliaId(null); };
@@ -10052,11 +10077,20 @@ function Magazzino({
       skuId: form.magId,
       timestamp: Date.now()
     };
-    setDati(d => ({
-      ...d,
-      movimenti: [newMov, ...(d.movimenti || [])],
-      magazzino: applicaMovimento(d.magazzino, form.magId, form.tipo, form.qta)
-    }));
+    setDati(d => {
+      const movimentiTot = [newMov, ...(d.movimenti || [])];
+      return {
+        ...d,
+        movimenti: movimentiTot,
+        // v49-mag1: ricalcolo dalla cronologia completa anziché applicaMovimento incrementale
+        // — garantisce coerenza con il log event-sourced.
+        magazzino: d.magazzino.map(m =>
+          m.id === form.magId
+            ? { ...m, giacenza: ricalcolaGiacenza(movimentiTot.filter(mv => (mv.skuId || mv.magId) === m.id)) }
+            : m
+        )
+      };
+    });
     if (logAction) logAction(`Mov. magazzino: ${TIPI_MOV.find(t => t.v === form.tipo)?.l || form.tipo}`, "magazzino", `${sku?.prodotto} ${sku?.formato} ${sku?.annata} — ${form.qta} pz`);
     setModal(null);
     setForm({});
