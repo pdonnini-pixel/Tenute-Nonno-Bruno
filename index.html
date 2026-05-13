@@ -11351,16 +11351,17 @@ function Produzione({
               style: { fontSize: 11, color: C.verde, fontWeight: 700 }
             }, "✅ In magazzino dal ", fmtD(l.dataCaricoMag)),
             /*#__PURE__*/React.createElement("button", {
-              onClick: () => setExpandedLotto(isExpanded ? null : l.id),
+              onClick: () => setExpandedLotto(prev => prev === l.id ? null : l.id),
               style: { marginLeft: "auto", padding: "5px 12px", border: "1px solid " + C.grigio200, background: "#fff", color: C.grigio600, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer" }
             }, isExpanded ? "▲ Riduci" : "▼ Dettagli")
           ),
-          // Sezione expand: date, costi, qualità, fornitori
+          // Sezione expand: sempre 4 sezioni (date, fornitori, costi, qualità).
+          // Le sezioni mostrano placeholder grigio se non hanno dati.
           isExpanded && /*#__PURE__*/React.createElement("div", {
             style: { borderTop: `1px solid ${C.grigio200}`, marginTop: 10, paddingTop: 12, fontSize: 11, color: C.grigio600 }
           },
-            // Date
-            /*#__PURE__*/React.createElement("div", { style: { marginBottom: 10 } },
+            // 📅 DATE
+            /*#__PURE__*/React.createElement("div", { style: { marginBottom: 12 } },
               /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 4 } }, "📅 DATE"),
               /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 } },
                 /*#__PURE__*/React.createElement("div", null, "Raccolta: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataRaccolta))),
@@ -11369,16 +11370,17 @@ function Produzione({
                 /*#__PURE__*/React.createElement("div", null, "Etichett.: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataEtichettatura)))
               )
             ),
-            // Fornitori
-            /*#__PURE__*/React.createElement("div", { style: { marginBottom: 10 } },
+            // 🤝 FORNITORI
+            /*#__PURE__*/React.createElement("div", { style: { marginBottom: 12 } },
               /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 4 } }, "🤝 FORNITORI"),
               /*#__PURE__*/React.createElement("div", null, "Olive: ", /*#__PURE__*/React.createElement("strong", null, fornitoreOlive ? (fornitoreOlive.ragioneSociale || fornitoreOlive.nome) : "—")),
               /*#__PURE__*/React.createElement("div", null, "Frantoio: ", /*#__PURE__*/React.createElement("strong", null, frantoioNome), Number(l.nFrangiture) > 0 && /*#__PURE__*/React.createElement("span", { style: { marginLeft: 6, color: C.grigio400 } }, "(", l.nFrangiture, " frangiture)"))
             ),
-            // Costi breakdown
-            cTot > 0 && /*#__PURE__*/React.createElement("div", { style: { marginBottom: 10 } },
+            // 💰 COSTI (sempre visibile)
+            /*#__PURE__*/React.createElement("div", { style: { marginBottom: 12 } },
               /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 4 } }, "💰 COSTI"),
               (() => {
+                if (cTot <= 0) return /*#__PURE__*/React.createElement("div", { style: { fontStyle: "italic", color: C.grigio400 } }, "Nessun costo registrato.");
                 const c = l.costi || {};
                 const voci = [
                   ["Olive", c.costoOlive],
@@ -11388,7 +11390,7 @@ function Produzione({
                   ["Altro" + (c.noteAltro ? " (" + c.noteAltro + ")" : ""), c.costoAltro]
                 ].filter(([, v]) => Number(v) > 0);
                 return /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", gap: "2px 12px" } },
-                  voci.flatMap(([k, v], i) => [
+                  voci.flatMap(([k, v]) => [
                     /*#__PURE__*/React.createElement("div", { key: k + "_k" }, k),
                     /*#__PURE__*/React.createElement("div", { key: k + "_v", style: { textAlign: "right", fontWeight: 600 } }, fmt(v))
                   ]).concat([
@@ -11400,13 +11402,17 @@ function Produzione({
                 );
               })()
             ),
-            // Qualità
-            (q.acidita != null || q.perossidi != null || q.polifenoli != null || q.note) && /*#__PURE__*/React.createElement("div", null,
+            // 🧪 QUALITÀ (sempre visibile)
+            /*#__PURE__*/React.createElement("div", null,
               /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 4 } }, "🧪 QUALITÀ"),
-              q.acidita != null && /*#__PURE__*/React.createElement("div", null, "Acidità: ", /*#__PURE__*/React.createElement("strong", null, q.acidita, "%"), " ", /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "(max 0.8 EVO)")),
-              q.perossidi != null && /*#__PURE__*/React.createElement("div", null, "Perossidi: ", /*#__PURE__*/React.createElement("strong", null, q.perossidi, " meq O₂/kg"), " ", /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "(max 20 EVO)")),
-              q.polifenoli != null && /*#__PURE__*/React.createElement("div", null, "Polifenoli: ", /*#__PURE__*/React.createElement("strong", null, q.polifenoli, " mg/kg")),
-              q.note && /*#__PURE__*/React.createElement("div", { style: { fontStyle: "italic", marginTop: 4 } }, q.note)
+              (q.acidita == null && q.perossidi == null && q.polifenoli == null && !q.note)
+                ? /*#__PURE__*/React.createElement("div", { style: { fontStyle: "italic", color: C.grigio400 } }, "Analisi non disponibile.")
+                : /*#__PURE__*/React.createElement(React.Fragment, null,
+                    q.acidita != null && /*#__PURE__*/React.createElement("div", null, "Acidità: ", /*#__PURE__*/React.createElement("strong", null, q.acidita, "%"), " ", /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "(max 0.8 EVO)")),
+                    q.perossidi != null && /*#__PURE__*/React.createElement("div", null, "Perossidi: ", /*#__PURE__*/React.createElement("strong", null, q.perossidi, " meq O₂/kg"), " ", /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "(max 20 EVO)")),
+                    q.polifenoli != null && /*#__PURE__*/React.createElement("div", null, "Polifenoli: ", /*#__PURE__*/React.createElement("strong", null, q.polifenoli, " mg/kg")),
+                    q.note && /*#__PURE__*/React.createElement("div", { style: { fontStyle: "italic", marginTop: 4 } }, q.note)
+                  )
             )
           )
         )
