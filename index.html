@@ -1232,6 +1232,24 @@ function HBarChartSVG({
   }));
 }
 </script><script>// TNB-BUILD-20260513-v52-costi1
+// v52 Costi & Margini: BOM reale + Listino editabile + tracciabilità + break-even.
+// - migrateV52CostiMargini: popola dati.listino[] dalla const LISTINO (idempotente).
+// - Listino: editabile inline (prezzoBase + scaglioni dinamici + toggle attivo) con
+//   indicatore BOM/Parziale/N/D vs costo packaging + costo olio.
+// - costoFormatoReale → oggetto { packaging, olioPerLitro, totale, fonte: bom|parziale|nd }.
+//   Helper costoFormatoTot per ottenere solo il numero (totale || 0).
+// - Tutti i calcoli (P&L, margine cliente/canale/ordine, alert sotto-costo) ora usano
+//   BOM reale (lotti + bottiglie); fallback config-astratto rimosso (no più "stima").
+// - Nuovi tab "🌿 Per Lotto" e "🍾 Per Bottiglia" con tracciabilità ordini→lotto via
+//   movimenti carico_produzione + scarico_ordine (FIFO implicito, documentato).
+// - KPI "Costo olio/L" ora media ponderata BOM (non più cfg.costoOlivePerKg/resaMedia).
+// - Fix annata hardcoded "2025" in tab Formati → annata dinamica da campagnaSel.
+// - Tab Config semplificato: rimosse sezioni "PARAMETRI PRODUZIONE" e "COSTI PER FORMATO"
+//   (codice marcato null && ...). Resta solo "COSTI STRUTTURA MENSILI" con link a
+//   fornitori v51 (fornitoreId opzionale) + tab "Voci Extra".
+// - Toggle "Includi Conto Vendita" nel tab Per Ordine (default ON).
+// - 🎯 Break-even campagna in Overview con barra progresso + 3 KPI.
+// - 📥 Export Excel (.xlsx) via SheetJS CDN su Overview/Cliente/Ordine, fallback .xls.
 // v51 Fornitori: hub relazionale completo.
 // - Migrazione idempotente migrateV51Fornitori (flag _migration_v51_fornitori):
 //   aggiunge documenti[], attivo, dataCreazione, dataModifica. Preserva campi legacy.
@@ -14556,11 +14574,9 @@ function CostiMargini({
       /*#__PURE__*/React.createElement("strong", null, "voci straordinarie"),
       ". Indicatore: 🟢 BOM = costo completo · 🟡 Parziale = solo packaging · ⚪ N/D = nessuna bottiglia BOM."
     ),
-    // Le 2 sezioni "PARAMETRI PRODUZIONE (stima)" e "COSTI PER FORMATO" sono state rimosse
-    // in C5: la fonte di verità è il BOM (Produzione → lotti + bottiglie). Le Card legacy
-    // restano nel codice con display:none come storico, possono essere eliminate in C6.
-    /*#__PURE__*/React.createElement(Card, {
-    style: { display: "none" },
+    // v52-C6: le 2 sezioni legacy "PARAMETRI PRODUZIONE (stima)" e "COSTI PER FORMATO"
+    // sono state DEFINITIVAMENTE rimosse. Fonte unica BOM (Produzione → lotti + bottiglie).
+    null && /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13,
@@ -14604,8 +14620,7 @@ function CostiMargini({
         fontSize: 11
       }
     }, "= (\u20AC", cfg.costoOlivePerKg, "/kg \xD7 ", (100 / cfg.resaMedia).toFixed(2), " kg/L) + (\u20AC", cfg.costoFrangituraPer100kg, "/100kg \xF7 ", cfg.resaMedia, "%)"))))
-  }), /*#__PURE__*/React.createElement(Card, {
-    style: { display: "none" },
+  }), null && /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13,
