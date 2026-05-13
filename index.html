@@ -4142,26 +4142,33 @@ const costoFormatoFonte = (formato, dati) => {
   const r = costoFormatoReale(formato, dati);
   return r ? r.fonte : "nd";
 };
-// v52-C5: export CSV. Separatore ";" (Excel italiano), BOM UTF-8 per accentate.
-const exportCSV = (headers, rows, filename) => {
-  const esc = (v) => {
+// v52-C5: export Excel (.xls) via HTML table wrapper. Excel/Numbers aprono nativamente,
+// nessuna dipendenza esterna. Sostituisce exportCSV (vedi storia C5).
+const exportXLS = (headers, rows, filename) => {
+  const escHtml = (v) => {
     const s = v == null ? "" : String(v);
-    if (s.indexOf(";") >= 0 || s.indexOf("\"") >= 0 || s.indexOf("\n") >= 0) {
-      return "\"" + s.replace(/"/g, '""') + "\"";
-    }
-    return s;
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   };
-  const csv = [headers.map(esc).join(";")].concat(rows.map(r => r.map(esc).join(";"))).join("\r\n");
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  let html = '<table><tr>' + headers.map(h => `<th>${escHtml(h)}</th>`).join("") + '</tr>';
+  rows.forEach(r => {
+    html += '<tr>' + r.map(c => `<td>${escHtml(c)}</td>`).join("") + '</tr>';
+  });
+  html += '</table>';
+  const blob = new Blob(
+    ['﻿<html><head><meta charset="utf-8"></head><body>' + html + '</body></html>'],
+    { type: 'application/vnd.ms-excel' }
+  );
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename || "export.csv";
+  a.download = String(filename || "export.xls").replace(/\.csv$/i, ".xls").replace(/^([^.]+)$/, "$1.xls");
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
+// Backward-compat alias: il vecchio nome exportCSV ora delega a exportXLS.
+const exportCSV = exportXLS;
 
 // v52-costi1: tracciabilità completa di un lotto.
 // LIMITE FIFO IMPLICITO: se più lotti hanno caricato lo stesso skuId, non sappiamo con
@@ -14079,7 +14086,7 @@ function CostiMargini({
           );
         },
         style: { marginLeft: "auto", padding: "6px 14px", border: `1px solid ${C.olivaChiaro}`, background: "#fff", color: C.olivaScuro, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }
-      }, "📥 Esporta CSV P&L")
+      }, "📥 Esporta Excel P&L")
     ),
     (() => {
       const pl = calcolaPLCampagna(campagnaSel, dati, cfg);
@@ -14282,7 +14289,7 @@ function CostiMargini({
           );
         },
         style: { marginLeft: "auto", padding: "6px 14px", border: `1px solid ${C.olivaChiaro}`, background: "#fff", color: C.olivaScuro, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }
-      }, "📥 Esporta CSV Clienti")
+      }, "📥 Esporta Excel Clienti")
     ),
     (() => {
       const clienti = calcolaMargineCliente(campagnaSel, dati, cfg);
@@ -15045,7 +15052,7 @@ function CostiMargini({
             );
           },
           style: { padding: "6px 14px", border: `1px solid ${C.olivaChiaro}`, background: "#fff", color: C.olivaScuro, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }
-        }, "📥 Esporta CSV")
+        }, "📥 Esporta Excel")
       )
     ), /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(Tbl, {
