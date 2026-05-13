@@ -1232,10 +1232,24 @@ function HBarChartSVG({
   }));
 }
 </script><script>// TNB-BUILD-20260513-v51-forn1
-// v51 Fornitori (in progress): hub relazionale con documenti (Supabase Storage),
-// soft-disable (attivo), audit trail (dataCreazione/Modifica), link bidirezionali
-// a lotti/bottiglie, delete protetto da connessioni, filtri ricerca/categoria/stato,
-// modal 4-sezioni con merge-safe save.
+// v51 Fornitori: hub relazionale completo.
+// - Migrazione idempotente migrateV51Fornitori (flag _migration_v51_fornitori):
+//   aggiunge documenti[], attivo, dataCreazione, dataModifica. Preserva campi legacy.
+// - PageSummary 4 KPI dinamici: attivi, categorie, con documenti, collegati a lotti.
+// - Filtri: search testuale multi-campo + Sel categoria + Sel stato (attivi/inattivi).
+// - Card responsive: badge attivo/inattivo, contatti mailto/tel cliccabili, chip
+//   connessioni colorate (🌿 olive, 🫒 frantoio, 🍾 bottiglie, 📎 doc), audit footer.
+// - Modal a 4 sezioni navigabili: Anagrafica (toggle attivo, P.IVA, CF, sito, note),
+//   Contatti (referente, azienda, indirizzo granulare), Documenti (upload Storage),
+//   Connessioni (lotti olive/frantoio/bottiglie collegati con bottone "Apri →").
+// - Save merge-safe con validazione (email, P.IVA, IBAN) + audit dataModifica.
+// - Upload documenti Supabase Storage (bucket tnb-firme, path fornitore/{id}/{ts}.ext)
+//   con accept multipli, max 10 MB; apri via signed URL TTL 1h; delete con cleanup.
+// - Delete fornitore PROTETTO: bloccato se collegato a lotti/bottiglie (suggerisce
+//   soft-disable). Cleanup documenti Storage automatico se isolato.
+// - Link bidirezionali cross-modulo: bottone "Apri →" sui lotti/bottiglie usa
+//   window._tnbNav + window._nav("produzione"); il componente Produzione apre
+//   automaticamente il modal del target via useEffect mount.
 // v50 Produzione: workflow 7 stati, BOM bottiglie, multi-imbottigliamenti per lotto,
 // litriUsati auto-calcolato, costi olio + packaging, timeline + avanzamento rapido,
 // raggruppamento card per annata. Migrazione idempotente in 4 step: v50, v50_imbott,
