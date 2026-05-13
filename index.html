@@ -4632,6 +4632,43 @@ function TimelineStato({ stato, statoLog, compact }) {
     }, (done ? "✓ " : current ? "● " : "") + so.l);
   }));
 }
+
+// ─── Componente TimelineLotto (v50 P4) ────────────────────────────────────────
+// Renderizza la timeline 7-step (pianificato → completato) con pallini collegati,
+// emoji + colore di STATI_LOTTO. Lo stato corrente è evidenziato.
+function TimelineLotto({ stato }) {
+  const stati = STATI_LOTTO_ORDER;
+  const currentIdx = Math.max(0, stati.indexOf(stato || "pianificato"));
+  return /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 2, padding: "4px 0" }
+  }, stati.map((s, i) => {
+    const info = STATI_LOTTO[s];
+    const done = i <= currentIdx;
+    const current = i === currentIdx;
+    const dot = /*#__PURE__*/React.createElement("div", {
+      key: "dot_" + s,
+      title: info.l + (info.desc ? " — " + info.desc : ""),
+      style: {
+        width: current ? 26 : 18, height: current ? 26 : 18,
+        borderRadius: "50%",
+        background: done ? info.c : "#eee",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: current ? 13 : 10,
+        border: current ? "2px solid " + info.c : "none",
+        boxShadow: current ? "0 0 6px " + info.c + "66" : "none",
+        flexShrink: 0,
+        transition: "all 0.15s"
+      }
+    }, info.emoji);
+    if (i === 0) return dot;
+    const line = /*#__PURE__*/React.createElement("div", {
+      key: "line_" + s,
+      style: { flex: 1, height: 2, background: done ? info.c : "#ddd", minWidth: 6 }
+    });
+    return /*#__PURE__*/React.createElement(React.Fragment, { key: "frag_" + s }, line, dot);
+  }));
+}
+
 const STATO_PAG = {
   da_pagare: {
     l: "Da pagare",
@@ -11399,12 +11436,28 @@ function Produzione({
       if (form.resa !== nuova) setForm(f => ({ ...f, resa: nuova }));
     }
   }, [form.qtaOlive, form.qtaOlio, modal]);
-  // P3 — auto-popola data corrente al cambio stato (se manca) — usato in P4 ma definito qui
+  // P3 — auto-popola data corrente al cambio stato (se manca) — usato anche in P4
   const stateAutoDate = {
     in_raccolta: "dataRaccolta",
     in_frantoio: "dataFrangitura",
     in_imbottigliamento: "dataImbottigliamento",
     in_etichettatura: "dataEtichettatura"
+  };
+  // P4 — avanzamento rapido stato lotto (dalla card). Merge-safe per non perdere campi BOM
+  // (imbottigliamenti, costi, bottigliaId, ecc). Auto-popola data corrispondente se vuota.
+  const avanzaLottoStato = (lottoId, nuovoStato) => {
+    setDati(d => ({
+      ...d,
+      lotti: (d.lotti || []).map(l => {
+        if (l.id !== lottoId) return l;
+        const next = { ...l, stato: nuovoStato };
+        const dateField = stateAutoDate[nuovoStato];
+        if (dateField && !l[dateField]) next[dateField] = todayStr();
+        return next;
+      })
+    }));
+    const info = STATI_LOTTO[nuovoStato] || {};
+    if (window.tnbToast) window.tnbToast((info.emoji || "") + " " + (info.l || nuovoStato));
   };
   // P3 — toggle certificazione
   const toggleCert = (cert) => {
@@ -11740,6 +11793,35 @@ function Produzione({
                 onClick: () => { setForm(l); setModalSection("generale"); setModal("new"); }
               })
             )
+          ),
+          // P4 — Timeline workflow + bottoni avanzamento rapido
+          /*#__PURE__*/React.createElement("div", { style: { marginBottom: 10 } },
+            /*#__PURE__*/React.createElement(TimelineLotto, { stato: l.stato || "pianificato" }),
+            (() => {
+              const next = FLUSSO_LOTTO[l.stato || "pianificato"] || [];
+              if (next.length === 0) return null;
+              return /*#__PURE__*/React.createElement("div", {
+                style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6, justifyContent: "flex-end" }
+              }, next.map(ns => {
+                const info = STATI_LOTTO[ns] || {};
+                return /*#__PURE__*/React.createElement("button", {
+                  key: ns,
+                  type: "button",
+                  onClick: () => avanzaLottoStato(l.id, ns),
+                  title: "Avanza a: " + info.l,
+                  style: {
+                    padding: "4px 12px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    borderRadius: 4,
+                    border: `1px solid ${info.c}66`,
+                    background: "#fff",
+                    color: info.c,
+                    cursor: "pointer"
+                  }
+                }, "→ " + (info.emoji || "") + " " + (info.l || ns));
+              }));
+            })()
           ),
           // Chip riga: extravergine + certificazioni
           (evo || (l.certificazioni && l.certificazioni.length > 0)) && /*#__PURE__*/React.createElement("div", {
