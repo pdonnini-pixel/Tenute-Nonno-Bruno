@@ -4111,6 +4111,47 @@ const costoFormato = (formato, cfg) => {
   return cOlio + v.bottiglia + v.etichetta + v.packaging + v.logistica;
 };
 
+// v52-costi1: costo reale per formato, usando il BOM v50 dove disponibile.
+// 1. Cerca bottiglia BOM per formato (match normalizzato).
+// 2. Se trovata: packaging = costoPackaging(bottiglia) + olio medio ponderato dai lotti
+//    che l'hanno imbottigliata; se nessun lotto, olio = costoOlioPerLitro(cfg) fallback.
+// 3. Se nessuna bottiglia BOM: fallback completo a costoFormato(formato, cfg).
+// Ritorna sempre un numero (interfaccia compatibile con costoFormato).
+const _normFmt52 = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+const costoFormatoReale = (formato, dati, cfg) => {
+  if (!dati) return costoFormato(formato, cfg);
+  const target = _normFmt52(formato);
+  const bot = (dati.bottiglie || []).find(b => _normFmt52(b.formato) === target);
+  if (!bot) return costoFormato(formato, cfg);
+  const pack = costoPackaging(bot);
+  // Media ponderata olio/L sui lotti che hanno imbottigliato questa bottiglia
+  let totL = 0, totC = 0;
+  (dati.lotti || []).forEach(l => {
+    (l.imbottigliamenti || []).forEach(imb => {
+      if (imb.bottigliaId === bot.id) {
+        const litri = _parseNum(imb.litriUsati);
+        totL += litri;
+        totC += costoOlioPerLitroLotto(l) * litri;
+      }
+    });
+  });
+  const costoOlioL = totL > 0 ? (totC / totL) : costoOlioPerLitro(cfg);
+  const litri = litriPerFormato(formato);
+  return pack + costoOlioL * litri;
+};
+// Restituisce la "fonte" del costo per quel formato: "bom" (packaging + olio reale),
+// "bom_parziale" (packaging BOM, olio medio config), "stima" (fallback completo).
+const costoFormatoFonte = (formato, dati) => {
+  if (!dati) return "stima";
+  const target = _normFmt52(formato);
+  const bot = (dati.bottiglie || []).find(b => _normFmt52(b.formato) === target);
+  if (!bot) return "stima";
+  const hasOlio = (dati.lotti || []).some(l =>
+    (l.imbottigliamenti || []).some(imb => imb.bottigliaId === bot.id && _parseNum(imb.litriUsati) > 0)
+  );
+  return hasOlio ? "bom" : "bom_parziale";
+};
+
 // ─── CAMPAGNA HELPERS ────────────────────────────────────────────────────────
 // Una "campagna" copre nov-ott (es. campagna 2025 = 1 nov 2025 → 31 ott 2026).
 // Etichetta univoca = anno di INIZIO campagna.
@@ -4151,12 +4192,12 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
   const costoVariabile = ordiniCampagna.reduce((s, o) => {
     const includeCosto = o.modalita === "vendita" || (o.modalita === "conto_vendita" && o.statoPagamento === "pagato");
     if (!includeCosto) return s;
-    return s + (o.righe || []).reduce((ss, r) => ss + (r.qta || 0) * costoFormato(r.formato, cfg), 0);
+    return s + (o.righe || []).reduce((ss, r) => ss + (r.qta || 0) * costoFormatoReale(r.formato, dati, cfg), 0);
   }, 0);
   // Costo variabile dei CV in corso (informativo, non sottratto da margine)
   const costoVariabileCVInCorso = ordiniCampagna.reduce((s, o) => {
     if (o.modalita !== "conto_vendita" || o.statoPagamento === "pagato") return s;
-    return s + (o.righe || []).reduce((ss, r) => ss + (r.qta || 0) * costoFormato(r.formato, cfg), 0);
+    return s + (o.righe || []).reduce((ss, r) => ss + (r.qta || 0) * costoFormatoReale(r.formato, dati, cfg), 0);
   }, 0);
   const vociExtraCampagna = (cfg.vociExtra || []).filter(v => !v.data || (v.data >= range.inizio && v.data <= range.fine));
   const costoExtra = vociExtraCampagna.reduce((s, v) => s + (v.importo || 0), 0);
@@ -4209,7 +4250,7 @@ const calcolaMargineCliente = (anno, dati, cfg) => {
       ricavo: 0, costo: 0, margine: 0, marginePct: 0, nOrdini: 0
     };
     const ricavoOrd = totOrdine(o);
-    const costoOrd = (o.righe || []).reduce((s, r) => s + (r.qta || 0) * costoFormato(r.formato, cfg), 0);
+    const costoOrd = (o.righe || []).reduce((s, r) => s + (r.qta || 0) * costoFormatoReale(r.formato, dati, cfg), 0);
     map[cl.id].ricavo += ricavoOrd;
     map[cl.id].costo += costoOrd;
     map[cl.id].nOrdini += 1;
@@ -5569,7 +5610,7 @@ function Dashboard({
     const mF = Object.entries(dati.costiConfig.voci).map(([fmt]) => {
       const sku = dati.magazzino.find(m => m.formato === fmt && m.annata === "2025");
       const prezzoL = sku?.prezzoListino || 0;
-      const costo = costoFormato(fmt, dati.costiConfig);
+      const costo = costoFormatoReale(fmt, dati, dati.costiConfig);
       return {
         formato: fmt.replace(" (latta)", ""),
         prezzo: prezzoL,
@@ -13760,7 +13801,7 @@ function CostiMargini({
     return dati.ordini.filter(o => o.modalita === "vendita").map(o => {
       const cl = dati.clienti.find(c => c.id === o.clienteId);
       const righe = (o.righe || []).map(r => {
-        const costo = costoFormato(r.formato, cfg);
+        const costo = costoFormatoReale(r.formato, dati, cfg);
         const ricavo = r.qta * (r.prezzoUnitario || 0);
         const costoTot = r.qta * costo;
         const margine = ricavo - costoTot;
@@ -13789,11 +13830,18 @@ function CostiMargini({
     }).sort((a, b) => b.totMargine - a.totMargine);
   }, [dati.ordini, dati.clienti, cfg]);
   const formattiAnalisi = useMemo(() => {
+    // v52-costi1: fix annata hardcoded. Usa l'annata della campagna selezionata (campagnaSel+1
+    // perché la campagna inizia a novembre dell'anno N e copre l'olio prodotto in autunno N).
+    const annataTarget = String(Number(campagnaSel) + 1);
     const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml"];
     return FORMATI.map(fmt => {
-      const sku = dati.magazzino.find(m => m.formato === fmt && m.annata === "2025");
-      const prezzoL = sku?.prezzoListino || 0;
-      const costo = costoFormato(fmt, cfg);
+      // Prezzo: prima cerca in dati.listino (fonte v52), poi fallback magazzino.prezzoListino
+      const listEntry = getListino(fmt, dati);
+      const sku = dati.magazzino.find(m => m.formato === fmt && m.annata === annataTarget)
+              || dati.magazzino.find(m => m.formato === fmt);
+      const prezzoL = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
+      const costo = costoFormatoReale(fmt, dati, cfg);
+      const fonte = costoFormatoFonte(fmt, dati);
       const margine = prezzoL - costo;
       const pct = prezzoL ? Math.round(margine / prezzoL * 100) : 0;
       return {
@@ -13801,17 +13849,21 @@ function CostiMargini({
         prezzo: prezzoL,
         costo: Math.round(costo * 100) / 100,
         margine: Math.round(margine * 100) / 100,
-        pct
+        pct,
+        fonte
       };
     });
-  }, [dati.magazzino, cfg]);
+  }, [dati, cfg, campagnaSel]);
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83D\uDCB0 Costi & Margini"
   }), /*#__PURE__*/React.createElement(PageSummary, { items: (() => {
+    const annataTarget = String(Number(campagnaSel) + 1);
     const formati = Object.entries(dati.costiConfig.voci || {}).map(([fmt2]) => {
-      const sku = dati.magazzino.find(m => m.formato === fmt2 && m.annata === "2025");
-      const prezzoL = sku?.prezzoListino || 0;
-      const costo = costoFormato(fmt2, dati.costiConfig);
+      const listEntry = getListino(fmt2, dati);
+      const sku = dati.magazzino.find(m => m.formato === fmt2 && m.annata === annataTarget)
+              || dati.magazzino.find(m => m.formato === fmt2);
+      const prezzoL = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
+      const costo = costoFormatoReale(fmt2, dati, dati.costiConfig);
       return { fmt: fmt2, prezzo: prezzoL, costo, margine: prezzoL - costo };
     }).filter(x => x.prezzo > 0);
     const inPerdita = formati.filter(f => f.margine < 0).length;
@@ -13917,10 +13969,13 @@ function CostiMargini({
     })(),
     (() => {
       const pl = calcolaPLCampagna(campagnaSel, dati, cfg);
+      const annataTargetAl = String(Number(campagnaSel) + 1);
       const formatiPerdita = Object.entries(cfg.voci || {}).map(([f]) => {
-        const sku = dati.magazzino.find(m => m.formato === f && m.annata === String(campagnaSel + 1));
-        const prezzo = sku?.prezzoListino || 0;
-        return { fmt: f, margine: prezzo - costoFormato(f, cfg) };
+        const listEntry = getListino(f, dati);
+        const sku = dati.magazzino.find(m => m.formato === f && m.annata === annataTargetAl)
+                || dati.magazzino.find(m => m.formato === f);
+        const prezzo = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
+        return { fmt: f, margine: prezzo - costoFormatoReale(f, dati, cfg) };
       }).filter(x => x.margine < 0);
       const alerts = [];
       if (formatiPerdita.length > 0) alerts.push({ icon: "⚠", txt: formatiPerdita.length + " formati venduti sotto costo: " + formatiPerdita.map(f => f.fmt).join(", "), color: "#c62828" });
@@ -14361,11 +14416,22 @@ function CostiMargini({
     key: f.formato,
     ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       style: {
-        fontWeight: 700,
-        color: C.olivaScuro,
+        display: "flex", justifyContent: "space-between", alignItems: "center",
         marginBottom: 10
       }
-    }, f.formato), [["Prezzo listino", f.prezzo, C.grigio800], ["Costo prod.", f.costo, C.arancio], ["Margine lordo", f.margine, f.margine > 0 ? C.verde : C.rosso]].map(([l, v, c]) => /*#__PURE__*/React.createElement("div", {
+    },
+      /*#__PURE__*/React.createElement("span", { style: { fontWeight: 700, color: C.olivaScuro } }, f.formato),
+      /*#__PURE__*/React.createElement("span", {
+        title: f.fonte === "bom" ? "Costo da dati BOM reali (bottiglia + lotto)" :
+               f.fonte === "bom_parziale" ? "Packaging BOM, olio da stima config" :
+               "Costo da configurazione astratta (fallback)",
+        style: {
+          fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4,
+          background: f.fonte === "bom" ? "#e8f5e9" : f.fonte === "bom_parziale" ? "#fff8e1" : "#f5f5f5",
+          color: f.fonte === "bom" ? "#2e7d32" : f.fonte === "bom_parziale" ? "#7a5900" : "#888"
+        }
+      }, f.fonte === "bom" ? "🟢 BOM" : f.fonte === "bom_parziale" ? "🟡 BOM*" : "⚪ Stima")
+    ), [["Prezzo listino", f.prezzo, C.grigio800], ["Costo prod.", f.costo, C.arancio], ["Margine lordo", f.margine, f.margine > 0 ? C.verde : C.rosso]].map(([l, v, c]) => /*#__PURE__*/React.createElement("div", {
       key: l,
       style: {
         display: "flex",
