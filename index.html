@@ -8787,7 +8787,7 @@ function Ordini({
       clienti: dati.clienti,
       value: form.clienteId || "",
       onChange: v => setForm(f => ({ ...f, clienteId: v })),
-      disabled: !!form._lockCliente || form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: !!form._lockCliente || form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       label: "Cliente",
       error: formErrors.clienteId
     }), /*#__PURE__*/React.createElement(Sel, {
@@ -8795,7 +8795,7 @@ function Ordini({
       req: true,
       error: formErrors.modalita,
       v: form.modalita || "",
-      disabled: form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => {
         const next = { ...f, modalita: v };
         // Auto: passa a CV senza scadenza → calcola data ordine + 12 mesi
@@ -8819,7 +8819,7 @@ function Ordini({
       label: "Data",
       type: "date",
       v: form.data || "",
-      disabled: form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => ({
         ...f,
         data: v
@@ -8862,7 +8862,7 @@ function Ordini({
       req: true,
       error: formErrors.modalitaPagamento,
       v: form.modalitaPagamento || "",
-      disabled: form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => ({
         ...f,
         modalitaPagamento: v
@@ -8882,7 +8882,7 @@ function Ordini({
     }), /*#__PURE__*/React.createElement(Sel, {
       label: "Spedizione",
       v: form.spedizione || "locale",
-      disabled: form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => ({
         ...f,
         spedizione: v
@@ -8895,7 +8895,7 @@ function Ordini({
       label: "Scadenza CV",
       type: "date",
       v: form.scadenzaCV || "",
-      disabled: form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => ({
         ...f,
         scadenzaCV: v
@@ -8914,9 +8914,9 @@ function Ordini({
         color: C.grigio600,
         letterSpacing: .5
       }
-    }, "RIGHE ORDINE", (form.stato === "consegnato" || form.stato === "fatturato") && /*#__PURE__*/React.createElement("span", {
+    }, "RIGHE ORDINE", (form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato") && /*#__PURE__*/React.createElement("span", {
       style: { marginLeft: 10, fontSize: 10, background: "#eee", color: "#666", borderRadius: 4, padding: "2px 8px", fontWeight: 600, letterSpacing: 0 }
-    }, "🔒 Bloccate (stato " + form.stato + ")")), !(form.stato === "consegnato" || form.stato === "fatturato") && /*#__PURE__*/React.createElement(Btn, {
+    }, "🔒 Bloccate (stato " + form.stato + ")")), !(form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato") && /*#__PURE__*/React.createElement(Btn, {
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Riga"),
       sz: "sm",
       v: "sec",
@@ -8951,19 +8951,19 @@ function Ordini({
       v: r.formato,
       on: v => updRiga(i, "formato", v),
       opts: FORMATI,
-      disabled: form.stato === "consegnato" || form.stato === "fatturato"
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato"
     }), /*#__PURE__*/React.createElement(Sel, {
       v: r.annata,
       on: v => updRiga(i, "annata", v),
       opts: ANNATE,
-      disabled: form.stato === "consegnato" || form.stato === "fatturato"
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato"
     }), /*#__PURE__*/React.createElement(Inp, {
       type: "number",
       min: 0,
       step: 1,
       v: r.qta,
       on: v => updRiga(i, "qta", v),
-      disabled: form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       ph: "Q.t\xE0"
     }), /*#__PURE__*/React.createElement(Inp, {
       type: "number",
@@ -8971,7 +8971,7 @@ function Ordini({
       step: 0.01,
       v: r.prezzoUnitario,
       on: v => updRiga(i, "prezzoUnitario", v),
-      disabled: form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       ph: "\u20AC/pz"
     }), /*#__PURE__*/React.createElement(Inp, {
       type: "number",
@@ -8979,20 +8979,20 @@ function Ordini({
       step: 1,
       v: r.omaggio || 0,
       on: v => updRiga(i, "omaggio", v),
-      disabled: form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       ph: "Omagg."
     }), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: () => setRigaConsegnaIndex(i),
-      disabled: form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       title: r.modalitaConsegna && r.modalitaConsegna !== "immediata" ? ("Modifica configurazione consegna (" + (MOD_CONSEGNA_LABEL[r.modalitaConsegna] || "—") + ")") : "Configura consegna scaglionata",
       style: {
         background: r.modalitaConsegna && r.modalitaConsegna !== "immediata" ? "#e3f2fd" : "transparent",
         border: r.modalitaConsegna && r.modalitaConsegna !== "immediata" ? `1px solid ${C.blu}` : `1px solid ${C.grigio200}`,
-        borderRadius: 6, cursor: (form.stato === "consegnato" || form.stato === "fatturato") ? "not-allowed" : "pointer", fontSize: 14, padding: 0, height: 38,
-        opacity: (form.stato === "consegnato" || form.stato === "fatturato") ? 0.5 : 1
+        borderRadius: 6, cursor: (form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato") ? "not-allowed" : "pointer", fontSize: 14, padding: 0, height: 38,
+        opacity: (form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato") ? 0.5 : 1
       }
-    }, MOD_CONSEGNA_EMOJI[r.modalitaConsegna || "immediata"]), !(form.stato === "consegnato" || form.stato === "fatturato") && /*#__PURE__*/React.createElement(Btn, {
+    }, MOD_CONSEGNA_EMOJI[r.modalitaConsegna || "immediata"]), !(form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato") && /*#__PURE__*/React.createElement(Btn, {
       ch: /*#__PURE__*/React.createElement(I.del, null),
       v: "gh",
       sz: "sm",
@@ -9032,7 +9032,7 @@ function Ordini({
     })()), /*#__PURE__*/React.createElement(Inp, {
       label: "Note",
       v: form.note || "",
-      disabled: form.stato === "consegnato" || form.stato === "fatturato",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => ({
         ...f,
         note: v
