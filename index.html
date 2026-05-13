@@ -1972,6 +1972,26 @@ const migrateV50Bottiglie = (dataObj) => {
   return out;
 };
 
+// v50.3 — Ricalcola litriUsati per ogni imbottigliamento come `litriPerFormato(formato) ×
+// qtaProdotta`. Corregge i valori legacy (es. quelli post-v50.1 che ponevano litriUsati =
+// qtaOlio per il singolo imbottigliamento migrato). Idempotente via _migration_v50_litri.
+const migrateV50LitriUsati = (dataObj) => {
+  if (!dataObj || dataObj._migration_v50_litri) return dataObj;
+  const out = { ...dataObj };
+  const bottiglieById = new Map((out.bottiglie || []).map(b => [b.id, b]));
+  out.lotti = (out.lotti || []).map(l => ({
+    ...l,
+    imbottigliamenti: (l.imbottigliamenti || []).map(imb => {
+      const bot = bottiglieById.get(imb.bottigliaId);
+      if (!bot) return imb;
+      const litri = litriPerFormato(bot.formato) * (Number(imb.qtaProdotta) || 0);
+      return litri > 0 ? { ...imb, litriUsati: parseFloat(litri.toFixed(3)) } : imb;
+    })
+  }));
+  out._migration_v50_litri = true;
+  return out;
+};
+
 // ─── HELPER CONSEGNE PER RIGA ─────────────────────────────────────────────────
 const qtaResiduaRiga = r => Math.max(0, (r.qta || 0) - (r.qtaConsegnata || 0));
 const qtaResiduaOrdine = o => (o.righe || []).reduce((s, r) => s + qtaResiduaRiga(r), 0);
@@ -11413,7 +11433,7 @@ function Produzione({
       { title: "Conferma eliminazione lotto", okLabel: "Elimina", danger: true }
     );
   };
-  // v50.2 — Aggiungi un imbottigliamento (linka bottigliaId; skuId ereditato).
+  // v50.3 — Aggiungi un imbottigliamento. litriUsati AUTO-calcolato da formato × qta.
   const addImbottigliamento = (lottoId, draft) => {
     const lotto = (dati.lotti || []).find(x => x.id === lottoId);
     if (!lotto) {
@@ -11425,12 +11445,13 @@ function Produzione({
     if (!bot) errors.push("Tipo bottiglia non trovato");
     const skuId = bot ? bot.skuId : null;
     if (!skuId) errors.push("La bottiglia selezionata non ha uno SKU collegato");
-    const litri = Number(draft.litriUsati) || 0;
     const qta = Number(draft.qtaProdotta) || 0;
-    if (litri <= 0) errors.push("Litri usati > 0 obbligatorio");
     if (qta <= 0) errors.push("Bottiglie prodotte > 0 obbligatorio");
+    const litriPerBott = bot ? litriPerFormato(bot.formato) : 0;
+    if (bot && litriPerBott <= 0) errors.push(`Formato "${bot.formato}" non riconosciuto (atteso es. "500 ml" o "3 L")`);
+    const litri = parseFloat((litriPerBott * qta).toFixed(3));
     const disp = litriDisponibiliLotto(lotto);
-    if (litri > disp) errors.push(`Litri usati (${litri}) > disponibili nel lotto (${disp})`);
+    if (litri > disp + 0.001) errors.push(`Litri richiesti (${litri.toFixed(2)} L) > disponibili nel lotto (${disp.toFixed(2)} L)`);
     if (errors.length > 0) {
       if (window.tnbToast) window.tnbToast(errors.join(" · "), "err");
       return false;
@@ -11846,7 +11867,8 @@ function Produzione({
                       /*#__PURE__*/React.createElement("span", null,
                         imb.caricoMagazzino ? "✅ " : "⏳ ",
                         /*#__PURE__*/React.createElement("strong", null, skuLabel),
-                        " · ", _parseNum(imb.litriUsati), " L → ", _parseNum(imb.qtaProdotta), " pz",
+                        " · ", _parseNum(imb.qtaProdotta), " × ", (sku && sku.formato) || "?",
+                        " = ", _parseNum(imb.litriUsati).toFixed(2), " L",
                         " · ", fmtD(imb.data)
                       )
                     );
@@ -12253,8 +12275,8 @@ function Produzione({
                   /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.olivaScuro } }, skuLabel),
                   /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, marginTop: 2 } },
                     "📅 ", fmtD(imb.data), " · ",
-                    "🫗 ", _parseNum(imb.litriUsati), " L → ",
-                    /*#__PURE__*/React.createElement("strong", { style: { color: C.olivaScuro } }, _parseNum(imb.qtaProdotta), " pz"),
+                    /*#__PURE__*/React.createElement("strong", { style: { color: C.olivaScuro } }, _parseNum(imb.qtaProdotta), " × ", (bot && bot.formato) || "?"),
+                    " = ", _parseNum(imb.litriUsati).toFixed(2), " L",
                     cBott > 0 && /*#__PURE__*/React.createElement("span", null, " · ", fmt(cBott), "/bott"),
                     cTot > 0 && /*#__PURE__*/React.createElement("span", null, " · 💰 ", fmt(cTot), " tot")
                   ),
@@ -12292,9 +12314,20 @@ function Produzione({
                   const botSel = (dati.bottiglie || []).find(b => b.id === imbDraft.bottigliaId);
                   const packDraft = costoPackaging(botSel);
                   const olioLForm = costoOlioPerLitroLotto(form);
-                  const cBottDraft = botSel ? (packDraft + olioLForm * litriPerFormato(botSel.formato)) : 0;
+                  const litriPerBott = botSel ? litriPerFormato(botSel.formato) : 0;
+                  const qtaDraft = Number(imbDraft.qtaProdotta) || 0;
+                  const litriCalc = parseFloat((litriPerBott * qtaDraft).toFixed(3));
+                  const cBottDraft = botSel ? (packDraft + olioLForm * litriPerBott) : 0;
+                  const litriOver = litriCalc > disp + 0.001;
                   return /*#__PURE__*/React.createElement(React.Fragment, null,
-                    /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10, alignItems: "end" } },
+                    /*#__PURE__*/React.createElement("div", {
+                      style: { padding: "6px 10px", background: litriOver ? "#ffebee" : "#fff8e1", border: `1px solid ${litriOver ? "#c0392b44" : C.oro + "44"}`, borderRadius: 6, fontSize: 11, color: litriOver ? "#c0392b" : "#7a5900", fontWeight: 600 }
+                    },
+                      litriOver
+                        ? `⚠ Litri richiesti ${litriCalc.toFixed(2)} L > disponibili ${disp.toFixed(2)} L`
+                        : `Litri disponibili nel lotto: ${disp.toFixed(2)} L (su ${totL} L totali)`
+                    ),
+                    /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10, alignItems: "end" } },
                       /*#__PURE__*/React.createElement(Sel, {
                         label: "Tipo bottiglia (anagrafica)", req: true,
                         v: imbDraft.bottigliaId || "",
@@ -12315,13 +12348,6 @@ function Produzione({
                         on: v => setImbDraft(d => ({ ...d, data: v }))
                       }),
                       /*#__PURE__*/React.createElement(Inp, {
-                        label: `Litri usati (max ${disp})`, type: "number", min: 0, step: 0.1,
-                        v: imbDraft.litriUsati != null ? imbDraft.litriUsati : "",
-                        on: v => setImbDraft(d => ({ ...d, litriUsati: Number(v) })),
-                        req: true,
-                        ph: "es. 250"
-                      }),
-                      /*#__PURE__*/React.createElement(Inp, {
                         label: "Bottiglie", type: "number", min: 0, step: 1,
                         v: imbDraft.qtaProdotta != null ? imbDraft.qtaProdotta : "",
                         on: v => setImbDraft(d => ({ ...d, qtaProdotta: Number(v) })),
@@ -12329,15 +12355,16 @@ function Produzione({
                         ph: "es. 500"
                       })
                     ),
-                    /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 10, alignItems: "end", marginTop: 10 } },
-                      /*#__PURE__*/React.createElement(Inp, {
-                        label: "Note (opz.)",
-                        v: imbDraft.note || "",
-                        on: v => setImbDraft(d => ({ ...d, note: v })),
-                        ph: "es. Lotto promo 1+1"
-                      }),
+                    /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 2fr auto", gap: 10, alignItems: "end", marginTop: 10 } },
                       /*#__PURE__*/React.createElement("div", {
-                        style: { padding: "8px 12px", background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 6, fontSize: 11, color: C.grigio600 }
+                        style: { padding: "8px 10px", background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 6 }
+                      },
+                        /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, fontWeight: 700, letterSpacing: 0.3 } }, "LITRI USATI (auto)"),
+                        /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: litriOver ? C.rosso : C.olivaScuro, marginTop: 2 } }, litriCalc > 0 ? `${litriCalc.toFixed(2)} L` : "—"),
+                        botSel && qtaDraft > 0 && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 1 } }, `${qtaDraft} × ${botSel.formato}`)
+                      ),
+                      /*#__PURE__*/React.createElement("div", {
+                        style: { padding: "8px 10px", background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 6, fontSize: 11, color: C.grigio600 }
                       },
                         botSel
                           ? /*#__PURE__*/React.createElement(React.Fragment, null,
@@ -12346,6 +12373,12 @@ function Produzione({
                             )
                           : "Seleziona una bottiglia per il preview costi"
                       ),
+                      /*#__PURE__*/React.createElement(Inp, {
+                        label: "Note (opz.)",
+                        v: imbDraft.note || "",
+                        on: v => setImbDraft(d => ({ ...d, note: v })),
+                        ph: "es. Lotto promo 1+1"
+                      }),
                       /*#__PURE__*/React.createElement(Btn, {
                         ch: "➕ Aggiungi",
                         onClick: () => {
@@ -13679,7 +13712,7 @@ function App() {
           if (u) setCurrentUser(u);
         }
         const r = await window.storage.get("tnb-pro-v2");
-        const parsed = migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))))));
+        const parsed = migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0))))))))))));
         if (parsed.agendaState) {
           const validIds = new Set([
             ...parsed.ordini.map(o => `firma_${o.id}`),
