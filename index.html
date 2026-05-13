@@ -10743,6 +10743,38 @@ function Produzione({
 }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  // v49-mag1: carica il lotto in magazzino generando un movimento carico_produzione
+  const caricaInMagazzino = (l) => {
+    if (!l || !l.skuFinale || !Number(l.qtaProdotta) || l.caricoMagazzino) return;
+    const dataMov = todayStr();
+    const mv = {
+      id: uid(),
+      tipo: "carico_produzione",
+      qta: Number(l.qtaProdotta),
+      data: dataMov,
+      nota: `Auto: lotto raccolta ${l.annata}`,
+      ordineId: null,
+      lottoId: l.id,
+      auto: true,
+      skuId: l.skuFinale,
+      magId: l.skuFinale,
+      timestamp: Date.now()
+    };
+    setDati(d => {
+      const movimentiTot = [mv, ...(d.movimenti || [])];
+      return {
+        ...d,
+        lotti: d.lotti.map(x => x.id === l.id ? { ...x, caricoMagazzino: true, dataCaricoMag: dataMov } : x),
+        movimenti: movimentiTot,
+        magazzino: d.magazzino.map(m =>
+          m.id === l.skuFinale
+            ? { ...m, giacenza: ricalcolaGiacenza(movimentiTot.filter(x => (x.skuId || x.magId) === m.id)) }
+            : m
+        )
+      };
+    });
+    if (window.tnbToast) window.tnbToast("✅ Caricato in magazzino: " + Number(l.qtaProdotta) + " pz");
+  };
   const save = () => {
     if (!form.annata) return;
     if (Number(form.qtaOlive) < 0 || Number(form.qtaOlio) < 0) {
@@ -10846,7 +10878,29 @@ function Produzione({
         borderTop: `1px solid ${C.grigio200}`,
         paddingTop: 10
       }
-    }, l.note))
+    }, l.note), /*#__PURE__*/React.createElement("div", {
+      style: {
+        borderTop: `1px solid ${C.grigio200}`,
+        marginTop: 12,
+        paddingTop: 10,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap"
+      }
+    },
+      !l.caricoMagazzino && l.skuFinale && Number(l.qtaProdotta) > 0 && /*#__PURE__*/React.createElement(Btn, {
+        ch: "📥 Carica in magazzino (" + Number(l.qtaProdotta) + " pz)",
+        sz: "sm",
+        onClick: () => caricaInMagazzino(l)
+      }),
+      !l.caricoMagazzino && (!l.skuFinale || !Number(l.qtaProdotta) || Number(l.qtaProdotta) <= 0) && /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 11, color: C.grigio400, fontStyle: "italic" }
+      }, "Imposta SKU finale e quantità prodotta per abilitare il carico magazzino"),
+      l.caricoMagazzino && /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 12, color: C.verde, fontWeight: 700 }
+      }, "✅ Caricato in magazzino il " + fmtD(l.dataCaricoMag))
+    ))
   }))), modal && /*#__PURE__*/React.createElement(Modal, {
     title: form.id ? `Modifica ${form.annata}` : "Nuova Annata",
     onClose: () => setModal(null),
@@ -10889,6 +10943,19 @@ function Produzione({
         ...f,
         qtaOlio: Number(v)
       }))
+    }), /*#__PURE__*/React.createElement(Sel, {
+      label: "Prodotto finale (SKU magazzino)",
+      v: form.skuFinale || "",
+      on: v => setForm(f => ({ ...f, skuFinale: v })),
+      opts: [{ v: "", l: "— nessuno —" }].concat((dati.magazzino || []).map(m => ({ v: m.id, l: `${m.prodotto} ${m.formato} ${m.annata}` })))
+    }), /*#__PURE__*/React.createElement(Inp, {
+      label: "Quantità prodotta (pezzi)",
+      type: "number",
+      min: 0,
+      step: 1,
+      v: form.qtaProdotta || "",
+      on: v => setForm(f => ({ ...f, qtaProdotta: Number(v) })),
+      ph: "es. 920"
     }), /*#__PURE__*/React.createElement(Inp, {
       label: "Resa %",
       v: form.resa || "",
