@@ -1432,10 +1432,13 @@ const FLUSSO_LOTTO = {
 };
 const STATI_LOTTO_ORDER = Object.keys(STATI_LOTTO);
 // Helper costi: somma di tutte le voci `costi.*` del lotto.
+// Fallback su `l.costoFrantoio` top-level (campo legacy pre-v50) se costi.costoFrantoio mancante,
+// così la card mostra il costo anche se la migrazione v50 non ha ancora valorizzato `costi`.
 const costoTotaleLotto = (l) => {
   const c = (l && l.costi) || {};
+  const cFrantoio = (Number(c.costoFrantoio) || 0) || (Number(l && l.costoFrantoio) || 0);
   return (Number(c.costoOlive) || 0) +
-         (Number(c.costoFrantoio) || 0) +
+         cFrantoio +
          (Number(c.costoImbottigliamento) || 0) +
          (Number(c.costoEtichettatura) || 0) +
          (Number(c.costoAltro) || 0);
@@ -11296,9 +11299,9 @@ function Produzione({
               style: { fontSize: 10, background: "#fff8e1", color: "#7a5900", padding: "3px 8px", borderRadius: 4, fontWeight: 700, border: "1px solid " + C.oro + "44" }
             }, "🏅 ", c))
           ),
-          // Stat principali
+          // Stat principali (olive, olio, resa)
           /*#__PURE__*/React.createElement("div", {
-            style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }
+            style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }
           }, [
             ["OLIVE", (Number(l.qtaOlive) || 0).toLocaleString("it-IT") + " kg"],
             ["OLIO", (Number(l.qtaOlio) || 0).toLocaleString("it-IT") + " L"],
@@ -11310,6 +11313,14 @@ function Produzione({
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: C.grigio400, fontWeight: 700, letterSpacing: 0.5 } }, k),
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.grigio800, marginTop: 2 } }, v)
           ))),
+          // Info base sempre visibili: Frantoio · Raccolta · Frangitura
+          /*#__PURE__*/React.createElement("div", {
+            style: { display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: C.grigio600, marginBottom: 10, padding: "6px 4px", borderBottom: `1px dashed ${C.grigio200}` }
+          },
+            /*#__PURE__*/React.createElement("div", { title: "Frantoio" }, "🫒 ", /*#__PURE__*/React.createElement("strong", { style: { color: C.grigio800 } }, frantoioNome)),
+            l.dataRaccolta && /*#__PURE__*/React.createElement("div", { title: "Data raccolta" }, "🌿 ", /*#__PURE__*/React.createElement("strong", { style: { color: C.grigio800 } }, fmtD(l.dataRaccolta))),
+            l.dataFrangitura && /*#__PURE__*/React.createElement("div", { title: "Data frangitura" }, "⚙️ ", /*#__PURE__*/React.createElement("strong", { style: { color: C.grigio800 } }, fmtD(l.dataFrangitura)))
+          ),
           // Chip qualità (acidità, perossidi, polifenoli) se compilati
           (q.acidita != null || q.perossidi != null || q.polifenoli != null) && /*#__PURE__*/React.createElement("div", {
             style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }
@@ -11382,9 +11393,11 @@ function Produzione({
               (() => {
                 if (cTot <= 0) return /*#__PURE__*/React.createElement("div", { style: { fontStyle: "italic", color: C.grigio400 } }, "Nessun costo registrato.");
                 const c = l.costi || {};
+                // Fallback frantoio: campo legacy l.costoFrantoio se costi.costoFrantoio non valorizzato
+                const cfFront = (Number(c.costoFrantoio) || 0) || (Number(l.costoFrantoio) || 0);
                 const voci = [
                   ["Olive", c.costoOlive],
-                  ["Frantoio", c.costoFrantoio],
+                  ["Frantoio", cfFront],
                   ["Imbottigliam.", c.costoImbottigliamento],
                   ["Etichettatura", c.costoEtichettatura],
                   ["Altro" + (c.noteAltro ? " (" + c.noteAltro + ")" : ""), c.costoAltro]
