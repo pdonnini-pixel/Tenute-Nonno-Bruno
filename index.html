@@ -11110,6 +11110,11 @@ function Produzione({
 }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  // v50-prod1: filtri + expand card
+  const [filtroStato, setFiltroStato] = useState("");
+  const [filtroAnnata, setFiltroAnnata] = useState("");
+  const [filtroSearch, setFiltroSearch] = useState("");
+  const [expandedLotto, setExpandedLotto] = useState(null);
   // v49-mag1: carica il lotto in magazzino generando un movimento carico_produzione
   const caricaInMagazzino = (l) => {
     if (!l || !l.skuFinale || !Number(l.qtaProdotta) || l.caricoMagazzino) return;
@@ -11168,107 +11173,246 @@ function Produzione({
         setModal("new");
       }
     })
-  }), /*#__PURE__*/React.createElement(PageSummary, { items: [
-    { label: "Lotti", value: dati.lotti.length, color: "#3a3a3a" },
-    { label: "Olive raccolte", value: dati.lotti.reduce((s, l) => s + (l.qtaOlive || 0), 0) + " kg", color: "#4a5c2f" },
-    { label: "Olio prodotto", value: dati.lotti.reduce((s, l) => s + (l.qtaOlio || 0), 0) + " L", color: "#4a5c2f" },
-    { label: "Resa media", value: dati.lotti.length ? (dati.lotti.reduce((s, l) => s + parseFloat(String(l.resa || "0").replace("%","").replace(",",".")) , 0) / dati.lotti.length).toFixed(1) + "%" : "—", color: "#3a3a3a" }
-  ]}), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))",
-      gap: 16
+  }), /*#__PURE__*/React.createElement(PageSummary, { items: (() => {
+    const totOlive = dati.lotti.reduce((s, l) => s + (Number(l.qtaOlive) || 0), 0);
+    const totOlio = dati.lotti.reduce((s, l) => s + (Number(l.qtaOlio) || 0), 0);
+    const totCosto = dati.lotti.reduce((s, l) => s + costoTotaleLotto(l), 0);
+    const lottiAttivi = dati.lotti.filter(l => l.stato !== "completato").length;
+    const resaMedia = totOlive > 0 ? (totOlio / totOlive * 100).toFixed(1) + "%" : "—";
+    const costoMedioLitro = totOlio > 0 ? fmt(totCosto / totOlio) : "—";
+    return [
+      { label: "Lotti", value: dati.lotti.length, color: "#3a3a3a" },
+      { label: "Lotti attivi", value: lottiAttivi, color: lottiAttivi > 0 ? "#ff9800" : "#7a7a7a" },
+      { label: "Olive raccolte", value: totOlive.toLocaleString("it-IT") + " kg", color: "#4a5c2f" },
+      { label: "Olio prodotto", value: totOlio.toLocaleString("it-IT") + " L", color: "#4a5c2f" },
+      { label: "Resa media", value: resaMedia, color: "#3a3a3a" },
+      { label: "Costo medio/L", value: costoMedioLitro, color: "#4a5c2f" }
+    ];
+  })() }),
+  // ── Filtri produzione ──────────────────────────────────────────────────────
+  /*#__PURE__*/React.createElement("div", {
+    style: { display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr auto", gap: 10, alignItems: "end", marginBottom: 12 }
+  },
+    /*#__PURE__*/React.createElement(Inp, {
+      label: "Cerca",
+      v: filtroSearch,
+      on: v => setFiltroSearch(v),
+      ph: "varietà, frantoio, codice lotto…"
+    }),
+    /*#__PURE__*/React.createElement(Sel, {
+      label: "Stato",
+      v: filtroStato,
+      on: v => setFiltroStato(v),
+      opts: [{ v: "", l: "Tutti gli stati" }].concat(Object.entries(STATI_LOTTO).map(([k, info]) => ({ v: k, l: info.emoji + " " + info.l })))
+    }),
+    /*#__PURE__*/React.createElement(Sel, {
+      label: "Annata",
+      v: filtroAnnata,
+      on: v => setFiltroAnnata(v),
+      opts: [{ v: "", l: "Tutte le annate" }].concat(Array.from(new Set(dati.lotti.map(l => l.annata))).sort().reverse().map(a => ({ v: a, l: a })))
+    }),
+    /*#__PURE__*/React.createElement("button", {
+      onClick: () => { setFiltroSearch(""); setFiltroStato(""); setFiltroAnnata(""); },
+      style: { padding: "8px 14px", border: "1px solid #d4d2cc", background: "#fff", color: "#5f5e5a", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", height: 38 },
+      title: "Reset filtri"
+    }, "✕ Reset")
+  ),
+  // ── Lista lotti filtrata ───────────────────────────────────────────────────
+  (() => {
+    const search = filtroSearch.toLowerCase().trim();
+    const lottiFiltrati = [...dati.lotti]
+      .filter(l => !filtroStato || (l.stato || "completato") === filtroStato)
+      .filter(l => !filtroAnnata || l.annata === filtroAnnata)
+      .filter(l => {
+        if (!search) return true;
+        const hay = [
+          l.varieta || "", l.frantoio || "", l.codLotto || "",
+          (dati.fornitori.find(f => f.id === l.frantoioId) || {}).ragioneSociale || "",
+          (dati.fornitori.find(f => f.id === l.fornitoreOliveId) || {}).ragioneSociale || ""
+        ].join(" ").toLowerCase();
+        return hay.includes(search);
+      })
+      .sort((a, b) => String(b.annata || "").localeCompare(String(a.annata || "")));
+    if (lottiFiltrati.length === 0) {
+      return /*#__PURE__*/React.createElement("div", {
+        style: { padding: 32, textAlign: "center", color: C.grigio400, fontStyle: "italic", background: C.grigio50, borderRadius: 8 }
+      }, dati.lotti.length === 0 ? "Nessun lotto. Clicca \"Nuova annata\" per iniziare." : "Nessun lotto corrisponde ai filtri.");
     }
-  }, [...dati.lotti].sort((a, b) => b.annata.localeCompare(a.annata)).map(l => /*#__PURE__*/React.createElement(Card, {
-    key: l.id,
-    ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "flex-start",
-        marginBottom: 14
-      }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontFamily: "'Playfair Display',serif",
-        fontSize: 26,
-        fontWeight: 700,
-        color: C.olivaScuro
-      }
-    }, "Raccolta ", l.annata), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: C.grigio400,
-        marginTop: 2
-      }
-    }, l.varieta)), /*#__PURE__*/React.createElement(Btn, {
-      ch: /*#__PURE__*/React.createElement(I.edit, null),
-      v: "gh",
-      sz: "sm",
-      onClick: () => {
-        setForm(l);
-        setModal("new");
-      }
-    })), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 10,
-        marginBottom: 12
-      }
-    }, (() => { const rc = l.qtaOlive && l.qtaOlio ? (l.qtaOlio/l.qtaOlive*100).toFixed(1)+"%" : (l.resa||"—"); return [["Olive",Number(l.qtaOlive||0).toLocaleString("it-IT")+" kg"],["Olio",Number(l.qtaOlio||0).toLocaleString("it-IT")+" L"],["Resa",rc],["Frantoio",l.frantoio||"—"],["N° frangiture",l.nFrangiture||"1"],["Costo frantoio",l.costoFrantoio?fmt(l.costoFrantoio):"—"],["Raccolta",fmtD(l.dataRaccolta)],["Frangitura",fmtD(l.dataFrangitura)]]; })().map(([k, v]) => /*#__PURE__*/React.createElement("div", {
-      key: k,
-      style: {
-        background: C.grigio50,
-        borderRadius: 8,
-        padding: "10px 12px"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 10,
-        color: C.grigio400,
-        fontWeight: 700,
-        letterSpacing: .5
-      }
-    }, k.toUpperCase()), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 15,
-        fontWeight: 700,
-        color: C.grigio800,
-        marginTop: 2
-      }
-    }, v || "—")))), l.note && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: C.grigio600,
-        fontStyle: "italic",
-        borderTop: `1px solid ${C.grigio200}`,
-        paddingTop: 10
-      }
-    }, l.note), /*#__PURE__*/React.createElement("div", {
-      style: {
-        borderTop: `1px solid ${C.grigio200}`,
-        marginTop: 12,
-        paddingTop: 10,
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        flexWrap: "wrap"
-      }
-    },
-      !l.caricoMagazzino && l.skuFinale && Number(l.qtaProdotta) > 0 && /*#__PURE__*/React.createElement(Btn, {
-        ch: "📥 Carica in magazzino (" + Number(l.qtaProdotta) + " pz)",
-        sz: "sm",
-        onClick: () => caricaInMagazzino(l)
-      }),
-      !l.caricoMagazzino && (!l.skuFinale || !Number(l.qtaProdotta) || Number(l.qtaProdotta) <= 0) && /*#__PURE__*/React.createElement("div", {
-        style: { fontSize: 11, color: C.grigio400, fontStyle: "italic" }
-      }, "Imposta SKU finale e quantità prodotta per abilitare il carico magazzino"),
-      l.caricoMagazzino && /*#__PURE__*/React.createElement("div", {
-        style: { fontSize: 12, color: C.verde, fontWeight: 700 }
-      }, "✅ Caricato in magazzino il " + fmtD(l.dataCaricoMag))
-    ))
-  }))), modal && /*#__PURE__*/React.createElement(Modal, {
+    return /*#__PURE__*/React.createElement("div", {
+      style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(380px,1fr))", gap: 16 }
+    }, lottiFiltrati.map(l => {
+      const statoInfo = STATI_LOTTO[l.stato || "completato"] || STATI_LOTTO.completato;
+      const isExpanded = expandedLotto === l.id;
+      const resaVal = resaLotto(l);
+      const cTot = costoTotaleLotto(l);
+      const cLitro = costoPerLitroLotto(l);
+      const evo = isExtravergine(l);
+      const fornitoreOlive = l.fornitoreOliveId && dati.fornitori.find(f => f.id === l.fornitoreOliveId);
+      const frantoioObj = l.frantoioId && dati.fornitori.find(f => f.id === l.frantoioId);
+      const frantoioNome = (frantoioObj && (frantoioObj.ragioneSociale || frantoioObj.nome)) || l.frantoio || "—";
+      const q = l.qualita || {};
+      return /*#__PURE__*/React.createElement(Card, {
+        key: l.id,
+        style: { border: `1.5px solid ${statoInfo.c}33`, position: "relative" },
+        ch: /*#__PURE__*/React.createElement(React.Fragment, null,
+          // Header: titolo + badge stato + edit
+          /*#__PURE__*/React.createElement("div", {
+            style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, gap: 8 }
+          },
+            /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+              /*#__PURE__*/React.createElement("div", {
+                style: { fontFamily: "'Playfair Display',serif", fontSize: 24, fontWeight: 700, color: C.olivaScuro, lineHeight: 1.1 }
+              }, "Raccolta ", l.annata),
+              l.codLotto && /*#__PURE__*/React.createElement("div", {
+                style: { fontSize: 10, color: C.grigio400, fontFamily: "monospace", marginTop: 2 }
+              }, l.codLotto),
+              l.varieta && /*#__PURE__*/React.createElement("div", {
+                style: { fontSize: 12, color: C.grigio600, marginTop: 4 }
+              }, l.varieta)
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 } },
+              /*#__PURE__*/React.createElement("span", {
+                title: statoInfo.desc,
+                style: { fontSize: 11, background: statoInfo.c, color: "#fff", padding: "3px 10px", borderRadius: 12, fontWeight: 700, whiteSpace: "nowrap", letterSpacing: 0.3 }
+              }, statoInfo.emoji, " ", statoInfo.l.toUpperCase()),
+              /*#__PURE__*/React.createElement(Btn, {
+                ch: /*#__PURE__*/React.createElement(I.edit, null),
+                v: "gh",
+                sz: "sm",
+                onClick: () => { setForm(l); setModal("new"); }
+              })
+            )
+          ),
+          // Chip riga: extravergine + certificazioni
+          (evo || (l.certificazioni && l.certificazioni.length > 0)) && /*#__PURE__*/React.createElement("div", {
+            style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }
+          },
+            evo && /*#__PURE__*/React.createElement("span", {
+              title: `Acidità ${q.acidita}% · Perossidi ${q.perossidi} meq O₂/kg`,
+              style: { fontSize: 10, background: "#e8f5e9", color: "#2e7d32", padding: "3px 8px", borderRadius: 4, fontWeight: 700, border: "1px solid #2e7d3244" }
+            }, "✅ EXTRAVERGINE"),
+            (l.certificazioni || []).map(c => /*#__PURE__*/React.createElement("span", {
+              key: c,
+              style: { fontSize: 10, background: "#fff8e1", color: "#7a5900", padding: "3px 8px", borderRadius: 4, fontWeight: 700, border: "1px solid " + C.oro + "44" }
+            }, "🏅 ", c))
+          ),
+          // Stat principali
+          /*#__PURE__*/React.createElement("div", {
+            style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }
+          }, [
+            ["OLIVE", (Number(l.qtaOlive) || 0).toLocaleString("it-IT") + " kg"],
+            ["OLIO", (Number(l.qtaOlio) || 0).toLocaleString("it-IT") + " L"],
+            ["RESA", resaVal ? resaVal.toFixed(1) + "%" : "—"]
+          ].map(([k, v]) => /*#__PURE__*/React.createElement("div", {
+            key: k,
+            style: { background: C.grigio50, borderRadius: 8, padding: "8px 10px", textAlign: "center" }
+          },
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: C.grigio400, fontWeight: 700, letterSpacing: 0.5 } }, k),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.grigio800, marginTop: 2 } }, v)
+          ))),
+          // Chip qualità (acidità, perossidi, polifenoli) se compilati
+          (q.acidita != null || q.perossidi != null || q.polifenoli != null) && /*#__PURE__*/React.createElement("div", {
+            style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }
+          },
+            q.acidita != null && /*#__PURE__*/React.createElement("span", {
+              title: "Acidità libera (max 0.8% per extravergine)",
+              style: { fontSize: 11, background: Number(q.acidita) <= 0.8 ? "#e8f5e9" : "#ffebee", color: Number(q.acidita) <= 0.8 ? "#2e7d32" : "#c62828", padding: "3px 8px", borderRadius: 4, fontWeight: 600 }
+            }, "Acid. ", q.acidita, "%"),
+            q.perossidi != null && /*#__PURE__*/React.createElement("span", {
+              title: "Numero di perossidi (max 20 meq O₂/kg per extravergine)",
+              style: { fontSize: 11, background: Number(q.perossidi) <= 20 ? "#e8f5e9" : "#ffebee", color: Number(q.perossidi) <= 20 ? "#2e7d32" : "#c62828", padding: "3px 8px", borderRadius: 4, fontWeight: 600 }
+            }, "Peross. ", q.perossidi),
+            q.polifenoli != null && /*#__PURE__*/React.createElement("span", {
+              title: "Polifenoli totali (più alto = più antiossidanti)",
+              style: { fontSize: 11, background: "#e3f2fd", color: "#1565c0", padding: "3px 8px", borderRadius: 4, fontWeight: 600 }
+            }, "Polif. ", q.polifenoli, " mg/kg")
+          ),
+          // Costo per litro (se c'è almeno un costo)
+          cTot > 0 && /*#__PURE__*/React.createElement("div", {
+            style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: "#f5f7f0", borderRadius: 6, marginBottom: 10 }
+          },
+            /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio600, fontWeight: 600 } }, "💰 Costo totale ", fmt(cTot)),
+            cLitro != null && /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, color: C.olivaScuro, fontWeight: 700 } }, fmt(cLitro), "/L")
+          ),
+          // Note
+          l.note && /*#__PURE__*/React.createElement("div", {
+            style: { fontSize: 11, color: C.grigio600, fontStyle: "italic", marginBottom: 8 }
+          }, l.note),
+          // Expand toggle + carico magazzino
+          /*#__PURE__*/React.createElement("div", {
+            style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", borderTop: `1px solid ${C.grigio100}`, paddingTop: 10, marginTop: 4 }
+          },
+            !l.caricoMagazzino && l.skuFinale && Number(l.qtaProdotta) > 0 && /*#__PURE__*/React.createElement(Btn, {
+              ch: "📥 Carica magazzino (" + Number(l.qtaProdotta) + " pz)",
+              sz: "sm",
+              onClick: () => caricaInMagazzino(l)
+            }),
+            l.caricoMagazzino && /*#__PURE__*/React.createElement("span", {
+              style: { fontSize: 11, color: C.verde, fontWeight: 700 }
+            }, "✅ In magazzino dal ", fmtD(l.dataCaricoMag)),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: () => setExpandedLotto(isExpanded ? null : l.id),
+              style: { marginLeft: "auto", padding: "5px 12px", border: "1px solid " + C.grigio200, background: "#fff", color: C.grigio600, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer" }
+            }, isExpanded ? "▲ Riduci" : "▼ Dettagli")
+          ),
+          // Sezione expand: date, costi, qualità, fornitori
+          isExpanded && /*#__PURE__*/React.createElement("div", {
+            style: { borderTop: `1px solid ${C.grigio200}`, marginTop: 10, paddingTop: 12, fontSize: 11, color: C.grigio600 }
+          },
+            // Date
+            /*#__PURE__*/React.createElement("div", { style: { marginBottom: 10 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 4 } }, "📅 DATE"),
+              /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 } },
+                /*#__PURE__*/React.createElement("div", null, "Raccolta: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataRaccolta))),
+                /*#__PURE__*/React.createElement("div", null, "Frangitura: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataFrangitura))),
+                /*#__PURE__*/React.createElement("div", null, "Imbottigl.: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataImbottigliamento))),
+                /*#__PURE__*/React.createElement("div", null, "Etichett.: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataEtichettatura)))
+              )
+            ),
+            // Fornitori
+            /*#__PURE__*/React.createElement("div", { style: { marginBottom: 10 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 4 } }, "🤝 FORNITORI"),
+              /*#__PURE__*/React.createElement("div", null, "Olive: ", /*#__PURE__*/React.createElement("strong", null, fornitoreOlive ? (fornitoreOlive.ragioneSociale || fornitoreOlive.nome) : "—")),
+              /*#__PURE__*/React.createElement("div", null, "Frantoio: ", /*#__PURE__*/React.createElement("strong", null, frantoioNome), Number(l.nFrangiture) > 0 && /*#__PURE__*/React.createElement("span", { style: { marginLeft: 6, color: C.grigio400 } }, "(", l.nFrangiture, " frangiture)"))
+            ),
+            // Costi breakdown
+            cTot > 0 && /*#__PURE__*/React.createElement("div", { style: { marginBottom: 10 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 4 } }, "💰 COSTI"),
+              (() => {
+                const c = l.costi || {};
+                const voci = [
+                  ["Olive", c.costoOlive],
+                  ["Frantoio", c.costoFrantoio],
+                  ["Imbottigliam.", c.costoImbottigliamento],
+                  ["Etichettatura", c.costoEtichettatura],
+                  ["Altro" + (c.noteAltro ? " (" + c.noteAltro + ")" : ""), c.costoAltro]
+                ].filter(([, v]) => Number(v) > 0);
+                return /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", gap: "2px 12px" } },
+                  voci.flatMap(([k, v], i) => [
+                    /*#__PURE__*/React.createElement("div", { key: k + "_k" }, k),
+                    /*#__PURE__*/React.createElement("div", { key: k + "_v", style: { textAlign: "right", fontWeight: 600 } }, fmt(v))
+                  ]).concat([
+                    /*#__PURE__*/React.createElement("div", { key: "tot_k", style: { borderTop: "1px solid " + C.grigio200, paddingTop: 4, marginTop: 2 } }, /*#__PURE__*/React.createElement("strong", null, "Totale")),
+                    /*#__PURE__*/React.createElement("div", { key: "tot_v", style: { borderTop: "1px solid " + C.grigio200, paddingTop: 4, marginTop: 2, textAlign: "right" } }, /*#__PURE__*/React.createElement("strong", null, fmt(cTot))),
+                    cLitro != null ? /*#__PURE__*/React.createElement("div", { key: "lit_k" }, "Per litro") : null,
+                    cLitro != null ? /*#__PURE__*/React.createElement("div", { key: "lit_v", style: { textAlign: "right", color: C.olivaScuro, fontWeight: 700 } }, fmt(cLitro)) : null
+                  ])
+                );
+              })()
+            ),
+            // Qualità
+            (q.acidita != null || q.perossidi != null || q.polifenoli != null || q.note) && /*#__PURE__*/React.createElement("div", null,
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 4 } }, "🧪 QUALITÀ"),
+              q.acidita != null && /*#__PURE__*/React.createElement("div", null, "Acidità: ", /*#__PURE__*/React.createElement("strong", null, q.acidita, "%"), " ", /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "(max 0.8 EVO)")),
+              q.perossidi != null && /*#__PURE__*/React.createElement("div", null, "Perossidi: ", /*#__PURE__*/React.createElement("strong", null, q.perossidi, " meq O₂/kg"), " ", /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "(max 20 EVO)")),
+              q.polifenoli != null && /*#__PURE__*/React.createElement("div", null, "Polifenoli: ", /*#__PURE__*/React.createElement("strong", null, q.polifenoli, " mg/kg")),
+              q.note && /*#__PURE__*/React.createElement("div", { style: { fontStyle: "italic", marginTop: 4 } }, q.note)
+            )
+          )
+        )
+      });
+    }));
+  })(), modal && /*#__PURE__*/React.createElement(Modal, {
     title: form.id ? `Modifica ${form.annata}` : "Nuova Annata",
     onClose: () => setModal(null),
     ch: /*#__PURE__*/React.createElement("div", {
@@ -11383,7 +11527,7 @@ const CATEGORIE_FORNITORE = [
   { v: "bottiglie", l: "🍾 Bottiglie" },
   { v: "etichette", l: "🏷️ Etichette" },
   { v: "packaging", l: "📦 Packaging" },
-  { v: "tappi", l: "Tappi" },
+  { v: "tappi", l: "🍶 Tappi" },
   { v: "logistica", l: "🚛 Logistica" },
   { v: "altro", l: "Altro" }
 ];
