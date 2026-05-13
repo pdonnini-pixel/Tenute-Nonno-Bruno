@@ -11683,17 +11683,14 @@ function Produzione({
   prodTab === "lotti" && /*#__PURE__*/React.createElement(PageSummary, { items: (() => {
     const totOlive = dati.lotti.reduce((s, l) => s + (Number(l.qtaOlive) || 0), 0);
     const totOlio = dati.lotti.reduce((s, l) => s + (Number(l.qtaOlio) || 0), 0);
-    const totCosto = dati.lotti.reduce((s, l) => s + costoTotaleLotto(l), 0);
     const lottiAttivi = dati.lotti.filter(l => l.stato !== "completato").length;
     const resaMedia = totOlive > 0 ? (totOlio / totOlive * 100).toFixed(1) + "%" : "—";
-    const costoMedioLitro = totOlio > 0 ? fmt(totCosto / totOlio) : "—";
+    // P5.2 — 4 KPI principali (Lotti totali + Costo medio/L spostati nel dettaglio card)
     return [
-      { label: "Lotti", value: dati.lotti.length, color: "#3a3a3a" },
       { label: "Lotti attivi", value: lottiAttivi, color: lottiAttivi > 0 ? "#ff9800" : "#7a7a7a" },
       { label: "Olive raccolte", value: totOlive.toLocaleString("it-IT") + " kg", color: "#4a5c2f" },
       { label: "Olio prodotto", value: totOlio.toLocaleString("it-IT") + " L", color: "#4a5c2f" },
-      { label: "Resa media", value: resaMedia, color: "#3a3a3a" },
-      { label: "Costo medio/L", value: costoMedioLitro, color: "#4a5c2f" }
+      { label: "Resa media", value: resaMedia, color: "#3a3a3a" }
     ];
   })() }),
   // ── Filtri produzione (solo tab lotti) ─────────────────────────────────────
@@ -11745,9 +11742,29 @@ function Produzione({
         style: { padding: 32, textAlign: "center", color: C.grigio400, fontStyle: "italic", background: C.grigio50, borderRadius: 8 }
       }, dati.lotti.length === 0 ? "Nessun lotto. Clicca \"Nuova annata\" per iniziare." : "Nessun lotto corrisponde ai filtri.");
     }
-    return /*#__PURE__*/React.createElement("div", {
-      style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(380px,1fr))", gap: 16 }
-    }, lottiFiltrati.map(l => {
+    // P5.3 — Raggruppamento per annata. Annate ordinate desc (più recente in alto).
+    // Dentro ogni gruppo, lotti ordinati per stato (attivi prima, completati dopo).
+    const ANNATA_VUOTA = "__senza_annata__";
+    const gruppi = new Map();
+    lottiFiltrati.forEach(l => {
+      const key = l.annata ? String(l.annata) : ANNATA_VUOTA;
+      if (!gruppi.has(key)) gruppi.set(key, []);
+      gruppi.get(key).push(l);
+    });
+    const annateOrdinate = Array.from(gruppi.keys()).sort((a, b) => {
+      if (a === ANNATA_VUOTA) return 1;
+      if (b === ANNATA_VUOTA) return -1;
+      return String(b).localeCompare(String(a));
+    });
+    // Sort interno per stato: attivi (idx basso) prima, completato in fondo
+    annateOrdinate.forEach(key => {
+      gruppi.get(key).sort((a, b) => {
+        const ia = STATI_LOTTO_ORDER.indexOf(a.stato || "completato");
+        const ib = STATI_LOTTO_ORDER.indexOf(b.stato || "completato");
+        return ia - ib;
+      });
+    });
+    const renderCard = (l) => {
       const statoInfo = STATI_LOTTO[l.stato || "completato"] || STATI_LOTTO.completato;
       const isExpanded = expandedLotto === l.id;
       const resaVal = resaLotto(l);
@@ -11999,7 +12016,27 @@ function Produzione({
           )
         )
       });
-    }));
+    };  // fine renderCard
+    // Render: per ogni annata, header + grid di card
+    return /*#__PURE__*/React.createElement("div", null,
+      annateOrdinate.map(annata => {
+        const lista = gruppi.get(annata) || [];
+        const titolo = annata === ANNATA_VUOTA ? "🗓 Senza annata" : "🗓 " + annata;
+        return /*#__PURE__*/React.createElement("div", { key: annata, style: { marginBottom: 24 } },
+          /*#__PURE__*/React.createElement("div", {
+            style: { fontSize: 13, fontWeight: 700, color: C.grigio600, padding: "8px 4px", borderBottom: "2px solid " + C.olivaScuro + "22", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }
+          },
+            /*#__PURE__*/React.createElement("span", { style: { color: C.olivaScuro, letterSpacing: 0.5 } }, titolo),
+            /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio400, fontWeight: 600 } },
+              lista.length + " " + (lista.length === 1 ? "lotto" : "lotti")
+            )
+          ),
+          /*#__PURE__*/React.createElement("div", {
+            style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(380px,1fr))", gap: 16 }
+          }, lista.map(l => renderCard(l)))
+        );
+      })
+    );
   })(),
   // ── Vista Anagrafica Bottiglie (tab "bottiglie") ───────────────────────────
   prodTab === "bottiglie" && (() => {
