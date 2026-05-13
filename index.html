@@ -12649,7 +12649,18 @@ function Fornitori({
   const [tab, setTab] = useState("ana");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  // v51-forn1: state filtri tab anagrafica
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [filtroTesto, setFiltroTesto] = useState("");
+  const [filtroAttivo, setFiltroAttivo] = useState("tutti"); // tutti | attivi | inattivi
   const nF = id => { const f = dati.fornitori.find(x => x.id === id); return f ? (f.ragioneSociale || f.nome || "—") : "—"; };
+  // v51-forn1: count connessioni fornitore (lotti olive + lotti frantoio + bottiglie)
+  const connessioniFornitore = (fId) => {
+    const lottiOlive = (dati.lotti || []).filter(l => l.fornitoreOliveId === fId).length;
+    const lottiFrantoio = (dati.lotti || []).filter(l => l.frantoioId === fId).length;
+    const bottiglie = (dati.bottiglie || []).filter(b => b.fornitoreId === fId).length;
+    return { lottiOlive, lottiFrantoio, bottiglie, totale: lottiOlive + lottiFrantoio + bottiglie };
+  };
   const saveF = () => {
     if (!(form.ragioneSociale || form.nome)) { window.alert('⚠ Ragione sociale obbligatoria'); return; }
     if (!form.categoria) { window.alert('⚠ Categoria obbligatoria'); return; }
@@ -12714,12 +12725,34 @@ function Fornitori({
         setModal("of");
       }
     }))
-  }), /*#__PURE__*/React.createElement(PageSummary, { items: [
-    { label: "Fornitori", value: (dati.fornitori || []).length, color: "#3a3a3a" },
-    { label: "Categorie", value: new Set((dati.fornitori || []).map(f => f.categoria)).size, color: "#3a3a3a" },
-    { label: "Ordini fornitore", value: (dati.ordiniFornitore || []).length, color: "#3a3a3a" },
-    { label: "Spesa anno corrente", value: fmt((dati.ordiniFornitore || []).filter(o => (o.data || "").startsWith(String(new Date().getFullYear()))).reduce((s, o) => s + (o.totale || 0), 0)), color: "#4a5c2f" }
-  ]}), /*#__PURE__*/React.createElement(Tab, {
+  }), /*#__PURE__*/React.createElement(PageSummary, { items: (() => {
+    // v51-forn1: 4 KPI principali per tab anagrafica.
+    const forn = dati.fornitori || [];
+    const attivi = forn.filter(f => f.attivo !== false).length;
+    const categorie = new Set(forn.map(f => f.categoria).filter(Boolean)).size;
+    const conDoc = forn.filter(f => Array.isArray(f.documenti) && f.documenti.length > 0).length;
+    const fornCollegati = new Set();
+    (dati.lotti || []).forEach(l => {
+      if (l.fornitoreOliveId) fornCollegati.add(l.fornitoreOliveId);
+      if (l.frantoioId) fornCollegati.add(l.frantoioId);
+    });
+    (dati.bottiglie || []).forEach(b => { if (b.fornitoreId) fornCollegati.add(b.fornitoreId); });
+    if (tab === "ord") {
+      // Sui tab ordini fornitori manteniamo gli storici KPI (spesa annua)
+      const speAnno = (dati.ordiniFornitore || []).filter(o => (o.data || "").startsWith(String(new Date().getFullYear()))).reduce((s, o) => s + (o.totale || 0), 0);
+      return [
+        { label: "Fornitori", value: forn.length, color: "#3a3a3a" },
+        { label: "Ordini fornitore", value: (dati.ordiniFornitore || []).length, color: "#3a3a3a" },
+        { label: "Spesa anno corrente", value: fmt(speAnno), color: "#4a5c2f" }
+      ];
+    }
+    return [
+      { label: "Fornitori attivi", value: attivi, color: "#4a5c2f" },
+      { label: "Categorie", value: categorie, color: "#3a3a3a" },
+      { label: "Con documenti", value: conDoc, color: conDoc > 0 ? "#1565c0" : "#7a7a7a" },
+      { label: "Collegati a lotti", value: fornCollegati.size, color: fornCollegati.size > 0 ? "#4a5c2f" : "#7a7a7a" }
+    ];
+  })() }), /*#__PURE__*/React.createElement(Tab, {
     tabs: [{
       k: "ana",
       l: "Anagrafica"
@@ -12729,61 +12762,136 @@ function Fornitori({
     }],
     active: tab,
     onSelect: setTab
-  }), tab === "ana" && /*#__PURE__*/React.createElement(Card, {
-    ch: /*#__PURE__*/React.createElement(Tbl, {
-      cols: ["Fornitore", "Cat.", "Referente", "Email", "Tel", "Note", ""],
-      data: dati.fornitori,
-      renderRow: f => /*#__PURE__*/React.createElement(TR, {
-        key: f.id,
-        ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TD, {
-          ch: /*#__PURE__*/React.createElement("strong", null, f.ragioneSociale || f.nome || "—")
-        }), /*#__PURE__*/React.createElement(TD, {
-          ch: /*#__PURE__*/React.createElement("span", {
-            style: {
-              fontSize: 10,
-              background: C.grigio100,
-              padding: "2px 7px",
-              borderRadius: 4,
-              fontWeight: 700
-            }
-          }, CAT_LABEL[f.categoria] || f.categoria?.toUpperCase())
-        }), /*#__PURE__*/React.createElement(TD, {
-          ch: f.referente || f.contatto || ""
-        }), /*#__PURE__*/React.createElement(TD, {
-          ch: /*#__PURE__*/React.createElement("span", {
-            style: {
-              color: C.olivaChiaro,
-              fontSize: 12
-            }
-          }, f.email)
-        }), /*#__PURE__*/React.createElement(TD, {
-          ch: f.telefono
-        }), /*#__PURE__*/React.createElement(TD, {
-          ch: /*#__PURE__*/React.createElement("span", {
-            style: {
-              color: C.grigio400,
-              fontSize: 11,
-              maxWidth: 200,
-              display: "block",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap"
-            }
-          }, f.note)
-        }), /*#__PURE__*/React.createElement(TD, {
-          ch: /*#__PURE__*/React.createElement(Btn, {
-            ch: /*#__PURE__*/React.createElement(I.edit, null),
-            v: "gh",
-            sz: "sm",
-            onClick: () => {
-              setForm(f);
-              setModal("f");
-            }
-          })
-        }))
-      })
-    })
-  }), tab === "ord" && /*#__PURE__*/React.createElement(Card, {
+  }), tab === "ana" && /*#__PURE__*/React.createElement(React.Fragment, null,
+    // ── Filtri (v51-forn1) ─────────────────────────────────────────────────
+    /*#__PURE__*/React.createElement("div", {
+      style: { display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr auto", gap: 10, alignItems: "end", marginBottom: 12 }
+    },
+      /*#__PURE__*/React.createElement(Inp, {
+        label: "Cerca",
+        v: filtroTesto,
+        on: v => setFiltroTesto(v),
+        ph: "nome, email, referente, P.IVA…"
+      }),
+      /*#__PURE__*/React.createElement(Sel, {
+        label: "Categoria",
+        v: filtroCategoria,
+        on: v => setFiltroCategoria(v),
+        opts: [{ v: "", l: "Tutte" }].concat(CAT_OPTS)
+      }),
+      /*#__PURE__*/React.createElement(Sel, {
+        label: "Stato",
+        v: filtroAttivo,
+        on: v => setFiltroAttivo(v),
+        opts: [{ v: "tutti", l: "Tutti" }, { v: "attivi", l: "✅ Solo attivi" }, { v: "inattivi", l: "⏸ Solo inattivi" }]
+      }),
+      /*#__PURE__*/React.createElement("button", {
+        onClick: () => { setFiltroTesto(""); setFiltroCategoria(""); setFiltroAttivo("tutti"); },
+        style: { padding: "8px 14px", border: "1px solid #d4d2cc", background: "#fff", color: "#5f5e5a", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", height: 38 },
+        title: "Reset filtri"
+      }, "✕ Reset")
+    ),
+    // ── Lista fornitori filtrata (v51-forn1) ───────────────────────────────
+    (() => {
+      const t = filtroTesto.toLowerCase().trim();
+      const fornFiltrati = (dati.fornitori || []).filter(f => {
+        if (filtroCategoria && f.categoria !== filtroCategoria) return false;
+        if (filtroAttivo === "attivi" && f.attivo === false) return false;
+        if (filtroAttivo === "inattivi" && f.attivo !== false) return false;
+        if (t) {
+          const hay = [
+            f.ragioneSociale, f.nome, f.email, f.referente, f.partitaIva, f.piva,
+            f.codiceFiscale, f.note, f.telefono, f.cellulare, f.citta, f.sitoWeb
+          ].map(x => String(x || "").toLowerCase()).join(" ");
+          if (!hay.includes(t)) return false;
+        }
+        return true;
+      }).sort((a, b) => String(a.ragioneSociale || a.nome || "").localeCompare(String(b.ragioneSociale || b.nome || "")));
+      if (fornFiltrati.length === 0) {
+        return /*#__PURE__*/React.createElement("div", {
+          style: { padding: 32, textAlign: "center", color: C.grigio400, fontStyle: "italic", background: C.grigio50, borderRadius: 8 }
+        }, (dati.fornitori || []).length === 0 ? "Nessun fornitore. Clicca \"+ Fornitore\" per iniziare." : "Nessun fornitore corrisponde ai filtri.");
+      }
+      return /*#__PURE__*/React.createElement("div", {
+        style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 14 }
+      }, fornFiltrati.map(f => {
+        const nome = f.ragioneSociale || f.nome || "—";
+        const catLabel = CAT_LABEL[f.categoria] || f.categoria || "—";
+        const isAttivo = f.attivo !== false;
+        const conn = connessioniFornitore(f.id);
+        const numDoc = Array.isArray(f.documenti) ? f.documenti.length : 0;
+        const email = f.email || "";
+        const tel = f.telefono || f.cellulare || "";
+        return /*#__PURE__*/React.createElement(Card, {
+          key: f.id,
+          style: { border: `1.5px solid ${isAttivo ? C.grigio200 : "#ddd"}`, opacity: isAttivo ? 1 : 0.65 },
+          ch: /*#__PURE__*/React.createElement(React.Fragment, null,
+            // Header: titolo + badge attivo/inattivo + bottone edit
+            /*#__PURE__*/React.createElement("div", {
+              style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }
+            },
+              /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.olivaScuro, marginBottom: 3, wordBreak: "break-word" } }, nome),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, catLabel),
+                f.referente && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, marginTop: 2 } }, "👤 ", f.referente)
+              ),
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 } },
+                /*#__PURE__*/React.createElement("span", {
+                  title: isAttivo ? "Fornitore attivo" : "Fornitore disattivato (soft-disable)",
+                  style: { fontSize: 10, background: isAttivo ? "#e8f5e9" : "#eee", color: isAttivo ? "#2e7d32" : "#888", padding: "2px 8px", borderRadius: 4, fontWeight: 700, whiteSpace: "nowrap" }
+                }, isAttivo ? "✅ ATTIVO" : "⏸ INATTIVO"),
+                /*#__PURE__*/React.createElement(Btn, {
+                  ch: /*#__PURE__*/React.createElement(I.edit, null), v: "gh", sz: "sm",
+                  onClick: () => { setForm(f); setModal("f"); }
+                })
+              )
+            ),
+            // Contatti rapidi cliccabili
+            (email || tel) && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3, fontSize: 12, marginBottom: 8 } },
+              email && /*#__PURE__*/React.createElement("a", {
+                href: `mailto:${email}`,
+                onClick: e => e.stopPropagation(),
+                style: { color: C.olivaChiaro, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }
+              }, "📧 ", email),
+              tel && /*#__PURE__*/React.createElement("a", {
+                href: `tel:${tel.replace(/\s+/g, "")}`,
+                onClick: e => e.stopPropagation(),
+                style: { color: C.olivaChiaro, textDecoration: "none" }
+              }, "📞 ", tel)
+            ),
+            // Chip connessioni (lotti olive / lotti frantoio / bottiglie)
+            (conn.totale > 0 || numDoc > 0) && /*#__PURE__*/React.createElement("div", {
+              style: { display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }
+            },
+              conn.lottiOlive > 0 && /*#__PURE__*/React.createElement("span", {
+                title: "Lotti dove è fornitore olive",
+                style: { fontSize: 10, background: "#e8f5e9", color: "#2e7d32", padding: "2px 7px", borderRadius: 4, fontWeight: 600 }
+              }, "🌿 ", conn.lottiOlive, " olive"),
+              conn.lottiFrantoio > 0 && /*#__PURE__*/React.createElement("span", {
+                title: "Lotti dove è frantoio",
+                style: { fontSize: 10, background: "#fff3e0", color: "#e65100", padding: "2px 7px", borderRadius: 4, fontWeight: 600 }
+              }, "🫒 ", conn.lottiFrantoio, " frantoio"),
+              conn.bottiglie > 0 && /*#__PURE__*/React.createElement("span", {
+                title: "Bottiglie con questo packaging",
+                style: { fontSize: 10, background: "#e3f2fd", color: "#1565c0", padding: "2px 7px", borderRadius: 4, fontWeight: 600 }
+              }, "🍾 ", conn.bottiglie, " bottiglie"),
+              numDoc > 0 && /*#__PURE__*/React.createElement("span", {
+                title: "Documenti allegati",
+                style: { fontSize: 10, background: "#fff8e1", color: "#7a5900", padding: "2px 7px", borderRadius: 4, fontWeight: 600 }
+              }, "📎 ", numDoc, " doc")
+            ),
+            f.note && /*#__PURE__*/React.createElement("div", {
+              style: { fontSize: 11, color: C.grigio600, fontStyle: "italic", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }
+            }, f.note),
+            // Footer: data ultimo aggiornamento
+            (f.dataModifica || f.dataCreazione) && /*#__PURE__*/React.createElement("div", {
+              style: { fontSize: 10, color: C.grigio400, borderTop: `1px solid ${C.grigio100}`, paddingTop: 6 }
+            }, "Aggiornato ", fmtD(f.dataModifica || f.dataCreazione))
+          )
+        });
+      }));
+    })()
+  ), tab === "ord" && /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(Tbl, {
       cols: ["Data", "Fornitore", "Voci", "Totale", "Consegna", "Stato", ""],
       data: [...dati.ordiniFornitore].sort((a, b) => (b.data || "").localeCompare(a.data || "")),
