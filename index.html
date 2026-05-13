@@ -12655,6 +12655,91 @@ function Fornitori({
   const [filtroAttivo, setFiltroAttivo] = useState("tutti"); // tutti | attivi | inattivi
   // v51-forn1: state navigazione interna modal (4 sezioni)
   const [modalSection, setModalSection] = useState("anagrafica");
+  // v51-forn1: state upload documenti
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [docDraftTipo, setDocDraftTipo] = useState("contratto");
+  // v51-forn1: upload documento su Supabase Storage (bucket tnb-firme, prefix "fornitore")
+  // Path schema: fornitore/{fornitoreId}/{timestamp}.{ext}
+  const handleUploadDocumentoFornitore = async (file, tipoDoc) => {
+    if (!file) return;
+    if (!form.id) {
+      if (window.tnbToast) window.tnbToast("Salva prima il fornitore per caricare documenti.", "err");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      if (window.tnbToast) window.tnbToast("⚠ File troppo grande (max 10 MB)", "err");
+      return;
+    }
+    if (!window.tnbStorage) {
+      if (window.tnbToast) window.tnbToast("Storage non disponibile.", "err");
+      return;
+    }
+    setUploadingDoc(true);
+    try {
+      const result = await window.tnbStorage.uploadDocumento(form.id, file, "fornitore");
+      const today = todayStr();
+      const nuovoDoc = {
+        id: uid(),
+        nome: file.name,
+        tipo: tipoDoc || "altro",
+        path: result.path,
+        mime: result.mime || "",
+        size: result.size || 0,
+        dataUpload: today,
+        note: ""
+      };
+      const aggiornati = [...(form.documenti || []), nuovoDoc];
+      // Sincronizza sia il form (UI) sia dati.fornitori (persistenza)
+      setForm(f => ({ ...f, documenti: aggiornati }));
+      setDati(d => ({
+        ...d,
+        fornitori: (d.fornitori || []).map(f =>
+          f.id === form.id ? { ...f, documenti: aggiornati, dataModifica: today } : f
+        )
+      }));
+      if (window.tnbToast) window.tnbToast("✅ Documento caricato");
+    } catch (err) {
+      console.error("[Fornitori] upload error:", err);
+      if (window.tnbToast) window.tnbToast("⚠ Upload fallito: " + (err && err.message ? err.message : err), "err");
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+  // v51-forn1: elimina documento (con conferma + cleanup storage best-effort)
+  const handleDeleteDocumentoFornitore = (docId) => {
+    if (!form.id) return;
+    const doc = (form.documenti || []).find(d => d.id === docId);
+    if (!doc) return;
+    if (!window.tnbConfirm) return;
+    window.tnbConfirm(
+      `Eliminare il documento "${doc.nome}"? Il file verrà cancellato dallo storage.`,
+      () => {
+        if (doc.path && window.tnbStorage) {
+          window.tnbStorage.deleteDocumento(doc.path).catch(e => console.warn("[Fornitori] delete storage fail:", e));
+        }
+        const aggiornati = (form.documenti || []).filter(d => d.id !== docId);
+        const today = todayStr();
+        setForm(f => ({ ...f, documenti: aggiornati }));
+        setDati(d => ({
+          ...d,
+          fornitori: (d.fornitori || []).map(f =>
+            f.id === form.id ? { ...f, documenti: aggiornati, dataModifica: today } : f
+          )
+        }));
+        if (window.tnbToast) window.tnbToast("🗑 Documento eliminato");
+      },
+      { title: "Conferma eliminazione", okLabel: "Elimina", danger: true }
+    );
+  };
+  // v51-forn1: apre documento via signed URL
+  const handleOpenDocumentoFornitore = (doc) => {
+    if (!doc || !doc.path) return;
+    if (window.tnbStorage && window.tnbStorage.openDocumento) {
+      window.tnbStorage.openDocumento(doc);
+    } else if (window.tnbToast) {
+      window.tnbToast("Storage non disponibile.", "err");
+    }
+  };
   const nF = id => { const f = dati.fornitori.find(x => x.id === id); return f ? (f.ragioneSociale || f.nome || "—") : "—"; };
   // v51-forn1: count connessioni fornitore (lotti olive + lotti frantoio + bottiglie)
   const connessioniFornitore = (fId) => {
@@ -13121,11 +13206,13 @@ function Fornitori({
           )
         )
       ),
-      // ── Sezione 3: Documenti (UI placeholder, upload viene in F4) ──────────
-      modalSection === "documenti" && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
-        /*#__PURE__*/React.createElement("div", {
+      // ── Sezione 3: Documenti (upload Supabase Storage, v51-F4) ─────────────
+      modalSection === "documenti" && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+        // Banner: nuovi fornitori richiedono save prima dell'upload
+        !form.id && /*#__PURE__*/React.createElement("div", {
           style: { padding: "10px 14px", background: "#fff8e1", borderRadius: 8, borderLeft: `3px solid ${C.oro}`, fontSize: 12, color: "#7a5900" }
-        }, "L'upload dei documenti su Supabase Storage sarà attivato in F4. Per ora la lista mostra i documenti già allegati (se presenti)."),
+        }, "Salva il fornitore prima di caricare documenti."),
+        // Lista documenti esistenti
         (() => {
           const docs = Array.isArray(form.documenti) ? form.documenti : [];
           if (docs.length === 0) {
@@ -13136,6 +13223,7 @@ function Fornitori({
           return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
             docs.map(doc => {
               const tipoInfo = TIPI_DOCUMENTO_FORNITORE.find(t => t.v === doc.tipo);
+              const kb = doc.size ? Math.round(doc.size / 1024) : 0;
               return /*#__PURE__*/React.createElement("div", {
                 key: doc.id,
                 style: { padding: "10px 12px", background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }
@@ -13143,17 +13231,72 @@ function Fornitori({
                 /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
                   /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.olivaScuro, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, doc.nome || "(senza nome)"),
                   /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } },
-                    (tipoInfo ? tipoInfo.l : doc.tipo || "—"), " · caricato ", fmtD(doc.dataUpload)
+                    (tipoInfo ? tipoInfo.l : doc.tipo || "—"),
+                    " · caricato ", fmtD(doc.dataUpload),
+                    kb > 0 && /*#__PURE__*/React.createElement("span", null, " · ", kb, " KB")
                   )
                 ),
-                doc.url && /*#__PURE__*/React.createElement("a", {
-                  href: doc.url, target: "_blank", rel: "noopener noreferrer",
-                  style: { padding: "4px 10px", border: `1px solid ${C.olivaChiaro}`, color: C.olivaScuro, background: "#fff", borderRadius: 4, fontSize: 12, fontWeight: 600, textDecoration: "none" }
-                }, "👁 Apri")
+                /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
+                  /*#__PURE__*/React.createElement("button", {
+                    type: "button",
+                    onClick: () => handleOpenDocumentoFornitore(doc),
+                    style: { padding: "5px 12px", border: `1px solid ${C.olivaChiaro}`, color: C.olivaScuro, background: "#fff", borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: "pointer" }
+                  }, "👁 Apri"),
+                  /*#__PURE__*/React.createElement("button", {
+                    type: "button",
+                    onClick: () => handleDeleteDocumentoFornitore(doc.id),
+                    title: "Elimina documento",
+                    style: { padding: "5px 10px", border: `1px solid ${C.rosso}44`, color: C.rosso, background: "#fff", borderRadius: 4, fontSize: 14, fontWeight: 700, cursor: "pointer" }
+                  }, "🗑")
+                )
               );
             })
           );
-        })()
+        })(),
+        // Form upload (richiede form.id)
+        form.id && /*#__PURE__*/React.createElement("div", {
+          style: { padding: 14, background: "#f5f7f0", borderRadius: 8, border: `1px dashed ${C.olivaChiaro}` }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.olivaScuro, letterSpacing: 0.5, marginBottom: 10 } }, "📤 CARICA NUOVO DOCUMENTO"),
+          /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10, alignItems: "end" } },
+            /*#__PURE__*/React.createElement(Sel, {
+              label: "Tipo documento",
+              v: docDraftTipo,
+              on: v => setDocDraftTipo(v),
+              opts: TIPI_DOCUMENTO_FORNITORE
+            }),
+            /*#__PURE__*/React.createElement("label", {
+              style: {
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                gap: 8, padding: "10px 14px",
+                border: `1px dashed ${uploadingDoc ? C.grigio300 : C.olivaScuro}`,
+                borderRadius: 6, fontSize: 12, fontWeight: 600,
+                color: uploadingDoc ? C.grigio400 : C.olivaScuro,
+                cursor: uploadingDoc ? "wait" : "pointer",
+                background: uploadingDoc ? "#f0f0ec" : "#fff",
+                opacity: uploadingDoc ? 0.6 : 1,
+                height: 38
+              }
+            },
+              uploadingDoc ? "⏳ Carico..." : "📤 Seleziona file e carica",
+              /*#__PURE__*/React.createElement("input", {
+                type: "file",
+                accept: ".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx",
+                disabled: uploadingDoc,
+                style: { display: "none" },
+                onChange: e => {
+                  const f = e.target.files && e.target.files[0];
+                  if (!f) return;
+                  handleUploadDocumentoFornitore(f, docDraftTipo);
+                  e.target.value = ""; // reset per consentire ri-upload dello stesso file
+                }
+              })
+            )
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 6, fontStyle: "italic" } },
+            "Formati supportati: PDF, JPG, PNG, WEBP, HEIC, DOC, DOCX. Max 10 MB."
+          )
+        )
       ),
       // ── Sezione 4: Connessioni (readonly) ──────────────────────────────────
       modalSection === "connessioni" && (() => {
