@@ -4152,6 +4152,148 @@ const costoFormatoFonte = (formato, dati) => {
   return hasOlio ? "bom" : "bom_parziale";
 };
 
+// v52-costi1: tracciabilità completa di un lotto.
+// LIMITE FIFO IMPLICITO: se più lotti hanno caricato lo stesso skuId, non sappiamo con
+// certezza quale lotto ha fornito le bottiglie di uno specifico ordine. Distribuiamo i
+// ricavi proporzionalmente alla quota di carico_produzione di questo lotto sul totale
+// caricato di quello SKU. Documentato qui.
+const tracciabilitaLotto = (lotto, dati) => {
+  if (!lotto || !dati) return null;
+  const movimenti = dati.movimenti || [];
+  const bottiglie = dati.bottiglie || [];
+  const magazzino = dati.magazzino || [];
+  // Costi produzione
+  const c = lotto.costi || {};
+  const costoOlive = _parseNum(c.costoOlive);
+  const costoFrantoio = _parseNum(c.costoFrantoio) || _parseNum(lotto.costoFrantoio);
+  const costoTrasporto = _parseNum(c.costoTrasporto);
+  const costoAltro = _parseNum(c.costoAltro);
+  const costoOlioBase = costoOlive + costoFrantoio + costoTrasporto + costoAltro;
+  const qtaOlio = _parseNum(lotto.qtaOlio);
+  const costoOlioL = qtaOlio > 0 ? costoOlioBase / qtaOlio : 0;
+  // Imbottigliamenti del lotto
+  const imbottigliamenti = (lotto.imbottigliamenti || []).map(imb => {
+    const bot = bottiglie.find(b => b.id === imb.bottigliaId);
+    const sku = bot ? magazzino.find(m => m.id === bot.skuId) : null;
+    const pack = costoPackaging(bot);
+    const litri = _parseNum(imb.litriUsati);
+    const qta = _parseNum(imb.qtaProdotta);
+    const costoBott = pack + costoOlioL * litriPerFormato(bot && bot.formato);
+    return {
+      id: imb.id, data: imb.data,
+      bot, sku,
+      formato: (bot && bot.formato) || "?",
+      litri, qta,
+      packPerBott: pack,
+      costoOlioPerBott: costoOlioL * litriPerFormato(bot && bot.formato),
+      costoBottPiena: costoBott,
+      costoTotImb: qta * costoBott
+    };
+  });
+  const costoTotImbott = imbottigliamenti.reduce((s, i) => s + i.costoTotImb, 0);
+  const costoTotaleProduzione = costoOlioBase + costoTotImbott;
+  // Tracciabilità ricavi: per ogni imbottigliamento → skuId → quota carico_produzione
+  // di questo lotto sul totale caricato di quello SKU → ricavo attribuito proporzionalmente.
+  let totRicavi = 0;
+  let totQtaVenduta = 0;
+  let totQtaProdotta = 0;
+  const dettaglioPerFormato = {};
+  imbottigliamenti.forEach(({ bot, sku, formato, qta, costoBottPiena }) => {
+    totQtaProdotta += qta;
+    if (!bot || !sku) return;
+    // Quota del lotto su questo SKU = carichi di questo lotto / carichi totali di quello SKU
+    const carichiLotto = movimenti.filter(m => m.tipo === "carico_produzione" && m.lottoId === lotto.id && (m.skuId || m.magId) === sku.id);
+    const qtaCaricataLotto = carichiLotto.reduce((s, m) => s + _parseNum(m.qta), 0);
+    const carichiTotali = movimenti.filter(m => m.tipo === "carico_produzione" && (m.skuId || m.magId) === sku.id);
+    const qtaCaricataTot = carichiTotali.reduce((s, m) => s + _parseNum(m.qta), 0);
+    const quota = qtaCaricataTot > 0 ? (qtaCaricataLotto / qtaCaricataTot) : (qtaCaricataLotto > 0 ? 1 : 0);
+    // Scarichi (vendite) per questo SKU
+    const scarichi = movimenti.filter(m => m.tipo === "scarico_ordine" && (m.skuId || m.magId) === sku.id);
+    let ricavoSku = 0;
+    let qtaVendutaSku = 0;
+    scarichi.forEach(s => {
+      const ordine = (dati.ordini || []).find(o => o.id === s.ordineId);
+      if (!ordine) return;
+      // Cerca riga ordine per formato (più robusto match formato che annata)
+      const riga = (ordine.righe || []).find(r => _normFmt52(r.formato) === _normFmt52(sku.formato));
+      if (!riga) return;
+      const qtaScaricata = _parseNum(s.qta);
+      const prezzoUnit = Number(riga.prezzoUnitario) || 0;
+      ricavoSku += qtaScaricata * prezzoUnit;
+      qtaVendutaSku += qtaScaricata;
+    });
+    // Attribuzione proporzionale al lotto
+    const ricavoLotto = ricavoSku * quota;
+    const qtaVendutaLotto = qtaVendutaSku * quota;
+    totRicavi += ricavoLotto;
+    totQtaVenduta += qtaVendutaLotto;
+    const key = formato;
+    if (!dettaglioPerFormato[key]) dettaglioPerFormato[key] = { formato, qta: 0, ricavo: 0, costoBott: costoBottPiena };
+    dettaglioPerFormato[key].qta += qtaVendutaLotto;
+    dettaglioPerFormato[key].ricavo += ricavoLotto;
+  });
+  const margineLotto = totRicavi - costoTotaleProduzione;
+  const marginePct = totRicavi > 0 ? (margineLotto / totRicavi) * 100 : 0;
+  const pctVenduto = totQtaProdotta > 0 ? (totQtaVenduta / totQtaProdotta) * 100 : 0;
+  return {
+    costoOlive, costoFrantoio, costoTrasporto, costoAltro,
+    costoOlioBase, qtaOlio, costoOlioL,
+    imbottigliamenti,
+    costoTotImbott, costoTotaleProduzione,
+    totRicavi, margineLotto, marginePct,
+    totQtaVenduta, totQtaProdotta, pctVenduto,
+    dettaglioPerFormato
+  };
+};
+
+// v52-costi1: analisi per tipo bottiglia BOM.
+const tracciabilitaBottiglia = (bot, dati) => {
+  if (!bot || !dati) return null;
+  const pack = costoPackaging(bot);
+  const sku = (dati.magazzino || []).find(m => m.id === bot.skuId);
+  // Costo olio medio ponderato dai lotti che hanno imbottigliato questa bottiglia
+  let totL = 0, totC = 0;
+  let totProdotta = 0;
+  const lottiCoinvolti = new Set();
+  let imbottCount = 0;
+  (dati.lotti || []).forEach(l => {
+    (l.imbottigliamenti || []).forEach(imb => {
+      if (imb.bottigliaId !== bot.id) return;
+      const litri = _parseNum(imb.litriUsati);
+      totL += litri;
+      totC += costoOlioPerLitroLotto(l) * litri;
+      totProdotta += _parseNum(imb.qtaProdotta);
+      lottiCoinvolti.add(l.id);
+      imbottCount += 1;
+    });
+  });
+  const costoOlioL = totL > 0 ? totC / totL : 0;
+  const litri = litriPerFormato(bot.formato);
+  const costoOlioPerBott = costoOlioL * litri;
+  const costoBottPiena = pack + costoOlioPerBott;
+  // Prezzo listino
+  const listEntry = getListino(bot.formato, dati);
+  const prezzoListino = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
+  const margine = prezzoListino - costoBottPiena;
+  const marginePct = prezzoListino > 0 ? (margine / prezzoListino) * 100 : 0;
+  // Vendite cumulative (via scarichi)
+  let qtaVenduta = 0;
+  if (sku) {
+    qtaVenduta = (dati.movimenti || [])
+      .filter(m => m.tipo === "scarico_ordine" && (m.skuId || m.magId) === sku.id)
+      .reduce((s, m) => s + _parseNum(m.qta), 0);
+  }
+  // Giacenza corrente (da magazzino, somma stati)
+  const giacenzaTot = sku ? Object.values(sku.giacenza || {}).reduce((s, v) => s + (_parseNum(v) || 0), 0) : 0;
+  return {
+    bot, sku, pack, costoOlioL, costoOlioPerBott, costoBottPiena,
+    prezzoListino, margine, marginePct,
+    totProdotta, qtaVenduta, giacenzaTot,
+    nLotti: lottiCoinvolti.size, nImbott: imbottCount,
+    hasOlio: totL > 0
+  };
+};
+
 // ─── CAMPAGNA HELPERS ────────────────────────────────────────────────────────
 // Una "campagna" copre nov-ott (es. campagna 2025 = 1 nov 2025 → 31 ott 2026).
 // Etichetta univoca = anno di INIZIO campagna.
@@ -13876,7 +14018,7 @@ function CostiMargini({
       inPerdita > 0 ? { label: "In perdita", value: inPerdita, color: "#c0392b" } : null
     ].filter(Boolean);
   })() }), /*#__PURE__*/React.createElement(Tab, {
-    tabs: [{k:"overview",l:"📊 Overview P&L"},{k:"clienti",l:"🛒 Per Cliente"},{k:"canale",l:"📡 Per Canale"},{k:"formati",l:"Per Formato"},{k:"ordini",l:"Per Ordine"},{k:"config",l:"⚙ Configurazione"},{k:"extra",l:"⚡ Voci Extra"}],
+    tabs: [{k:"overview",l:"📊 Overview P&L"},{k:"clienti",l:"🛒 Per Cliente"},{k:"canale",l:"📡 Per Canale"},{k:"lotti",l:"🌿 Per Lotto"},{k:"bottiglie",l:"🍾 Per Bottiglia"},{k:"formati",l:"Per Formato"},{k:"ordini",l:"Per Ordine"},{k:"config",l:"⚙ Configurazione"},{k:"extra",l:"⚡ Voci Extra"}],
     active: tab,
     onSelect: setTab
   }), tab === "overview" && /*#__PURE__*/React.createElement("div", null,
@@ -14400,7 +14542,202 @@ function CostiMargini({
         } })
       )
     )
-  })), tab === "formati" && /*#__PURE__*/React.createElement("div", {
+  })),
+  // ── Tab "Per Lotto" (v52-costi1) ─────────────────────────────────────────────
+  tab === "lotti" && (() => {
+    const lotti = (dati.lotti || []);
+    if (lotti.length === 0) return /*#__PURE__*/React.createElement("div", {
+      style: { padding: 32, textAlign: "center", color: C.grigio400, fontStyle: "italic", background: C.grigio50, borderRadius: 8 }
+    }, "Nessun lotto di produzione. Vai in Produzione per crearne uno.");
+    const tracce = lotti.map(l => ({ lotto: l, tr: tracciabilitaLotto(l, dati) }));
+    const sorted = tracce.slice().sort((a, b) => b.tr.margineLotto - a.tr.margineLotto);
+    const totRicavi = sorted.reduce((s, x) => s + x.tr.totRicavi, 0);
+    const totCosto = sorted.reduce((s, x) => s + x.tr.costoTotaleProduzione, 0);
+    const margMedio = totRicavi > 0 ? ((totRicavi - totCosto) / totRicavi) * 100 : 0;
+    const best = sorted[0];
+    const worst = sorted[sorted.length - 1];
+    const inPerdita = sorted.filter(x => x.tr.margineLotto < 0).length;
+    return /*#__PURE__*/React.createElement("div", null,
+      // KPI
+      /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 } },
+        [["LOTTI ATTIVI", sorted.length, "su " + lotti.length + " totali", "#3a3a3a"],
+         ["MARGINE MEDIO", margMedio.toFixed(1) + "%", "media ponderata su " + sorted.length + " lotti", margMedio > 30 ? "#2e7d32" : margMedio > 0 ? "#c9a84c" : "#c0392b"],
+         ["LOTTO + REDDITIZIO", best ? ("Raccolta " + (best.lotto.annata || "—")) : "—", best && best.tr.margineLotto > 0 ? fmt(best.tr.margineLotto) + " (" + best.tr.marginePct.toFixed(0) + "%)" : "—", "#2e7d32"],
+         ["IN PERDITA", inPerdita, inPerdita > 0 ? "lotti sotto costo" : "tutto in attivo", inPerdita > 0 ? "#c62828" : "#2e7d32"]
+        ].map(([l, v, s, col]) => /*#__PURE__*/React.createElement("div", {
+          key: l, style: { background: "#fff", borderRadius: 12, padding: 16, border: `1px solid ${C.grigio200}` }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.8, marginBottom: 8 } }, l),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: col, lineHeight: 1.2 } }, v),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, marginTop: 4 } }, s)
+        ))
+      ),
+      // Disclaimer FIFO implicito
+      /*#__PURE__*/React.createElement("div", {
+        style: { padding: "8px 14px", background: "#fff8e1", borderRadius: 8, borderLeft: `3px solid ${C.oro}`, fontSize: 11, color: "#7a5900", marginBottom: 16 }
+      }, "ℹ Tracciabilità ordini→lotto via movimenti magazzino. Se più lotti hanno caricato lo stesso SKU, i ricavi sono attribuiti proporzionalmente alla quota di carico_produzione di ciascun lotto."),
+      // Card per ciascun lotto
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+        sorted.map(({ lotto: l, tr }) => /*#__PURE__*/React.createElement(Card, {
+          key: l.id,
+          style: { border: `1.5px solid ${tr.margineLotto >= 0 ? "#2e7d3233" : "#c0392b33"}` },
+          ch: /*#__PURE__*/React.createElement(React.Fragment, null,
+            // Header
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } },
+              /*#__PURE__*/React.createElement("div", null,
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: C.olivaScuro } }, "🌿 Raccolta ", l.annata || "—", l.codLotto && /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio400, fontFamily: "monospace", marginLeft: 8 } }, l.codLotto)),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, l.varieta || "—")
+              ),
+              /*#__PURE__*/React.createElement("span", {
+                style: { fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: STATI_LOTTO[l.stato || "completato"]?.c || "#888", color: "#fff" }
+              }, STATI_LOTTO[l.stato || "completato"]?.l?.toUpperCase() || "?")
+            ),
+            // Costi produzione
+            /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 } },
+              [["COSTO OLIO BASE", fmt(tr.costoOlioBase), tr.qtaOlio + " L · " + fmt(tr.costoOlioL) + "/L"],
+               ["COSTO PACKAGING", fmt(tr.costoTotImbott), tr.imbottigliamenti.length + " imbott."],
+               ["COSTO TOTALE PROD.", fmt(tr.costoTotaleProduzione), tr.totQtaProdotta + " bottiglie"]
+              ].map(([h, v, s]) => /*#__PURE__*/React.createElement("div", {
+                key: h, style: { background: C.grigio50, padding: 10, borderRadius: 6 }
+              },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: C.grigio400, fontWeight: 700, letterSpacing: 0.5 } }, h),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.olivaScuro, marginTop: 2 } }, v),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } }, s)
+              ))
+            ),
+            // Dettaglio imbottigliamenti
+            tr.imbottigliamenti.length > 0 && /*#__PURE__*/React.createElement("div", { style: { marginBottom: 12 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 6 } }, "🍾 IMBOTTIGLIAMENTI"),
+              tr.imbottigliamenti.map(i => /*#__PURE__*/React.createElement("div", {
+                key: i.id,
+                style: { display: "flex", justifyContent: "space-between", fontSize: 11, padding: "4px 8px", background: "#fff", borderBottom: `1px solid ${C.grigio100}` }
+              },
+                /*#__PURE__*/React.createElement("span", null,
+                  /*#__PURE__*/React.createElement("strong", null, i.qta, " × ", i.formato),
+                  " · ", i.litri.toFixed(2), " L · ", fmtD(i.data),
+                  (tr.dettaglioPerFormato[i.formato] && tr.dettaglioPerFormato[i.formato].qta > 0) && /*#__PURE__*/React.createElement("span", { style: { color: C.verde, marginLeft: 8 } }, "vendute ", Math.round(tr.dettaglioPerFormato[i.formato].qta))
+                ),
+                /*#__PURE__*/React.createElement("span", { style: { color: C.grigio600 } },
+                  fmt(i.costoBottPiena), "/bott · totale ", fmt(i.costoTotImb)
+                )
+              ))
+            ),
+            // Ricavi (se ci sono)
+            tr.totRicavi > 0 && /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 } },
+              /*#__PURE__*/React.createElement("div", { style: { padding: 10, background: "#e8f5e9", borderRadius: 6 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: "#2e7d32", fontWeight: 700, letterSpacing: 0.5 } }, "RICAVI ATTRIBUITI"),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: "#2e7d32", marginTop: 2 } }, fmt(tr.totRicavi)),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } }, Math.round(tr.totQtaVenduta), " bottiglie vendute")
+              ),
+              /*#__PURE__*/React.createElement("div", { style: { padding: 10, background: tr.margineLotto >= 0 ? "#e8f5e9" : "#ffebee", borderRadius: 6 } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: tr.margineLotto >= 0 ? "#2e7d32" : "#c62828", fontWeight: 700, letterSpacing: 0.5 } }, "MARGINE LOTTO"),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: tr.margineLotto >= 0 ? "#2e7d32" : "#c62828", marginTop: 2 } }, fmt(tr.margineLotto), " (", tr.marginePct.toFixed(1), "%)")
+              )
+            ),
+            // Progress vendute
+            tr.totQtaProdotta > 0 && /*#__PURE__*/React.createElement("div", { style: { marginTop: 8 } },
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 10, color: C.grigio600, fontWeight: 600, marginBottom: 3 } },
+                /*#__PURE__*/React.createElement("span", null, "Venduto"),
+                /*#__PURE__*/React.createElement("span", null, Math.round(tr.totQtaVenduta), " / ", tr.totQtaProdotta, " bottiglie · ", tr.pctVenduto.toFixed(0), "%")
+              ),
+              /*#__PURE__*/React.createElement("div", { style: { height: 8, background: C.grigio100, borderRadius: 4, overflow: "hidden" } },
+                /*#__PURE__*/React.createElement("div", { style: { width: Math.min(100, tr.pctVenduto) + "%", height: "100%", background: tr.pctVenduto >= 80 ? C.verde : tr.pctVenduto >= 40 ? C.oro : C.arancio } })
+              )
+            )
+          )
+        }))
+      )
+    );
+  })(),
+  // ── Tab "Per Bottiglia" (v52-costi1) ─────────────────────────────────────────
+  tab === "bottiglie" && (() => {
+    const bottiglie = dati.bottiglie || [];
+    if (bottiglie.length === 0) return /*#__PURE__*/React.createElement("div", {
+      style: { padding: 32, textAlign: "center", color: C.grigio400, fontStyle: "italic", background: C.grigio50, borderRadius: 8 }
+    }, "Nessuna bottiglia anagrafica. Vai in Produzione → Anagrafica Bottiglie per crearne una.");
+    const analisi = bottiglie.map(b => tracciabilitaBottiglia(b, dati));
+    const valide = analisi.filter(a => a.prezzoListino > 0);
+    const margMedio = valide.length > 0 ? valide.reduce((s, a) => s + a.marginePct, 0) / valide.length : 0;
+    const sorted = analisi.slice().sort((a, b) => b.marginePct - a.marginePct);
+    const best = sorted.find(a => a.prezzoListino > 0);
+    const inPerdita = analisi.filter(a => a.prezzoListino > 0 && a.margine < 0).length;
+    const packMedio = analisi.length > 0 ? analisi.reduce((s, a) => s + a.pack, 0) / analisi.length : 0;
+    return /*#__PURE__*/React.createElement("div", null,
+      // KPI
+      /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 } },
+        [["TIPI BOTTIGLIA", bottiglie.length, valide.length + " con prezzo listino", "#3a3a3a"],
+         ["MARGINE MEDIO BOM", margMedio.toFixed(1) + "%", "media tipi con prezzo", margMedio > 50 ? "#2e7d32" : margMedio > 20 ? "#c9a84c" : "#c0392b"],
+         ["FORMATO + REDDITIZIO", best ? best.bot.formato : "—", best ? fmt(best.margine) + "/bott (" + best.marginePct.toFixed(0) + "%)" : "—", "#2e7d32"],
+         ["PACKAGING MEDIO", fmt(packMedio), "per bottiglia", "#3a3a3a"]
+        ].map(([l, v, s, col]) => /*#__PURE__*/React.createElement("div", {
+          key: l, style: { background: "#fff", borderRadius: 12, padding: 16, border: `1px solid ${C.grigio200}` }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.8, marginBottom: 8 } }, l),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 800, color: col, lineHeight: 1.2 } }, v),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, marginTop: 4 } }, s)
+        ))
+      ),
+      // Card per ciascuna bottiglia
+      /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 14 } },
+        sorted.map(a => /*#__PURE__*/React.createElement(Card, {
+          key: a.bot.id,
+          style: { border: `1.5px solid ${a.marginePct >= 50 ? "#2e7d3233" : a.marginePct >= 20 ? C.oro + "44" : "#c0392b33"}` },
+          ch: /*#__PURE__*/React.createElement(React.Fragment, null,
+            // Header
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 } },
+              /*#__PURE__*/React.createElement("div", null,
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: C.olivaScuro } }, "🍾 ", a.bot.formato || "?"),
+                a.sku && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, a.sku.prodotto, " R.", a.sku.annata)
+              ),
+              /*#__PURE__*/React.createElement("span", {
+                title: a.hasOlio ? "Costo da BOM completo (packaging + lotti)" : "Solo packaging BOM, olio da stima",
+                style: { fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: a.hasOlio ? "#e8f5e9" : "#fff8e1", color: a.hasOlio ? "#2e7d32" : "#7a5900" }
+              }, a.hasOlio ? "🟢 BOM" : "🟡 BOM*")
+            ),
+            // Breakdown packaging (voci)
+            (a.bot.costi && a.bot.costi.length > 0) && /*#__PURE__*/React.createElement("div", { style: { marginBottom: 10 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: C.grigio400, fontWeight: 700, letterSpacing: 0.5, marginBottom: 4 } }, "PACKAGING (voci)"),
+              a.bot.costi.map((c, i) => /*#__PURE__*/React.createElement("div", {
+                key: i,
+                style: { display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }
+              },
+                /*#__PURE__*/React.createElement("span", null, c.voce || "—"),
+                /*#__PURE__*/React.createElement("strong", null, fmt(_parseNum(c.costo)))
+              ))
+            ),
+            // Riepilogo costi
+            /*#__PURE__*/React.createElement("div", { style: { borderTop: `1px solid ${C.grigio200}`, paddingTop: 8, fontSize: 12 } },
+              [["Costo packaging", fmt(a.pack)],
+               ["Costo olio (×" + litriPerFormato(a.bot.formato) + "L)", fmt(a.costoOlioPerBott)],
+               ["Costo bottiglia piena", fmt(a.costoBottPiena), true],
+               ["Prezzo listino", fmt(a.prezzoListino), true]
+              ].map(([k, v, bold]) => /*#__PURE__*/React.createElement("div", {
+                key: k, style: { display: "flex", justifyContent: "space-between", padding: "3px 0" }
+              },
+                /*#__PURE__*/React.createElement("span", { style: { color: C.grigio600 } }, k),
+                /*#__PURE__*/React.createElement(bold ? "strong" : "span", { style: { color: C.olivaScuro } }, v)
+              ))
+            ),
+            // Margine
+            a.prezzoListino > 0 && /*#__PURE__*/React.createElement("div", {
+              style: { marginTop: 10, padding: "8px 12px", background: a.marginePct >= 50 ? "#e8f5e9" : a.marginePct >= 20 ? "#fff8e1" : "#ffebee", borderRadius: 6, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, fontWeight: 700 }
+            },
+              /*#__PURE__*/React.createElement("span", { style: { color: a.marginePct >= 50 ? "#2e7d32" : a.marginePct >= 20 ? "#7a5900" : "#c62828" } }, "Margine"),
+              /*#__PURE__*/React.createElement("strong", { style: { color: a.marginePct >= 50 ? "#2e7d32" : a.marginePct >= 20 ? "#7a5900" : "#c62828" } }, fmt(a.margine), " (", a.marginePct.toFixed(1), "%)")
+            ),
+            // Statistiche produzione
+            a.totProdotta > 0 && /*#__PURE__*/React.createElement("div", {
+              style: { marginTop: 10, paddingTop: 8, borderTop: `1px dashed ${C.grigio200}`, fontSize: 11, color: C.grigio600 }
+            },
+              /*#__PURE__*/React.createElement("div", null, "Produzione: ", /*#__PURE__*/React.createElement("strong", null, a.totProdotta, " bott."), " da ", a.nImbott, " imbottigliamenti su ", a.nLotti, " lotti"),
+              /*#__PURE__*/React.createElement("div", null, "Vendute: ", /*#__PURE__*/React.createElement("strong", { style: { color: C.verde } }, a.qtaVenduta), " · In magazzino: ", /*#__PURE__*/React.createElement("strong", { style: { color: C.olivaScuro } }, a.giacenzaTot))
+            )
+          )
+        }))
+      )
+    );
+  })(),
+  tab === "formati" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
