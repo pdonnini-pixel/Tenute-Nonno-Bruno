@@ -1440,15 +1440,22 @@ const _parseNum = (v) => {
   const n = parseFloat(String(v).replace(",", ".").replace(/[^0-9.\-]/g, ""));
   return isFinite(n) ? n : 0;
 };
+// v50.1 — Litri usati e disponibili dal lotto, basati su imbottigliamenti.
+const litriUsatiLotto = (l) => ((l && l.imbottigliamenti) || []).reduce((s, i) => s + _parseNum(i.litriUsati), 0);
+const litriDisponibiliLotto = (l) => Math.max(0, (_parseNum(l && l.qtaOlio)) - litriUsatiLotto(l));
+// v50.1 — Costo totale di un imbottigliamento singolo (qta bottiglie × (€/bott imbott + €/bott etich)).
+const costoImbottigliamento = (imb) => {
+  const perBott = _parseNum(imb && imb.costoImbottigliamento) + _parseNum(imb && imb.costoEtichettatura);
+  return perBott * _parseNum(imb && imb.qtaProdotta);
+};
+// Costo totale: olive + frantoio (con fallback legacy) + altro + somma costi imbottigliamenti.
 const costoTotaleLotto = (l) => {
   if (!l) return 0;
   const c = l.costi || {};
   const cFrantoio = _parseNum(c.costoFrantoio) || _parseNum(l.costoFrantoio);
-  return _parseNum(c.costoOlive) +
-         cFrantoio +
-         _parseNum(c.costoImbottigliamento) +
-         _parseNum(c.costoEtichettatura) +
-         _parseNum(c.costoAltro);
+  const baseLotto = _parseNum(c.costoOlive) + cFrantoio + _parseNum(c.costoAltro);
+  const totImb = (l.imbottigliamenti || []).reduce((s, i) => s + costoImbottigliamento(i), 0);
+  return baseLotto + totImb;
 };
 const costoPerLitroLotto = (l) => {
   const qta = Number(l && l.qtaOlio) || 0;
@@ -1805,6 +1812,58 @@ const migrateV50Produzione = (dataObj) => {
     });
   }
   out._migration_v50 = true;
+  return out;
+};
+
+// v50.1 — Sub-modello imbottigliamenti.
+// Un lotto produce X litri di olio e in momenti diversi si imbottiglia in formati differenti.
+// Ogni imbottigliamento: { id, data, skuId, litriUsati, qtaProdotta, costoImbottigliamento,
+//   costoEtichettatura, caricoMagazzino, dataCaricoMag, note }.
+// Migra i campi legacy skuFinale/qtaProdotta/caricoMagazzino in un singolo imbottigliamento.
+// Rimuove costoImbottigliamento e costoEtichettatura dai costi del lotto (ora per-imbottigliamento).
+// Idempotente via flag _migration_v50_imbott.
+const migrateV50ImbottLotto = (dataObj) => {
+  if (!dataObj || dataObj._migration_v50_imbott) return dataObj;
+  const out = { ...dataObj };
+  if (Array.isArray(out.lotti)) {
+    out.lotti = out.lotti.map(l => {
+      const nuovi = { ...l };
+      // Inizializza array imbottigliamenti se mancante
+      if (!Array.isArray(nuovi.imbottigliamenti)) nuovi.imbottigliamenti = [];
+      // Migra vecchi campi single-SKU in un elemento imbottigliamenti[]
+      if (nuovi.skuFinale && Number(nuovi.qtaProdotta) > 0 && nuovi.imbottigliamenti.length === 0) {
+        const oldCosti = nuovi.costi || {};
+        const qta = Number(nuovi.qtaProdotta) || 0;
+        // Suddivide il costo per-bottiglia (vecchio era totale)
+        const perBottImb = qta > 0 ? (_parseNum(oldCosti.costoImbottigliamento) / qta) : 0;
+        const perBottEt = qta > 0 ? (_parseNum(oldCosti.costoEtichettatura) / qta) : 0;
+        nuovi.imbottigliamenti.push({
+          id: (typeof uid === "function" ? uid() : "imb_legacy_" + nuovi.id),
+          data: nuovi.dataCaricoMag || nuovi.dataImbottigliamento || nuovi.dataFrangitura || "2025-01-01",
+          skuId: nuovi.skuFinale,
+          litriUsati: _parseNum(nuovi.qtaOlio),
+          qtaProdotta: qta,
+          costoImbottigliamento: perBottImb,
+          costoEtichettatura: perBottEt,
+          caricoMagazzino: !!nuovi.caricoMagazzino,
+          dataCaricoMag: nuovi.dataCaricoMag || null,
+          note: "Migrato da campo legacy skuFinale/qtaProdotta"
+        });
+      }
+      // Rimuovi campi obsoleti dal lotto
+      delete nuovi.skuFinale;
+      delete nuovi.qtaProdotta;
+      delete nuovi.caricoMagazzino;
+      delete nuovi.dataCaricoMag;
+      // Rimuovi costoImbottigliamento e costoEtichettatura dai costi del lotto
+      if (nuovi.costi && typeof nuovi.costi === "object") {
+        const { costoImbottigliamento, costoEtichettatura, ...altriCosti } = nuovi.costi;
+        nuovi.costi = altriCosti;
+      }
+      return nuovi;
+    });
+  }
+  out._migration_v50_imbott = true;
   return out;
 };
 
@@ -11139,6 +11198,9 @@ function Produzione({
   }, []);
   // P3 — state per navigazione tab interna al modal
   const [modalSection, setModalSection] = useState("generale");
+  // P3/v50.1 — state per nuovo imbottigliamento (form inline)
+  const [imbDraft, setImbDraft] = useState({});
+  const resetImbDraft = () => setImbDraft({ data: todayStr() });
   // P3 — calcola prossimo codice lotto sequenziale per l'annata
   const nextCodLotto = (annata) => {
     if (!annata) return "";
@@ -11197,37 +11259,119 @@ function Produzione({
       { title: "Conferma eliminazione lotto", okLabel: "Elimina", danger: true }
     );
   };
-  // v49-mag1: carica il lotto in magazzino generando un movimento carico_produzione
-  const caricaInMagazzino = (l) => {
-    if (!l || !l.skuFinale || !Number(l.qtaProdotta) || l.caricoMagazzino) return;
+  // v50.1 — Aggiungi un imbottigliamento a un lotto (validazione litri).
+  const addImbottigliamento = (lottoId, draft) => {
+    const lotto = (dati.lotti || []).find(x => x.id === lottoId);
+    if (!lotto) {
+      if (window.tnbToast) window.tnbToast("Lotto non trovato", "err"); return false;
+    }
+    const errors = [];
+    if (!draft.skuId) errors.push("Seleziona uno SKU");
+    const litri = Number(draft.litriUsati) || 0;
+    const qta = Number(draft.qtaProdotta) || 0;
+    if (litri <= 0) errors.push("Litri usati > 0 obbligatorio");
+    if (qta <= 0) errors.push("Bottiglie prodotte > 0 obbligatorio");
+    const disp = litriDisponibiliLotto(lotto);
+    if (litri > disp) errors.push(`Litri usati (${litri}) > disponibili nel lotto (${disp})`);
+    if (Number(draft.costoImbottigliamento) < 0) errors.push("Costo imbott./bottiglia non negativo");
+    if (Number(draft.costoEtichettatura) < 0) errors.push("Costo etichett./bottiglia non negativo");
+    if (errors.length > 0) {
+      if (window.tnbToast) window.tnbToast(errors.join(" · "), "err");
+      return false;
+    }
+    const nuovo = {
+      id: uid(),
+      data: draft.data || todayStr(),
+      skuId: draft.skuId,
+      litriUsati: litri,
+      qtaProdotta: qta,
+      costoImbottigliamento: Number(draft.costoImbottigliamento) || 0,
+      costoEtichettatura: Number(draft.costoEtichettatura) || 0,
+      caricoMagazzino: false,
+      dataCaricoMag: null,
+      note: String(draft.note || "").trim()
+    };
+    setDati(d => ({
+      ...d,
+      lotti: d.lotti.map(x => x.id === lottoId ? {
+        ...x,
+        imbottigliamenti: [...(x.imbottigliamenti || []), nuovo]
+      } : x)
+    }));
+    // Sincronizza il form aperto se è lo stesso lotto
+    setForm(f => f.id === lottoId ? { ...f, imbottigliamenti: [...(f.imbottigliamenti || []), nuovo] } : f);
+    if (window.tnbToast) window.tnbToast("➕ Imbottigliamento aggiunto");
+    return true;
+  };
+  // v50.1 — Rimuovi un imbottigliamento (solo se non già caricato in magazzino).
+  const removeImbottigliamento = (lottoId, imbId) => {
+    const lotto = (dati.lotti || []).find(x => x.id === lottoId);
+    if (!lotto) return;
+    const imb = (lotto.imbottigliamenti || []).find(i => i.id === imbId);
+    if (!imb) return;
+    if (imb.caricoMagazzino) {
+      if (window.tnbToast) window.tnbToast("Non rimuovibile: già caricato in magazzino", "err");
+      return;
+    }
+    if (!window.tnbConfirm) return;
+    window.tnbConfirm("Rimuovere questo imbottigliamento? L'azione non è reversibile.", () => {
+      setDati(d => ({
+        ...d,
+        lotti: d.lotti.map(x => x.id === lottoId ? {
+          ...x,
+          imbottigliamenti: (x.imbottigliamenti || []).filter(i => i.id !== imbId)
+        } : x)
+      }));
+      setForm(f => f.id === lottoId ? { ...f, imbottigliamenti: (f.imbottigliamenti || []).filter(i => i.id !== imbId) } : f);
+      if (window.tnbToast) window.tnbToast("🗑 Imbottigliamento rimosso");
+    }, { title: "Conferma rimozione", okLabel: "Rimuovi", danger: true });
+  };
+  // v50.1 — Carica un imbottigliamento specifico in magazzino (movimento carico_produzione).
+  const caricaImbottigliamentoInMagazzino = (lottoId, imbId) => {
+    const lotto = (dati.lotti || []).find(x => x.id === lottoId);
+    if (!lotto) return;
+    const imb = (lotto.imbottigliamenti || []).find(i => i.id === imbId);
+    if (!imb || imb.caricoMagazzino || !imb.skuId || !Number(imb.qtaProdotta)) return;
     const dataMov = todayStr();
     const mv = {
       id: uid(),
       tipo: "carico_produzione",
-      qta: Number(l.qtaProdotta),
+      qta: Number(imb.qtaProdotta),
       data: dataMov,
-      nota: `Auto: lotto raccolta ${l.annata}`,
+      nota: `Auto: lotto raccolta ${lotto.annata}, imbott. ${fmtD(imb.data)}`,
       ordineId: null,
-      lottoId: l.id,
+      lottoId: lotto.id,
       auto: true,
-      skuId: l.skuFinale,
-      magId: l.skuFinale,
+      skuId: imb.skuId,
+      magId: imb.skuId,
       timestamp: Date.now()
     };
     setDati(d => {
       const movimentiTot = [mv, ...(d.movimenti || [])];
       return {
         ...d,
-        lotti: d.lotti.map(x => x.id === l.id ? { ...x, caricoMagazzino: true, dataCaricoMag: dataMov } : x),
+        lotti: d.lotti.map(x => x.id === lottoId ? {
+          ...x,
+          imbottigliamenti: (x.imbottigliamenti || []).map(i =>
+            i.id === imbId ? { ...i, caricoMagazzino: true, dataCaricoMag: dataMov } : i
+          )
+        } : x),
         movimenti: movimentiTot,
         magazzino: d.magazzino.map(m =>
-          m.id === l.skuFinale
+          m.id === imb.skuId
             ? { ...m, giacenza: ricalcolaGiacenza(movimentiTot.filter(x => (x.skuId || x.magId) === m.id)) }
             : m
         )
       };
     });
-    if (window.tnbToast) window.tnbToast("✅ Caricato in magazzino: " + Number(l.qtaProdotta) + " pz");
+    // Sincronizza form aperto
+    setForm(f => f.id === lottoId ? {
+      ...f,
+      imbottigliamenti: (f.imbottigliamenti || []).map(i =>
+        i.id === imbId ? { ...i, caricoMagazzino: true, dataCaricoMag: dataMov } : i
+      )
+    } : f);
+    if (window.tnbToast) window.tnbToast("✅ Caricato in magazzino: " + Number(imb.qtaProdotta) + " pz");
   };
   // P3 — save con validazione + merge sicuro (preserva campi non in form per non perdere dati).
   const save = () => {
@@ -11235,13 +11379,12 @@ function Produzione({
     if (!form.annata) errors.push("Annata obbligatoria");
     if (Number(form.qtaOlive) < 0) errors.push("Quantità olive non può essere negativa");
     if (Number(form.qtaOlio) < 0) errors.push("Quantità olio non può essere negativa");
-    if (Number(form.qtaProdotta) < 0) errors.push("Quantità prodotta non può essere negativa");
     const q = form.qualita || {};
     if (q.acidita != null && q.acidita !== "" && Number(q.acidita) < 0) errors.push("Acidità non può essere negativa");
     if (q.perossidi != null && q.perossidi !== "" && Number(q.perossidi) < 0) errors.push("Perossidi non può essere negativo");
     if (q.polifenoli != null && q.polifenoli !== "" && Number(q.polifenoli) < 0) errors.push("Polifenoli non può essere negativo");
     const c = form.costi || {};
-    ["costoOlive", "costoFrantoio", "costoImbottigliamento", "costoEtichettatura", "costoAltro"].forEach(k => {
+    ["costoOlive", "costoFrantoio", "costoAltro"].forEach(k => {
       if (c[k] != null && c[k] !== "" && Number(c[k]) < 0) errors.push(`${k.replace("costo", "Costo ")} non può essere negativo`);
     });
     if (errors.length > 0) {
@@ -11272,14 +11415,14 @@ function Produzione({
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Nuova annata"),
       sz: "sm",
       onClick: () => {
-        // P3 — inizializza form con i nuovi campi default per evitare null/undefined
+        // P3/v50.1 — inizializza form con i nuovi campi default
         setForm({
           stato: "pianificato",
           annata: String(new Date().getFullYear()),
           qualita: { acidita: null, perossidi: null, polifenoli: null, note: "" },
-          costi: { costoOlive: null, costoFrantoio: null, costoImbottigliamento: null, costoEtichettatura: null, costoAltro: null, noteAltro: "" },
+          costi: { costoOlive: null, costoFrantoio: null, costoAltro: null, noteAltro: "" },
           certificazioni: [],
-          caricoMagazzino: false
+          imbottigliamenti: []
         });
         setModalSection("generale");
         setModal("new");
@@ -11462,23 +11605,34 @@ function Produzione({
           l.note && /*#__PURE__*/React.createElement("div", {
             style: { fontSize: 11, color: C.grigio600, fontStyle: "italic", marginBottom: 8 }
           }, l.note),
-          // Expand toggle + carico magazzino
-          /*#__PURE__*/React.createElement("div", {
-            style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", borderTop: `1px solid ${C.grigio100}`, paddingTop: 10, marginTop: 4 }
-          },
-            !l.caricoMagazzino && l.skuFinale && Number(l.qtaProdotta) > 0 && /*#__PURE__*/React.createElement(Btn, {
-              ch: "📥 Carica magazzino (" + Number(l.qtaProdotta) + " pz)",
-              sz: "sm",
-              onClick: () => caricaInMagazzino(l)
-            }),
-            l.caricoMagazzino && /*#__PURE__*/React.createElement("span", {
-              style: { fontSize: 11, color: C.verde, fontWeight: 700 }
-            }, "✅ In magazzino dal ", fmtD(l.dataCaricoMag)),
-            /*#__PURE__*/React.createElement("button", {
-              onClick: () => setExpandedLotto(prev => prev === l.id ? null : l.id),
-              style: { marginLeft: "auto", padding: "5px 12px", border: "1px solid " + C.grigio200, background: "#fff", color: C.grigio600, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer" }
-            }, isExpanded ? "▲ Riduci" : "▼ Dettagli")
-          ),
+          // Indicatore imbottigliamenti aggregato + expand toggle
+          (() => {
+            const imbList = l.imbottigliamenti || [];
+            const usati = litriUsatiLotto(l);
+            const totL = Number(l.qtaOlio) || 0;
+            const disp = Math.max(0, totL - usati);
+            const pct = totL > 0 ? Math.min(100, (usati / totL) * 100) : 0;
+            const caricati = imbList.filter(i => i.caricoMagazzino).length;
+            return /*#__PURE__*/React.createElement("div", {
+              style: { borderTop: `1px solid ${C.grigio100}`, paddingTop: 10, marginTop: 4 }
+            },
+              totL > 0 && /*#__PURE__*/React.createElement("div", { style: { marginBottom: 8 } },
+                /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 10, color: C.grigio600, fontWeight: 600, marginBottom: 3 } },
+                  /*#__PURE__*/React.createElement("span", null, "🍾 ", imbList.length, " imbottigliament", imbList.length === 1 ? "o" : "i", caricati > 0 ? ` · ${caricati}/${imbList.length} in magazzino` : ""),
+                  /*#__PURE__*/React.createElement("span", null, usati, " / ", totL, " L usati · ", disp, " L disp.")
+                ),
+                /*#__PURE__*/React.createElement("div", { style: { height: 6, background: C.grigio100, borderRadius: 3, overflow: "hidden" } },
+                  /*#__PURE__*/React.createElement("div", { style: { width: pct + "%", height: "100%", background: pct >= 100 ? C.verde : C.olivaChiaro, transition: "width .3s" } })
+                )
+              ),
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "flex-end" } },
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: () => setExpandedLotto(prev => prev === l.id ? null : l.id),
+                  style: { padding: "5px 12px", border: "1px solid " + C.grigio200, background: "#fff", color: C.grigio600, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer" }
+                }, isExpanded ? "▲ Riduci" : "▼ Dettagli")
+              )
+            );
+          })(),
           // Sezione expand: sempre 4 sezioni (date, fornitori, costi, qualità).
           // Le sezioni mostrano placeholder grigio se non hanno dati.
           isExpanded && /*#__PURE__*/React.createElement("div", {
@@ -11500,19 +11654,40 @@ function Produzione({
               /*#__PURE__*/React.createElement("div", null, "Olive: ", /*#__PURE__*/React.createElement("strong", null, fornitoreOlive ? (fornitoreOlive.ragioneSociale || fornitoreOlive.nome) : "—")),
               /*#__PURE__*/React.createElement("div", null, "Frantoio: ", /*#__PURE__*/React.createElement("strong", null, frantoioNome), Number(l.nFrangiture) > 0 && /*#__PURE__*/React.createElement("span", { style: { marginLeft: 6, color: C.grigio400 } }, "(", l.nFrangiture, " frangiture)"))
             ),
+            // 🍾 IMBOTTIGLIAMENTI (sempre visibile)
+            /*#__PURE__*/React.createElement("div", { style: { marginBottom: 12 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 4 } }, "🍾 IMBOTTIGLIAMENTI"),
+              (() => {
+                const imbList = l.imbottigliamenti || [];
+                if (imbList.length === 0) return /*#__PURE__*/React.createElement("div", { style: { fontStyle: "italic", color: C.grigio400 } }, "Nessun imbottigliamento registrato.");
+                return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4 } },
+                  imbList.map(imb => {
+                    const sku = (dati.magazzino || []).find(m => m.id === imb.skuId);
+                    const skuLabel = sku ? `${sku.formato} R.${sku.annata}` : "(SKU?)";
+                    return /*#__PURE__*/React.createElement("div", { key: imb.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", background: "#fff", borderRadius: 4, border: `1px solid ${C.grigio100}` } },
+                      /*#__PURE__*/React.createElement("span", null,
+                        imb.caricoMagazzino ? "✅ " : "⏳ ",
+                        /*#__PURE__*/React.createElement("strong", null, skuLabel),
+                        " · ", _parseNum(imb.litriUsati), " L → ", _parseNum(imb.qtaProdotta), " pz",
+                        " · ", fmtD(imb.data)
+                      )
+                    );
+                  })
+                );
+              })()
+            ),
             // 💰 COSTI (sempre visibile)
             /*#__PURE__*/React.createElement("div", { style: { marginBottom: 12 } },
               /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 4 } }, "💰 COSTI"),
               (() => {
                 if (cTot <= 0) return /*#__PURE__*/React.createElement("div", { style: { fontStyle: "italic", color: C.grigio400 } }, "Nessun costo registrato.");
                 const c = l.costi || {};
-                // Fallback frantoio: campo legacy l.costoFrantoio se costi.costoFrantoio non valorizzato
                 const cfFront = _parseNum(c.costoFrantoio) || _parseNum(l.costoFrantoio);
+                const totImb = (l.imbottigliamenti || []).reduce((s, i) => s + costoImbottigliamento(i), 0);
                 const voci = [
                   ["Olive", _parseNum(c.costoOlive)],
                   ["Frantoio", cfFront],
-                  ["Imbottigliam.", _parseNum(c.costoImbottigliamento)],
-                  ["Etichettatura", _parseNum(c.costoEtichettatura)],
+                  ["Imbottigliamenti (" + (l.imbottigliamenti || []).length + ")", totImb],
                   ["Altro" + (c.noteAltro ? " (" + c.noteAltro + ")" : ""), _parseNum(c.costoAltro)]
                 ].filter(([, v]) => v > 0);
                 return /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", gap: "2px 12px" } },
@@ -11726,70 +11901,180 @@ function Produzione({
           rows: 3, ph: "Profilo organolettico, certificato di analisi, ecc."
         })
       ),
-      // ── Sezione 4: Imbottigliamento & Etichettatura ───────────────────────
-      modalSection === "imbott" && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
-        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
-          /*#__PURE__*/React.createElement(Inp, {
-            label: "Data imbottigliamento", type: "date", v: form.dataImbottigliamento || "",
-            on: v => setForm(f => ({ ...f, dataImbottigliamento: v }))
-          }),
-          /*#__PURE__*/React.createElement(Inp, {
-            label: "Data etichettatura", type: "date", v: form.dataEtichettatura || "",
-            on: v => setForm(f => ({ ...f, dataEtichettatura: v }))
-          }),
-          /*#__PURE__*/React.createElement(Sel, {
-            label: "Prodotto finale (SKU magazzino)", v: form.skuFinale || "",
-            on: v => setForm(f => ({ ...f, skuFinale: v || null })),
-            opts: [{ v: "", l: "— Nessuno —" }].concat((dati.magazzino || []).map(m => ({
-              v: m.id, l: `${m.prodotto} ${m.formato} R.${m.annata}`
-            })))
-          }),
-          /*#__PURE__*/React.createElement(Inp, {
-            label: "Quantità prodotta (pezzi)", type: "number", min: 0, step: 1,
-            v: form.qtaProdotta != null ? form.qtaProdotta : "",
-            on: v => setForm(f => ({ ...f, qtaProdotta: Number(v) || 0 })),
-            ph: "es. 920"
-          })
-        ),
-        /*#__PURE__*/React.createElement("div", { style: { padding: 12, background: C.grigio50, borderRadius: 8 } },
-          !form.id && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, fontStyle: "italic" } }, "Salva il lotto prima per poterlo caricare in magazzino."),
-          form.id && !form.caricoMagazzino && form.skuFinale && Number(form.qtaProdotta) > 0 && /*#__PURE__*/React.createElement(Btn, {
-            ch: "📥 Carica in magazzino (" + Number(form.qtaProdotta) + " pz)",
-            sz: "sm", onClick: () => caricaInMagazzino(form)
-          }),
-          form.id && !form.caricoMagazzino && (!form.skuFinale || !Number(form.qtaProdotta)) && /*#__PURE__*/React.createElement("div", {
-            style: { fontSize: 11, color: C.grigio400, fontStyle: "italic" }
-          }, "Imposta SKU finale e quantità prodotta per abilitare il carico in magazzino."),
-          form.caricoMagazzino && /*#__PURE__*/React.createElement("div", {
-            style: { fontSize: 12, color: C.verde, fontWeight: 700 }
-          }, "✅ Già caricato in magazzino il " + fmtD(form.dataCaricoMag))
-        )
-      ),
-      // ── Sezione 5: Costi ──────────────────────────────────────────────────
+      // ── Sezione 4: Imbottigliamento (lista + form add) ────────────────────
+      modalSection === "imbott" && (() => {
+        const imbList = (form.imbottigliamenti || []);
+        const totL = Number(form.qtaOlio) || 0;
+        const usati = imbList.reduce((s, i) => s + _parseNum(i.litriUsati), 0);
+        const disp = Math.max(0, totL - usati);
+        const pct = totL > 0 ? Math.min(100, (usati / totL) * 100) : 0;
+        return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+          // ── Progress bar litri ──
+          /*#__PURE__*/React.createElement("div", { style: { padding: "10px 14px", background: C.grigio50, borderRadius: 8 } },
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12, color: C.grigio600, fontWeight: 600, marginBottom: 6 } },
+              /*#__PURE__*/React.createElement("span", null, "Litri lotto: ", usati, " / ", totL, " usati"),
+              /*#__PURE__*/React.createElement("span", { style: { color: disp > 0 ? C.olivaScuro : C.verde } }, disp, " L disponibili")
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { height: 10, background: "#fff", borderRadius: 5, overflow: "hidden", border: `1px solid ${C.grigio200}` } },
+              /*#__PURE__*/React.createElement("div", { style: { width: pct + "%", height: "100%", background: pct >= 100 ? C.verde : C.olivaChiaro, transition: "width .3s" } })
+            ),
+            totL <= 0 && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, fontStyle: "italic", marginTop: 6 } }, "Imposta 'Olio prodotto' nella sezione Raccolta & Frangitura per gestire gli imbottigliamenti.")
+          ),
+          // ── Lista imbottigliamenti esistenti ──
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+            imbList.length === 0 && /*#__PURE__*/React.createElement("div", {
+              style: { fontSize: 12, color: C.grigio400, fontStyle: "italic", padding: 12, background: "#fafaf8", borderRadius: 6, textAlign: "center" }
+            }, "Nessun imbottigliamento registrato. Aggiungine uno qui sotto."),
+            imbList.map(imb => {
+              const sku = (dati.magazzino || []).find(m => m.id === imb.skuId);
+              const skuLabel = sku ? `${sku.prodotto} ${sku.formato} R.${sku.annata}` : "(SKU mancante)";
+              const cTot = costoImbottigliamento(imb);
+              return /*#__PURE__*/React.createElement("div", {
+                key: imb.id,
+                style: { padding: "10px 12px", background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 6, display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center" }
+              },
+                /*#__PURE__*/React.createElement("div", null,
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.olivaScuro } }, skuLabel),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, marginTop: 2 } },
+                    "📅 ", fmtD(imb.data), " · ",
+                    "🫗 ", _parseNum(imb.litriUsati), " L → ",
+                    /*#__PURE__*/React.createElement("strong", { style: { color: C.olivaScuro } }, _parseNum(imb.qtaProdotta), " pz"),
+                    cTot > 0 && /*#__PURE__*/React.createElement("span", null, " · 💰 ", fmt(cTot))
+                  ),
+                  imb.note && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontStyle: "italic", color: C.grigio400, marginTop: 2 } }, imb.note)
+                ),
+                /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
+                  imb.caricoMagazzino
+                    ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, background: "#e8f5e9", color: "#2e7d32", padding: "3px 8px", borderRadius: 4, fontWeight: 700 } }, "✅ in mag. ", fmtD(imb.dataCaricoMag))
+                    : form.id && imb.skuId && Number(imb.qtaProdotta) > 0
+                      ? /*#__PURE__*/React.createElement(Btn, {
+                          ch: "📥 Carica",
+                          sz: "sm",
+                          onClick: () => caricaImbottigliamentoInMagazzino(form.id, imb.id)
+                        })
+                      : null,
+                  !imb.caricoMagazzino && /*#__PURE__*/React.createElement("button", {
+                    type: "button",
+                    onClick: () => removeImbottigliamento(form.id, imb.id),
+                    title: "Rimuovi imbottigliamento",
+                    style: { padding: "4px 8px", border: `1px solid ${C.rosso}33`, background: "#fff", color: C.rosso, borderRadius: 4, fontSize: 12, cursor: "pointer", fontWeight: 700 }
+                  }, "🗑")
+                )
+              );
+            })
+          ),
+          // ── Form: aggiungi nuovo imbottigliamento ──
+          /*#__PURE__*/React.createElement("div", {
+            style: { padding: 12, background: "#f5f7f0", borderRadius: 8, border: `1px dashed ${C.olivaChiaro}` }
+          },
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.olivaScuro, letterSpacing: 0.5, marginBottom: 10 } }, "➕ NUOVO IMBOTTIGLIAMENTO"),
+            !form.id
+              ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, fontStyle: "italic" } }, "Salva il lotto prima per poter aggiungere imbottigliamenti.")
+              : /*#__PURE__*/React.createElement(React.Fragment, null,
+                  /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr", gap: 10, alignItems: "end" } },
+                    /*#__PURE__*/React.createElement(Sel, {
+                      label: "Formato (SKU)", req: true,
+                      v: imbDraft.skuId || "",
+                      on: v => setImbDraft(d => ({ ...d, skuId: v })),
+                      opts: [{ v: "", l: "— Seleziona —" }].concat((dati.magazzino || []).map(m => ({
+                        v: m.id, l: `${m.prodotto} ${m.formato} R.${m.annata}`
+                      })))
+                    }),
+                    /*#__PURE__*/React.createElement(Inp, {
+                      label: "Data", type: "date",
+                      v: imbDraft.data || todayStr(),
+                      on: v => setImbDraft(d => ({ ...d, data: v }))
+                    }),
+                    /*#__PURE__*/React.createElement(Inp, {
+                      label: `Litri usati (max ${disp})`, type: "number", min: 0, step: 0.1,
+                      v: imbDraft.litriUsati != null ? imbDraft.litriUsati : "",
+                      on: v => setImbDraft(d => ({ ...d, litriUsati: Number(v) })),
+                      req: true,
+                      ph: "es. 250"
+                    }),
+                    /*#__PURE__*/React.createElement(Inp, {
+                      label: "Bottiglie", type: "number", min: 0, step: 1,
+                      v: imbDraft.qtaProdotta != null ? imbDraft.qtaProdotta : "",
+                      on: v => setImbDraft(d => ({ ...d, qtaProdotta: Number(v) })),
+                      req: true,
+                      ph: "es. 500"
+                    })
+                  ),
+                  /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 2fr auto", gap: 10, alignItems: "end", marginTop: 10 } },
+                    /*#__PURE__*/React.createElement(Inp, {
+                      label: "Costo imbott./bottiglia (€)", type: "number", min: 0, step: 0.01,
+                      v: imbDraft.costoImbottigliamento != null ? imbDraft.costoImbottigliamento : "",
+                      on: v => setImbDraft(d => ({ ...d, costoImbottigliamento: Number(v) })),
+                      ph: "es. 0.15"
+                    }),
+                    /*#__PURE__*/React.createElement(Inp, {
+                      label: "Costo etich./bottiglia (€)", type: "number", min: 0, step: 0.01,
+                      v: imbDraft.costoEtichettatura != null ? imbDraft.costoEtichettatura : "",
+                      on: v => setImbDraft(d => ({ ...d, costoEtichettatura: Number(v) })),
+                      ph: "es. 0.08"
+                    }),
+                    /*#__PURE__*/React.createElement(Inp, {
+                      label: "Note (opz.)",
+                      v: imbDraft.note || "",
+                      on: v => setImbDraft(d => ({ ...d, note: v })),
+                      ph: "es. Lotto promo 1+1"
+                    }),
+                    /*#__PURE__*/React.createElement(Btn, {
+                      ch: "➕ Aggiungi",
+                      onClick: () => {
+                        const ok = addImbottigliamento(form.id, imbDraft);
+                        if (ok) resetImbDraft();
+                      }
+                    })
+                  )
+                )
+          )
+        );
+      })(),
+      // ── Sezione 5: Costi (solo lotto-level; imbottigliamenti sono in sezione 4) ─
       modalSection === "costi" && (() => {
         const c = form.costi || {};
         const upd = (k, v) => setForm(f => ({ ...f, costi: { ...(f.costi || {}), [k]: v === "" ? null : Number(v) } }));
-        const tot = costoTotaleLotto(form);
+        const cOlive = _parseNum(c.costoOlive);
+        const cFrant = _parseNum(c.costoFrantoio) || _parseNum(form.costoFrantoio);
+        const cAltro = _parseNum(c.costoAltro);
+        const baseLotto = cOlive + cFrant + cAltro;
+        const imbList = form.imbottigliamenti || [];
+        const totImb = imbList.reduce((s, i) => s + costoImbottigliamento(i), 0);
+        const tot = baseLotto + totImb;
         const lit = costoPerLitroLotto(form);
         return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, fontStyle: "italic" } },
+            "I costi di imbottigliamento ed etichettatura sono per-bottiglia e gestiti nella sezione 🍾 Imbottigliamento (uno per imbottigliamento)."
+          ),
           /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
             /*#__PURE__*/React.createElement(Inp, { label: "Costo olive (€)", type: "number", min: 0, step: 0.01, v: c.costoOlive != null ? c.costoOlive : "", on: v => upd("costoOlive", v) }),
             /*#__PURE__*/React.createElement(Inp, { label: "Costo frantoio (€)", type: "number", min: 0, step: 0.01, v: c.costoFrantoio != null ? c.costoFrantoio : "", on: v => upd("costoFrantoio", v) }),
-            /*#__PURE__*/React.createElement(Inp, { label: "Costo imbottigliamento (€)", type: "number", min: 0, step: 0.01, v: c.costoImbottigliamento != null ? c.costoImbottigliamento : "", on: v => upd("costoImbottigliamento", v) }),
-            /*#__PURE__*/React.createElement(Inp, { label: "Costo etichettatura (€)", type: "number", min: 0, step: 0.01, v: c.costoEtichettatura != null ? c.costoEtichettatura : "", on: v => upd("costoEtichettatura", v) }),
             /*#__PURE__*/React.createElement(Inp, { label: "Altri costi (€)", type: "number", min: 0, step: 0.01, v: c.costoAltro != null ? c.costoAltro : "", on: v => upd("costoAltro", v) }),
             /*#__PURE__*/React.createElement(Inp, { label: "Note altri costi", v: c.noteAltro || "", on: v => setForm(f => ({ ...f, costi: { ...(f.costi || {}), noteAltro: v } })), ph: "descrizione" })
           ),
           /*#__PURE__*/React.createElement("div", {
-            style: { padding: "12px 16px", background: "#f5f7f0", borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }
+            style: { padding: "12px 16px", background: "#f5f7f0", borderRadius: 8 }
           },
-            /*#__PURE__*/React.createElement("div", null,
-              /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, "Totale costi"),
-              /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: C.olivaScuro } }, fmt(tot))
+            /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 12px", fontSize: 12 } },
+              /*#__PURE__*/React.createElement("div", null, "Costo olive"),
+              /*#__PURE__*/React.createElement("div", { style: { textAlign: "right", fontWeight: 600 } }, fmt(cOlive)),
+              /*#__PURE__*/React.createElement("div", null, "Costo frantoio"),
+              /*#__PURE__*/React.createElement("div", { style: { textAlign: "right", fontWeight: 600 } }, fmt(cFrant)),
+              /*#__PURE__*/React.createElement("div", null, "Altri costi"),
+              /*#__PURE__*/React.createElement("div", { style: { textAlign: "right", fontWeight: 600 } }, fmt(cAltro)),
+              /*#__PURE__*/React.createElement("div", null, "Totale imbottigliamenti (", imbList.length, ")"),
+              /*#__PURE__*/React.createElement("div", { style: { textAlign: "right", fontWeight: 600 } }, fmt(totImb))
             ),
-            lit != null && /*#__PURE__*/React.createElement("div", { style: { textAlign: "right" } },
-              /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, "Costo per litro (su " + Number(form.qtaOlio || 0) + " L)"),
-              /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: C.olivaScuro } }, fmt(lit), "/L")
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.grigio200}` } },
+              /*#__PURE__*/React.createElement("div", null,
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, "Totale costi"),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: C.olivaScuro } }, fmt(tot))
+              ),
+              lit != null && /*#__PURE__*/React.createElement("div", { style: { textAlign: "right" } },
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, "Costo per litro (su " + Number(form.qtaOlio || 0) + " L)"),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: C.olivaScuro } }, fmt(lit), "/L")
+              )
             )
           )
         );
@@ -13055,7 +13340,7 @@ function App() {
           if (u) setCurrentUser(u);
         }
         const r = await window.storage.get("tnb-pro-v2");
-        const parsed = migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))));
+        const parsed = migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0))))))))));
         if (parsed.agendaState) {
           const validIds = new Set([
             ...parsed.ordini.map(o => `firma_${o.id}`),
