@@ -1231,7 +1231,7 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260513-v49-mag1
+</script><script>// TNB-BUILD-20260513-v50-prod1
 // ─── TOAST GLOBALE ────────────────────────────────────────────────────────────
 window.tnbToast = (msg, kind) => {
   // Errori: overlay centrato vistoso (top-center, backdrop, click-to-dismiss, timeout lungo).
@@ -1410,6 +1410,56 @@ const STATI_MAG = {
   }
 };
 const STATI_MAG_ORDINE = ["disponibile", "in_confezionamento", "riservato", "in_spedizione", "da_etichettare", "in_frantoio"];
+
+// ─── PRODUZIONE — WORKFLOW LOTTI (v50) ────────────────────────────────────────
+const STATI_LOTTO = {
+  pianificato:         { l: "Pianificato",         c: "#9e9e9e", emoji: "📋", desc: "Raccolta programmata, non ancora iniziata" },
+  in_raccolta:         { l: "In raccolta",         c: "#8bc34a", emoji: "🌿", desc: "Raccolta olive in corso" },
+  in_frantoio:         { l: "In frantoio",         c: "#ff9800", emoji: "🫒", desc: "Olive consegnate al frantoio, molitura in corso" },
+  olio_grezzo:         { l: "Olio grezzo",         c: "#ffc107", emoji: "🫙", desc: "Olio prodotto, in decantazione/stoccaggio" },
+  in_imbottigliamento: { l: "In imbottigliamento", c: "#2196f3", emoji: "🍾", desc: "Olio in fase di imbottigliamento" },
+  in_etichettatura:    { l: "In etichettatura",    c: "#9c27b0", emoji: "🏷️", desc: "Bottiglie riempite, etichettatura in corso" },
+  completato:          { l: "Completato",          c: "#4caf50", emoji: "✅", desc: "Produzione completa, pronto per la vendita" }
+};
+const FLUSSO_LOTTO = {
+  pianificato:         ["in_raccolta"],
+  in_raccolta:         ["in_frantoio"],
+  in_frantoio:         ["olio_grezzo"],
+  olio_grezzo:         ["in_imbottigliamento"],
+  in_imbottigliamento: ["in_etichettatura"],
+  in_etichettatura:    ["completato"],
+  completato:          []
+};
+const STATI_LOTTO_ORDER = Object.keys(STATI_LOTTO);
+// Helper costi: somma di tutte le voci `costi.*` del lotto.
+const costoTotaleLotto = (l) => {
+  const c = (l && l.costi) || {};
+  return (Number(c.costoOlive) || 0) +
+         (Number(c.costoFrantoio) || 0) +
+         (Number(c.costoImbottigliamento) || 0) +
+         (Number(c.costoEtichettatura) || 0) +
+         (Number(c.costoAltro) || 0);
+};
+const costoPerLitroLotto = (l) => {
+  const qta = Number(l && l.qtaOlio) || 0;
+  return qta > 0 ? (costoTotaleLotto(l) / qta) : null;
+};
+// Resa del lotto come numero (percentuale). Se qtaOlive/qtaOlio mancanti, usa resa esistente.
+const resaLotto = (l) => {
+  if (!l) return 0;
+  const ol = Number(l.qtaOlive) || 0;
+  const oi = Number(l.qtaOlio) || 0;
+  if (ol > 0 && oi > 0) return parseFloat((oi / ol * 100).toFixed(2));
+  return Number(l.resa) || 0;
+};
+// Badge "Extravergine" se i parametri qualità rientrano nei limiti regolamentari.
+const isExtravergine = (l) => {
+  const q = (l && l.qualita) || {};
+  const a = Number(q.acidita);
+  const p = Number(q.perossidi);
+  if (!isFinite(a) || !isFinite(p)) return false;
+  return a > 0 && a <= 0.8 && p > 0 && p <= 20;
+};
 const giacenzaDisp = m => m.giacenza?.disponibile || 0;
 const giacenzaTot = m => Object.values(m.giacenza || {}).reduce((s, v) => s + (v || 0), 0);
 // Migrazione v34: rinomina chiavi giacenza legacy. Idempotente: lascia inalterati i record già migrati.
@@ -1692,6 +1742,59 @@ const migrateV49Magazzino = (dataObj) => {
     }));
   }
   out._migration_v49 = true;
+  return out;
+};
+
+// v50-prod1: Produzione event-driven.
+// - Fix resa: sempre numero (era stringa "14.1%"). Se qtaOlive>0 e qtaOlio>0 ricalcola.
+// - Nuovi campi lotto: stato (workflow), dataImbottigliamento, dataEtichettatura, qualita
+//   (acidita/perossidi/polifenoli/note), fornitoreOliveId, frantoioId, costi.* (breakdown),
+//   codLotto, certificazioni. Lotti esistenti → stato="completato".
+// - Migra costoFrantoio (top-level) → costi.costoFrantoio.
+// Idempotente via flag _migration_v50.
+const migrateV50Produzione = (dataObj) => {
+  if (!dataObj || dataObj._migration_v50) return dataObj;
+  const out = { ...dataObj };
+  if (Array.isArray(out.lotti)) {
+    out.lotti = out.lotti.map(l => {
+      // Fix resa: stringa "14.1%" / "14,1%" / null → numero
+      let resaNum = 0;
+      if (typeof l.resa === "string") {
+        resaNum = parseFloat(l.resa.replace("%", "").replace(",", ".")) || 0;
+      } else {
+        resaNum = Number(l.resa) || 0;
+      }
+      // Se qta presenti, ricalcola da formula (truth)
+      const ol = Number(l.qtaOlive) || 0;
+      const oi = Number(l.qtaOlio) || 0;
+      if (ol > 0 && oi > 0) {
+        resaNum = parseFloat((oi / ol * 100).toFixed(2));
+      }
+      // Migra costoFrantoio top-level → costi.costoFrantoio (se costi non esiste)
+      const costi = l.costi || {
+        costoOlive: null,
+        costoFrantoio: (typeof l.costoFrantoio === "number" ? l.costoFrantoio : null),
+        costoImbottigliamento: null,
+        costoEtichettatura: null,
+        costoAltro: null,
+        noteAltro: ""
+      };
+      return {
+        ...l,
+        stato: l.stato || "completato",
+        resa: resaNum,
+        dataImbottigliamento: l.dataImbottigliamento || null,
+        dataEtichettatura: l.dataEtichettatura || null,
+        qualita: l.qualita || { acidita: null, perossidi: null, polifenoli: null, note: "" },
+        fornitoreOliveId: l.fornitoreOliveId || null,
+        frantoioId: l.frantoioId || null,
+        costi: costi,
+        codLotto: l.codLotto || "",
+        certificazioni: Array.isArray(l.certificazioni) ? l.certificazioni : []
+      };
+    });
+  }
+  out._migration_v50 = true;
   return out;
 };
 
@@ -11275,6 +11378,7 @@ function Produzione({
 
 // ─── FORNITORI ────────────────────────────────────────────────────────────────
 const CATEGORIE_FORNITORE = [
+  { v: "fornitore_olive", l: "🌿 Fornitore olive" },
   { v: "frantoio", l: "🫒 Frantoio" },
   { v: "bottiglie", l: "🍾 Bottiglie" },
   { v: "etichette", l: "🏷️ Etichette" },
@@ -12509,7 +12613,7 @@ function App() {
           if (u) setCurrentUser(u);
         }
         const r = await window.storage.get("tnb-pro-v2");
-        const parsed = migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0))))))));
+        const parsed = migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))));
         if (parsed.agendaState) {
           const validIds = new Set([
             ...parsed.ordini.map(o => `firma_${o.id}`),
