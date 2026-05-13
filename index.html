@@ -1232,6 +1232,11 @@ function HBarChartSVG({
   }));
 }
 </script><script>// TNB-BUILD-20260513-v50-prod1
+// v50 Produzione: workflow 7 stati, BOM bottiglie, multi-imbottigliamenti per lotto,
+// litriUsati auto-calcolato, costi olio + packaging, timeline + avanzamento rapido,
+// raggruppamento card per annata. Migrazione idempotente in 4 step: v50, v50_imbott,
+// v50_bottiglie, v50_litri. Carico magazzino per-imbottigliamento (carico_produzione
+// con lottoId + skuId ereditato dalla bottiglia).
 // ─── TOAST GLOBALE ────────────────────────────────────────────────────────────
 window.tnbToast = (msg, kind) => {
   // Errori: overlay centrato vistoso (top-center, backdrop, click-to-dismiss, timeout lungo).
