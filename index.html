@@ -8787,7 +8787,7 @@ function Ordini({
       clienti: dati.clienti,
       value: form.clienteId || "",
       onChange: v => setForm(f => ({ ...f, clienteId: v })),
-      disabled: !!form._lockCliente,
+      disabled: !!form._lockCliente || form.stato === "consegnato" || form.stato === "fatturato",
       label: "Cliente",
       error: formErrors.clienteId
     }), /*#__PURE__*/React.createElement(Sel, {
@@ -8795,6 +8795,7 @@ function Ordini({
       req: true,
       error: formErrors.modalita,
       v: form.modalita || "",
+      disabled: form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => {
         const next = { ...f, modalita: v };
         // Auto: passa a CV senza scadenza → calcola data ordine + 12 mesi
@@ -8818,6 +8819,7 @@ function Ordini({
       label: "Data",
       type: "date",
       v: form.data || "",
+      disabled: form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => ({
         ...f,
         data: v
@@ -8860,6 +8862,7 @@ function Ordini({
       req: true,
       error: formErrors.modalitaPagamento,
       v: form.modalitaPagamento || "",
+      disabled: form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => ({
         ...f,
         modalitaPagamento: v
@@ -8879,6 +8882,7 @@ function Ordini({
     }), /*#__PURE__*/React.createElement(Sel, {
       label: "Spedizione",
       v: form.spedizione || "locale",
+      disabled: form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => ({
         ...f,
         spedizione: v
@@ -8891,6 +8895,7 @@ function Ordini({
       label: "Scadenza CV",
       type: "date",
       v: form.scadenzaCV || "",
+      disabled: form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => ({
         ...f,
         scadenzaCV: v
@@ -9027,6 +9032,7 @@ function Ordini({
     })()), /*#__PURE__*/React.createElement(Inp, {
       label: "Note",
       v: form.note || "",
+      disabled: form.stato === "consegnato" || form.stato === "fatturato",
       on: v => setForm(f => ({
         ...f,
         note: v
