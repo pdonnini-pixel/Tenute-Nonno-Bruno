@@ -4093,36 +4093,24 @@ const D0 = {
   }
 };
 
-// Costo olio per litro calcolato da config
-const costoOlioPerLitro = cfg => {
-  const cOlive = cfg.costoOlivePerKg * (100 / cfg.resaMedia);
-  const cFr = cfg.costoFrangituraPer100kg / cfg.resaMedia;
-  return cOlive + cFr;
-};
-const costoFormato = (formato, cfg) => {
-  const ml = formato === "100 ml" ? 0.1 : formato === "250 ml" ? 0.25 : formato === "500 ml" ? 0.5 : (formato === "20 ml" || formato === "Olio 20 ml" || formato === "Aceto 20 ml") ? 0.02 : formato === "3 L (latta)" ? 3 : 5;
-  const cOlio = costoOlioPerLitro(cfg) * ml;
-  const v = cfg.voci[formato] || {
-    bottiglia: 1,
-    etichetta: 0.2,
-    packaging: 0.3,
-    logistica: 0.3
-  };
-  return cOlio + v.bottiglia + v.etichetta + v.packaging + v.logistica;
-};
+// v52-costi1: helper LEGACY mantenuti come stub neutri per non rompere call site rari.
+// La fonte di verità per i costi è ORA il BOM (Produzione: lotti + bottiglie).
+// costoFormato/costoOlioPerLitro non sono più chiamati dai tab Costi: ritornano 0.
+const costoOlioPerLitro = (_cfg) => 0;
+const costoFormato = (_formato, _cfg) => 0;
 
-// v52-costi1: costo reale per formato, usando il BOM v50 dove disponibile.
-// 1. Cerca bottiglia BOM per formato (match normalizzato).
-// 2. Se trovata: packaging = costoPackaging(bottiglia) + olio medio ponderato dai lotti
-//    che l'hanno imbottigliata; se nessun lotto, olio = costoOlioPerLitro(cfg) fallback.
-// 3. Se nessuna bottiglia BOM: fallback completo a costoFormato(formato, cfg).
-// Ritorna sempre un numero (interfaccia compatibile con costoFormato).
+// v52 — costo formato dal BOM reale (Produzione lotti + bottiglie).
+// Ritorna sempre un oggetto: { packaging, olioPerLitro, totale, fonte }.
+//   fonte: "bom"      = packaging + olio reale ponderato sui lotti
+//   fonte: "parziale" = bottiglia BOM esiste, ma nessun imbottigliamento → solo packaging
+//   fonte: "nd"       = nessuna bottiglia BOM per questo formato (totale = null)
+// La firma accetta cfg come 3° parametro per retro-compatibilità ma lo ignora.
 const _normFmt52 = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
-const costoFormatoReale = (formato, dati, cfg) => {
-  if (!dati) return costoFormato(formato, cfg);
+const costoFormatoReale = (formato, dati, _cfg) => {
+  if (!dati) return { packaging: null, olioPerLitro: null, totale: null, fonte: "nd" };
   const target = _normFmt52(formato);
   const bot = (dati.bottiglie || []).find(b => _normFmt52(b.formato) === target);
-  if (!bot) return costoFormato(formato, cfg);
+  if (!bot) return { packaging: null, olioPerLitro: null, totale: null, fonte: "nd" };
   const pack = costoPackaging(bot);
   // Media ponderata olio/L sui lotti che hanno imbottigliato questa bottiglia
   let totL = 0, totC = 0;
@@ -4135,21 +4123,44 @@ const costoFormatoReale = (formato, dati, cfg) => {
       }
     });
   });
-  const costoOlioL = totL > 0 ? (totC / totL) : costoOlioPerLitro(cfg);
+  if (totL <= 0) {
+    return { packaging: pack, olioPerLitro: null, totale: null, fonte: "parziale" };
+  }
+  const olioPerLitro = totC / totL;
   const litri = litriPerFormato(formato);
-  return pack + costoOlioL * litri;
+  const totale = pack + olioPerLitro * litri;
+  return { packaging: pack, olioPerLitro, totale, fonte: "bom" };
 };
-// Restituisce la "fonte" del costo per quel formato: "bom" (packaging + olio reale),
-// "bom_parziale" (packaging BOM, olio medio config), "stima" (fallback completo).
+// Helper numero diretto per call site che vogliono solo il numero (null/parziale → 0).
+const costoFormatoTot = (formato, dati) => {
+  const r = costoFormatoReale(formato, dati);
+  return (r && typeof r.totale === "number") ? r.totale : 0;
+};
+// Compatibility: ritorna solo la "fonte" del costo per indicatori UI.
+// "bom" | "parziale" | "nd" (rimossa la categoria legacy "stima").
 const costoFormatoFonte = (formato, dati) => {
-  if (!dati) return "stima";
-  const target = _normFmt52(formato);
-  const bot = (dati.bottiglie || []).find(b => _normFmt52(b.formato) === target);
-  if (!bot) return "stima";
-  const hasOlio = (dati.lotti || []).some(l =>
-    (l.imbottigliamenti || []).some(imb => imb.bottigliaId === bot.id && _parseNum(imb.litriUsati) > 0)
-  );
-  return hasOlio ? "bom" : "bom_parziale";
+  const r = costoFormatoReale(formato, dati);
+  return r ? r.fonte : "nd";
+};
+// v52-C5: export CSV. Separatore ";" (Excel italiano), BOM UTF-8 per accentate.
+const exportCSV = (headers, rows, filename) => {
+  const esc = (v) => {
+    const s = v == null ? "" : String(v);
+    if (s.indexOf(";") >= 0 || s.indexOf("\"") >= 0 || s.indexOf("\n") >= 0) {
+      return "\"" + s.replace(/"/g, '""') + "\"";
+    }
+    return s;
+  };
+  const csv = [headers.map(esc).join(";")].concat(rows.map(r => r.map(esc).join(";"))).join("\r\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "export.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
 // v52-costi1: tracciabilità completa di un lotto.
@@ -4334,12 +4345,12 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
   const costoVariabile = ordiniCampagna.reduce((s, o) => {
     const includeCosto = o.modalita === "vendita" || (o.modalita === "conto_vendita" && o.statoPagamento === "pagato");
     if (!includeCosto) return s;
-    return s + (o.righe || []).reduce((ss, r) => ss + (r.qta || 0) * costoFormatoReale(r.formato, dati, cfg), 0);
+    return s + (o.righe || []).reduce((ss, r) => ss + (r.qta || 0) * costoFormatoTot(r.formato, dati), 0);
   }, 0);
   // Costo variabile dei CV in corso (informativo, non sottratto da margine)
   const costoVariabileCVInCorso = ordiniCampagna.reduce((s, o) => {
     if (o.modalita !== "conto_vendita" || o.statoPagamento === "pagato") return s;
-    return s + (o.righe || []).reduce((ss, r) => ss + (r.qta || 0) * costoFormatoReale(r.formato, dati, cfg), 0);
+    return s + (o.righe || []).reduce((ss, r) => ss + (r.qta || 0) * costoFormatoTot(r.formato, dati), 0);
   }, 0);
   const vociExtraCampagna = (cfg.vociExtra || []).filter(v => !v.data || (v.data >= range.inizio && v.data <= range.fine));
   const costoExtra = vociExtraCampagna.reduce((s, v) => s + (v.importo || 0), 0);
@@ -4392,7 +4403,7 @@ const calcolaMargineCliente = (anno, dati, cfg) => {
       ricavo: 0, costo: 0, margine: 0, marginePct: 0, nOrdini: 0
     };
     const ricavoOrd = totOrdine(o);
-    const costoOrd = (o.righe || []).reduce((s, r) => s + (r.qta || 0) * costoFormatoReale(r.formato, dati, cfg), 0);
+    const costoOrd = (o.righe || []).reduce((s, r) => s + (r.qta || 0) * costoFormatoTot(r.formato, dati), 0);
     map[cl.id].ricavo += ricavoOrd;
     map[cl.id].costo += costoOrd;
     map[cl.id].nOrdini += 1;
@@ -5752,7 +5763,7 @@ function Dashboard({
     const mF = Object.entries(dati.costiConfig.voci).map(([fmt]) => {
       const sku = dati.magazzino.find(m => m.formato === fmt && m.annata === "2025");
       const prezzoL = sku?.prezzoListino || 0;
-      const costo = costoFormatoReale(fmt, dati, dati.costiConfig);
+      const costo = costoFormatoTot(fmt, dati);
       return {
         formato: fmt.replace(" (latta)", ""),
         prezzo: prezzoL,
@@ -13946,7 +13957,7 @@ function CostiMargini({
     return dati.ordini.filter(o => o.modalita === "vendita" || (includiCV && o.modalita === "conto_vendita")).map(o => {
       const cl = dati.clienti.find(c => c.id === o.clienteId);
       const righe = (o.righe || []).map(r => {
-        const costo = costoFormatoReale(r.formato, dati, cfg);
+        const costo = costoFormatoTot(r.formato, dati);
         const ricavo = r.qta * (r.prezzoUnitario || 0);
         const costoTot = r.qta * costo;
         const margine = ricavo - costoTot;
@@ -13986,10 +13997,11 @@ function CostiMargini({
       const sku = dati.magazzino.find(m => m.formato === fmt && m.annata === annataTarget)
               || dati.magazzino.find(m => m.formato === fmt);
       const prezzoL = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
-      const costo = costoFormatoReale(fmt, dati, cfg);
-      const fonte = costoFormatoFonte(fmt, dati);
+      const costoRes = costoFormatoReale(fmt, dati);
+      const costo = (costoRes && typeof costoRes.totale === "number") ? costoRes.totale : 0;
+      const fonte = costoRes ? costoRes.fonte : "nd";
       const margine = prezzoL - costo;
-      const pct = prezzoL ? Math.round(margine / prezzoL * 100) : 0;
+      const pct = (prezzoL && fonte === "bom") ? Math.round(margine / prezzoL * 100) : 0;
       return {
         formato: fmt,
         prezzo: prezzoL,
@@ -14009,14 +14021,23 @@ function CostiMargini({
       const sku = dati.magazzino.find(m => m.formato === fmt2 && m.annata === annataTarget)
               || dati.magazzino.find(m => m.formato === fmt2);
       const prezzoL = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
-      const costo = costoFormatoReale(fmt2, dati, dati.costiConfig);
+      const costo = costoFormatoTot(fmt2, dati);
       return { fmt: fmt2, prezzo: prezzoL, costo, margine: prezzoL - costo };
     }).filter(x => x.prezzo > 0);
     const inPerdita = formati.filter(f => f.margine < 0).length;
-    const costoOlioL = costoOlioPerLitro(dati.costiConfig);
+    // v52: costo olio/L medio ponderato sui lotti reali (no più stima config)
+    let totL = 0, totC = 0;
+    (dati.lotti || []).forEach(l => {
+      const litri = _parseNum(l.qtaOlio);
+      if (litri > 0) {
+        totL += litri;
+        totC += costoOlioPerLitroLotto(l) * litri;
+      }
+    });
+    const costoOlioL = totL > 0 ? totC / totL : 0;
     const plCorrente = calcolaPLCampagna(campagnaCorrente(), dati, dati.costiConfig);
     return [
-      { label: "Costo olio/L", value: fmt(costoOlioL), color: "#3a3a3a" },
+      { label: "Costo olio/L (medio BOM)", value: totL > 0 ? fmt(costoOlioL) : "—", color: "#3a3a3a" },
       { label: "Margine lordo " + campagnaLabel(campagnaCorrente()).replace("Campagna ", ""), value: plCorrente.margineLordoPct.toFixed(1) + "%", color: plCorrente.margineLordoPct > 30 ? "#4a5c2f" : plCorrente.margineLordoPct > 0 ? "#c9a84c" : "#c0392b" },
       { label: "Margine netto", value: plCorrente.margineNettoPct.toFixed(1) + "%", color: plCorrente.margineNettoPct > 15 ? "#4a5c2f" : plCorrente.margineNettoPct >= 0 ? "#c9a84c" : "#c0392b" },
       inPerdita > 0 ? { label: "In perdita", value: inPerdita, color: "#c0392b" } : null
@@ -14032,7 +14053,33 @@ function CostiMargini({
         value: campagnaSel,
         onChange: e => setCampagnaSel(Number(e.target.value)),
         style: { padding: "6px 12px", border: `1px solid ${C.grigio200}`, borderRadius: 6, fontSize: 13, fontWeight: 600, background: "#fff" }
-      }, campagneAttive(dati.ordini).map(c => /*#__PURE__*/React.createElement("option", { key: c, value: c }, campagnaLabel(c))))
+      }, campagneAttive(dati.ordini).map(c => /*#__PURE__*/React.createElement("option", { key: c, value: c }, campagnaLabel(c)))),
+      // v52-C5: export CSV P&L
+      /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => {
+          const pl = calcolaPLCampagna(campagnaSel, dati, cfg);
+          exportCSV(
+            ["Voce", "Importo €"],
+            [
+              ["Vendite (incassate)", pl.venditeRicavoIncassato.toFixed(2)],
+              ["Vendite (in attesa)", (pl.venditeRicavo - pl.venditeRicavoIncassato).toFixed(2)],
+              ["CV liquidati", pl.cvLiquidato.toFixed(2)],
+              ["CV in corso", pl.cvInCorso.toFixed(2)],
+              ["RICAVI TOTALI", pl.ricaviTotali.toFixed(2)],
+              ["Costi variabili", (-pl.costoVariabile).toFixed(2)],
+              ["Voci extra", (-pl.costoExtra).toFixed(2)],
+              ["MARGINE LORDO", pl.margineLordo.toFixed(2)],
+              ["Costi struttura", (-pl.costoStruttura).toFixed(2)],
+              ["MARGINE NETTO", pl.margineNetto.toFixed(2)],
+              ["Margine lordo %", pl.margineLordoPct.toFixed(2)],
+              ["Margine netto %", pl.margineNettoPct.toFixed(2)]
+            ],
+            "pl-" + campagnaSel + ".csv"
+          );
+        },
+        style: { marginLeft: "auto", padding: "6px 14px", border: `1px solid ${C.olivaChiaro}`, background: "#fff", color: C.olivaScuro, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }
+      }, "📥 Esporta CSV P&L")
     ),
     (() => {
       const pl = calcolaPLCampagna(campagnaSel, dati, cfg);
@@ -14121,8 +14168,11 @@ function CostiMargini({
         const sku = dati.magazzino.find(m => m.formato === f && m.annata === annataTargetAl)
                 || dati.magazzino.find(m => m.formato === f);
         const prezzo = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
-        return { fmt: f, margine: prezzo - costoFormatoReale(f, dati, cfg) };
-      }).filter(x => x.margine < 0);
+        // v52: solo formati con costo BOM completo entrano nel calcolo alert
+        const cRes = costoFormatoReale(f, dati);
+        if (!cRes || cRes.fonte !== "bom") return { fmt: f, margine: 0, skip: true };
+        return { fmt: f, margine: prezzo - cRes.totale };
+      }).filter(x => !x.skip && x.margine < 0);
       const alerts = [];
       if (formatiPerdita.length > 0) alerts.push({ icon: "⚠", txt: formatiPerdita.length + " formati venduti sotto costo: " + formatiPerdita.map(f => f.fmt).join(", "), color: "#c62828" });
       if (pl.cvInCorso > 1000) alerts.push({ icon: "💰", txt: fmt(pl.cvInCorso) + " in CV non liquidati — flusso cassa bloccato", color: "#f57c00" });
@@ -14138,6 +14188,80 @@ function CostiMargini({
           }, /*#__PURE__*/React.createElement("span", null, a.icon), /*#__PURE__*/React.createElement("span", null, a.txt)))
         )
       });
+    })(),
+    // v52-C5: Break-even della campagna basato su margini BOM reali
+    (() => {
+      const pl = calcolaPLCampagna(campagnaSel, dati, cfg);
+      // Margine medio per bottiglia: media ponderata sui formati con BOM completo
+      const annataTargetBE = String(Number(campagnaSel) + 1);
+      const bottiglieBE = (dati.bottiglie || []).map(b => {
+        const cRes = costoFormatoReale(b.formato, dati);
+        if (!cRes || cRes.fonte !== "bom") return null;
+        const listEntry = getListino(b.formato, dati);
+        const sku = (dati.magazzino || []).find(m => m.id === b.skuId);
+        const prezzo = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
+        if (prezzo <= 0) return null;
+        // Conta vendite di quel SKU nella campagna
+        const vendute = sku ? (dati.movimenti || []).filter(m =>
+          m.tipo === "scarico_ordine" && (m.skuId || m.magId) === sku.id && (() => {
+            const o = (dati.ordini || []).find(x => x.id === m.ordineId);
+            if (!o || !o.data) return false;
+            const c = dataToCampagna(o.data);
+            return c === campagnaSel;
+          })()
+        ).reduce((s, m) => s + _parseNum(m.qta), 0) : 0;
+        return { margine: prezzo - cRes.totale, vendute };
+      }).filter(Boolean);
+      if (bottiglieBE.length === 0) {
+        return /*#__PURE__*/React.createElement(Card, {
+          style: { marginTop: 16 },
+          ch: /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 13, marginBottom: 8, color: C.grigio600 } }, "🎯 BREAK-EVEN CAMPAGNA"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.grigio400, fontStyle: "italic", padding: 14, background: C.grigio50, borderRadius: 8 } },
+              "Break-even non calcolabile: serve almeno un formato con costo BOM completo (bottiglia + lotto con imbottigliamenti) e prezzo listino. Compila i dati in Produzione."
+            )
+          )
+        });
+      }
+      const totVendute = bottiglieBE.reduce((s, x) => s + x.vendute, 0);
+      const totMargine = bottiglieBE.reduce((s, x) => s + x.margine * x.vendute, 0);
+      // Se nessuna vendita ancora, usa media semplice come stima
+      const margMedio = totVendute > 0 ? totMargine / totVendute : (bottiglieBE.reduce((s, x) => s + x.margine, 0) / bottiglieBE.length);
+      const costoStrutturaCampagna = pl.costoStruttura || 0;
+      const bottiglieBE_num = margMedio > 0 ? Math.ceil(costoStrutturaCampagna / margMedio) : null;
+      const pct = bottiglieBE_num != null ? Math.min(100, (totVendute / bottiglieBE_num) * 100) : 0;
+      return /*#__PURE__*/React.createElement(Card, {
+        style: { marginTop: 16 },
+        ch: /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 13, marginBottom: 12, color: C.grigio600 } }, "🎯 BREAK-EVEN ", campagnaLabel(campagnaSel).toUpperCase()),
+          /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 12, fontSize: 12 } },
+            /*#__PURE__*/React.createElement("div", { style: { padding: 10, background: C.grigio50, borderRadius: 6 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, fontWeight: 700 } }, "COSTI STRUTTURA"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: "#c62828", marginTop: 4 } }, fmt(costoStrutturaCampagna)),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } }, "su 12 mesi")
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { padding: 10, background: C.grigio50, borderRadius: 6 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, fontWeight: 700 } }, "MARGINE MEDIO / BOTT."),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: "#1565c0", marginTop: 4 } }, fmt(margMedio)),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } }, totVendute > 0 ? "ponderato su vendite" : "media semplice " + bottiglieBE.length + " formati")
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { padding: 10, background: bottiglieBE_num != null && totVendute >= bottiglieBE_num ? "#e8f5e9" : "#fff8e1", borderRadius: 6 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, fontWeight: 700 } }, "BOTTIGLIE BREAK-EVEN"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: C.olivaScuro, marginTop: 4 } }, bottiglieBE_num != null ? bottiglieBE_num.toLocaleString("it-IT") : "—"),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } }, "vendute: ", totVendute.toLocaleString("it-IT"))
+            )
+          ),
+          bottiglieBE_num != null && /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 11, color: C.grigio600, fontWeight: 600, marginBottom: 4 } },
+              /*#__PURE__*/React.createElement("span", null, "Progresso break-even"),
+              /*#__PURE__*/React.createElement("span", null, pct.toFixed(0), "% · ", (bottiglieBE_num - totVendute) > 0 ? ("mancano " + (bottiglieBE_num - totVendute).toLocaleString("it-IT") + " bott.") : "✅ Raggiunto")
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { height: 12, background: C.grigio100, borderRadius: 6, overflow: "hidden" } },
+              /*#__PURE__*/React.createElement("div", { style: { width: pct + "%", height: "100%", background: pct >= 100 ? "#2e7d32" : pct >= 60 ? C.olivaChiaro : pct >= 30 ? C.oro : "#c62828", transition: "width .3s" } })
+            )
+          )
+        )
+      });
     })()
   ), tab === "clienti" && /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: "wrap" } },
@@ -14146,7 +14270,19 @@ function CostiMargini({
         value: campagnaSel,
         onChange: e => setCampagnaSel(Number(e.target.value)),
         style: { padding: "6px 12px", border: `1px solid ${C.grigio200}`, borderRadius: 6, fontSize: 13, fontWeight: 600, background: "#fff" }
-      }, campagneAttive(dati.ordini).map(c => /*#__PURE__*/React.createElement("option", { key: c, value: c }, campagnaLabel(c))))
+      }, campagneAttive(dati.ordini).map(c => /*#__PURE__*/React.createElement("option", { key: c, value: c }, campagnaLabel(c)))),
+      /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => {
+          const clienti = calcolaMargineCliente(campagnaSel, dati, cfg);
+          exportCSV(
+            ["Cliente", "Canale", "N. Ordini", "Ricavo €", "Costo €", "Margine €", "Margine %"],
+            clienti.map(c => [c.nome, c.tipo || "—", c.nOrdini, c.ricavo.toFixed(2), c.costo.toFixed(2), c.margine.toFixed(2), c.marginePct.toFixed(1)]),
+            "margini-clienti-" + campagnaSel + ".csv"
+          );
+        },
+        style: { marginLeft: "auto", padding: "6px 14px", border: `1px solid ${C.olivaChiaro}`, background: "#fff", color: C.olivaScuro, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }
+      }, "📥 Esporta CSV Clienti")
     ),
     (() => {
       const clienti = calcolaMargineCliente(campagnaSel, dati, cfg);
@@ -14389,23 +14525,24 @@ function CostiMargini({
       ),
       /*#__PURE__*/React.createElement(Btn, { ch: "Aggiungi", sz: "sm", onClick: () => { if(!cfg._exDesc||!cfg._exImp) return; setDati(d => ({...d, costiConfig: {...d.costiConfig, vociExtra: [...(d.costiConfig.vociExtra||[]), {desc:d.costiConfig._exDesc, importo:d.costiConfig._exImp, data:d.costiConfig._exData, skuIds:(d.costiConfig._exSkus||[]).filter(x=>x)}], _exDesc:"", _exImp:"", _exData:"", _exSkus:[]}})); } })
     )
-  ) }), tab === "config" && /*#__PURE__*/React.createElement(React.Fragment, null,
-    // v52-costi1: banner che chiarisce il ruolo "fallback" delle stime config
+  ) }), tab === "config" && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 16 } },
+    // v52-costi1: banner informativo — fonte unica BOM (no più stime)
     /*#__PURE__*/React.createElement("div", {
-      style: { padding: "12px 16px", background: "#fff8e1", borderRadius: 8, borderLeft: `4px solid ${C.oro}`, marginBottom: 16, fontSize: 12, color: "#7a5900", lineHeight: 1.6 }
+      style: { padding: "12px 16px", background: "#e3f2fd", borderRadius: 8, borderLeft: `4px solid #1565c0`, fontSize: 12, color: "#1565c0", lineHeight: 1.6 }
     },
-      /*#__PURE__*/React.createElement("strong", null, "⚠ Parametri usati come STIMA FALLBACK"),
-      ". I valori di questa sezione sono usati per calcolare il costo dei formati ",
-      /*#__PURE__*/React.createElement("strong", null, "solo quando i dati BOM reali non sono disponibili"),
-      " (nessuna bottiglia in Anagrafica Bottiglie o nessun lotto con imbottigliamenti). Per costi reali, compila i lotti in Produzione → 🌿 Lotti e l'anagrafica in Produzione → 🍾 Bottiglie. Indicatore 🟢 BOM / 🟡 BOM* / ⚪ Stima nei tab Per Formato e Per Bottiglia."
+      "ℹ️ ",
+      /*#__PURE__*/React.createElement("strong", null, "I costi di produzione (olio e packaging) si compilano in Produzione"),
+      " → 🌿 Lotti (olive, frantoio, trasporto, altro) e 🍾 Anagrafica Bottiglie (bottiglia, etichetta, tappo, scatola). Qui gestisci solo i ",
+      /*#__PURE__*/React.createElement("strong", null, "costi fissi aziendali"),
+      " (affitto, utenze, hosting…) e le ",
+      /*#__PURE__*/React.createElement("strong", null, "voci straordinarie"),
+      ". Indicatore: 🟢 BOM = costo completo · 🟡 Parziale = solo packaging · ⚪ N/D = nessuna bottiglia BOM."
     ),
-    /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 16
-    }
-  }, /*#__PURE__*/React.createElement(Card, {
+    // Le 2 sezioni "PARAMETRI PRODUZIONE (stima)" e "COSTI PER FORMATO" sono state rimosse
+    // in C5: la fonte di verità è il BOM (Produzione → lotti + bottiglie). Le Card legacy
+    // restano nel codice con display:none come storico, possono essere eliminate in C6.
+    /*#__PURE__*/React.createElement(Card, {
+    style: { display: "none" },
     ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13,
@@ -14450,6 +14587,7 @@ function CostiMargini({
       }
     }, "= (\u20AC", cfg.costoOlivePerKg, "/kg \xD7 ", (100 / cfg.resaMedia).toFixed(2), " kg/L) + (\u20AC", cfg.costoFrangituraPer100kg, "/100kg \xF7 ", cfg.resaMedia, "%)"))))
   }), /*#__PURE__*/React.createElement(Card, {
+    style: { display: "none" },
     ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13,
@@ -14512,7 +14650,6 @@ function CostiMargini({
       }
     }, fmt(costoFormato(fmt2, cfg)))))))
   }), /*#__PURE__*/React.createElement(Card, {
-    style: { gridColumn: "span 2" },
     ch: /*#__PURE__*/React.createElement("div", null,
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.grigio600, marginBottom: 14, letterSpacing: 0.5 } }, "COSTI STRUTTURA MENSILI"),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, marginBottom: 8 } }, "Costi fissi ricorrenti (hosting, fiscale, marketing, affitti...). Verranno sottratti dal margine lordo per calcolare il margine netto."),
@@ -14572,7 +14709,7 @@ function CostiMargini({
         } })
       )
     )
-  }))),  // chiude: Card.ch, Card, div 1fr 1fr, React.Fragment del tab config
+  })),  // v52-C5: chiude Card.ch + Card3 (COSTI STRUTTURA) + div outer del tab config
   // ── Tab "Per Lotto" (v52-costi1) ─────────────────────────────────────────────
   tab === "lotti" && (() => {
     const lotti = (dati.lotti || []);
@@ -14887,15 +15024,28 @@ function CostiMargini({
         " · Margine medio: ",
         /*#__PURE__*/React.createElement("strong", { style: { color: C.olivaScuro } }, analisi.length ? Math.round(analisi.reduce((s, a) => s + a.pct, 0) / analisi.length) : 0, "%")
       ),
-      /*#__PURE__*/React.createElement("label", {
-        style: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: C.olivaScuro, cursor: "pointer" }
-      },
-        /*#__PURE__*/React.createElement("input", {
-          type: "checkbox", checked: includiCV,
-          onChange: e => setIncludiCV(e.target.checked),
-          style: { width: 14, height: 14, cursor: "pointer" }
-        }),
-        "Includi Conto Vendita"
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "center" } },
+        /*#__PURE__*/React.createElement("label", {
+          style: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: C.olivaScuro, cursor: "pointer" }
+        },
+          /*#__PURE__*/React.createElement("input", {
+            type: "checkbox", checked: includiCV,
+            onChange: e => setIncludiCV(e.target.checked),
+            style: { width: 14, height: 14, cursor: "pointer" }
+          }),
+          "Includi Conto Vendita"
+        ),
+        /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          onClick: () => {
+            exportCSV(
+              ["N° Ordine", "Modalità", "Cliente", "Ricavo €", "Costo €", "Margine €", "Margine %"],
+              analisi.map(a => [a.ordine.numero || a.ordine.id, a.modalita || "—", a.cliente, a.totRicavo.toFixed(2), a.totCosto.toFixed(2), a.totMargine.toFixed(2), a.pct]),
+              "margini-ordini.csv"
+            );
+          },
+          style: { padding: "6px 14px", border: `1px solid ${C.olivaChiaro}`, background: "#fff", color: C.olivaScuro, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }
+        }, "📥 Esporta CSV")
       )
     ), /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(Tbl, {
