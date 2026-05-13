@@ -12653,6 +12653,8 @@ function Fornitori({
   const [filtroCategoria, setFiltroCategoria] = useState("");
   const [filtroTesto, setFiltroTesto] = useState("");
   const [filtroAttivo, setFiltroAttivo] = useState("tutti"); // tutti | attivi | inattivi
+  // v51-forn1: state navigazione interna modal (4 sezioni)
+  const [modalSection, setModalSection] = useState("anagrafica");
   const nF = id => { const f = dati.fornitori.find(x => x.id === id); return f ? (f.ragioneSociale || f.nome || "—") : "—"; };
   // v51-forn1: count connessioni fornitore (lotti olive + lotti frantoio + bottiglie)
   const connessioniFornitore = (fId) => {
@@ -12661,17 +12663,48 @@ function Fornitori({
     const bottiglie = (dati.bottiglie || []).filter(b => b.fornitoreId === fId).length;
     return { lottiOlive, lottiFrantoio, bottiglie, totale: lottiOlive + lottiFrantoio + bottiglie };
   };
+  // v51-forn1: save merge-safe con validazione e audit dataModifica.
   const saveF = () => {
-    if (!(form.ragioneSociale || form.nome)) { window.alert('⚠ Ragione sociale obbligatoria'); return; }
-    if (!form.categoria) { window.alert('⚠ Categoria obbligatoria'); return; }
-    setDati(d => ({
-      ...d,
-      fornitori: form.id ? d.fornitori.map(f => f.id === form.id ? form : f) : [...d.fornitori, {
+    const errors = [];
+    const nome = String(form.ragioneSociale || form.nome || "").trim();
+    if (!nome) errors.push("Ragione sociale obbligatoria");
+    if (!form.categoria) errors.push("Categoria obbligatoria");
+    // Validazioni opzionali (solo se il campo è valorizzato)
+    if (form.email && !/.+@.+\..+/.test(form.email)) errors.push("Email non valida");
+    if (form.pec && !/.+@.+\..+/.test(form.pec)) errors.push("PEC non valida");
+    if (form.partitaIva) {
+      const piva = String(form.partitaIva).replace(/\s/g, "");
+      // 11 cifre per IT, oppure 2-14 alfanumerici per estero (con prefisso paese)
+      if (!/^([0-9]{11}|[A-Z]{2}[0-9A-Z]{2,13})$/i.test(piva)) errors.push("P.IVA non valida (11 cifre per IT, o prefisso paese + 2-13 alfanum)");
+    }
+    if (form.iban) {
+      const iban = String(form.iban).replace(/\s/g, "");
+      if (iban.length < 15) errors.push("IBAN troppo corto (minimo 15 caratteri)");
+    }
+    if (errors.length > 0) {
+      if (window.tnbToast) window.tnbToast(errors.join(" · "), "err");
+      return;
+    }
+    const today = todayStr();
+    setDati(d => {
+      const existing = form.id ? (d.fornitori || []).find(f => f.id === form.id) : null;
+      const merged = {
+        ...(existing || {}),
         ...form,
-        id: uid()
-      }]
-    }));
+        ragioneSociale: nome,
+        attivo: form.attivo !== false,
+        documenti: Array.isArray(form.documenti) ? form.documenti : (Array.isArray(existing && existing.documenti) ? existing.documenti : []),
+        dataModifica: today,
+        dataCreazione: (existing && existing.dataCreazione) || form.dataCreazione || today
+      };
+      if (existing) {
+        return { ...d, fornitori: d.fornitori.map(f => f.id === form.id ? merged : f) };
+      }
+      return { ...d, fornitori: [...(d.fornitori || []), { ...merged, id: uid() }] };
+    });
     setModal(null);
+    setModalSection("anagrafica");
+    if (window.tnbToast) window.tnbToast("✓ Fornitore salvato");
   };
   const saveOF = () => {
     if (!form.fornitoreId) return;
@@ -12710,7 +12743,8 @@ function Fornitori({
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Fornitore"),
       sz: "sm",
       onClick: () => {
-        setForm({});
+        setForm({ attivo: true, nazione: "IT", documenti: [] });
+        setModalSection("anagrafica");
         setModal("f");
       }
     }), tab === "ord" && /*#__PURE__*/React.createElement(Btn, {
@@ -12842,7 +12876,7 @@ function Fornitori({
                 }, isAttivo ? "✅ ATTIVO" : "⏸ INATTIVO"),
                 /*#__PURE__*/React.createElement(Btn, {
                   ch: /*#__PURE__*/React.createElement(I.edit, null), v: "gh", sz: "sm",
-                  onClick: () => { setForm(f); setModal("f"); }
+                  onClick: () => { setForm(f); setModalSection("anagrafica"); setModal("f"); }
                 })
               )
             ),
@@ -12934,62 +12968,270 @@ function Fornitori({
       })
     })
   }), modal === "f" && /*#__PURE__*/React.createElement(Modal, {
-    title: form.id ? "Modifica Fornitore" : "Nuovo Fornitore",
-    onClose: () => setModal(null),
+    title: form.id ? `Modifica fornitore ${form.ragioneSociale || form.nome || ""}` : "Nuovo fornitore",
+    onClose: () => { setModal(null); setModalSection("anagrafica"); },
     wide: true,
-    ch: /*#__PURE__*/React.createElement("div", {
-      style: { display: "flex", flexDirection: "column", gap: 18 }
-    },
-      /*#__PURE__*/React.createElement("div", null,
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, letterSpacing: .6, marginBottom: 8 } }, "ANAGRAFICA"),
-        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
-            /*#__PURE__*/React.createElement(Inp, { label: "Ragione Sociale", v: form.ragioneSociale || form.nome || "", on: v => setForm(f => ({ ...f, ragioneSociale: v })), req: true, full: true })
-          ),
-          /*#__PURE__*/React.createElement(Inp, { label: "P.IVA", v: form.partitaIva || "", on: v => setForm(f => ({ ...f, partitaIva: v })) }),
-          /*#__PURE__*/React.createElement(Inp, { label: "Codice Fiscale", v: form.codiceFiscale || "", on: v => setForm(f => ({ ...f, codiceFiscale: v })) }),
-          /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
-            /*#__PURE__*/React.createElement(Sel, { label: "Categoria", v: form.categoria || "", on: v => setForm(f => ({ ...f, categoria: v })), req: true, opts: CAT_OPTS })
+    ch: /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+      // ── Tab di navigazione interna (v51-forn1) ─────────────────────────────
+      /*#__PURE__*/React.createElement("div", {
+        style: { display: "flex", gap: 4, borderBottom: `1px solid ${C.grigio200}`, flexWrap: "wrap" }
+      },
+        [
+          ["anagrafica", "📋 Anagrafica"],
+          ["contatti", "📞 Contatti"],
+          ["documenti", "📎 Documenti" + (Array.isArray(form.documenti) && form.documenti.length > 0 ? ` (${form.documenti.length})` : "")],
+          ["connessioni", "🔗 Connessioni"]
+        ].map(([k, label]) => /*#__PURE__*/React.createElement("button", {
+          key: k, type: "button",
+          onClick: () => setModalSection(k),
+          style: {
+            padding: "8px 14px", border: "none", background: "transparent",
+            color: modalSection === k ? C.olivaScuro : C.grigio400,
+            borderBottom: modalSection === k ? `2px solid ${C.olivaScuro}` : "2px solid transparent",
+            fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: -1
+          }
+        }, label))
+      ),
+      // ── Sezione 1: Anagrafica ──────────────────────────────────────────────
+      modalSection === "anagrafica" && /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
+        /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Ragione sociale", req: true,
+            v: form.ragioneSociale || form.nome || "",
+            on: v => setForm(f => ({ ...f, ragioneSociale: v }))
+          })
+        ),
+        /*#__PURE__*/React.createElement(Sel, {
+          label: "Categoria", req: true,
+          v: form.categoria || "",
+          on: v => setForm(f => ({ ...f, categoria: v })),
+          opts: [{ v: "", l: "— Seleziona —" }].concat(CAT_OPTS)
+        }),
+        /*#__PURE__*/React.createElement("div", {
+          style: { display: "flex", alignItems: "center", gap: 10, paddingTop: 22 }
+        },
+          /*#__PURE__*/React.createElement("label", {
+            style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", fontWeight: 600, color: C.olivaScuro }
+          },
+            /*#__PURE__*/React.createElement("input", {
+              type: "checkbox",
+              checked: form.attivo !== false,
+              onChange: e => setForm(f => ({ ...f, attivo: e.target.checked })),
+              style: { width: 16, height: 16, cursor: "pointer" }
+            }),
+            form.attivo !== false ? "✅ Fornitore attivo" : "⏸ Fornitore disattivato"
+          )
+        ),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "P.IVA", v: form.partitaIva || "",
+          on: v => setForm(f => ({ ...f, partitaIva: v })),
+          ph: "11 cifre o prefisso paese"
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Codice Fiscale", v: form.codiceFiscale || "",
+          on: v => setForm(f => ({ ...f, codiceFiscale: v }))
+        }),
+        /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Sito web", v: form.sitoWeb || "",
+            on: v => setForm(f => ({ ...f, sitoWeb: v })),
+            ph: "es. https://esempio.it"
+          })
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
+          /*#__PURE__*/React.createElement(Inp, {
+            label: "Note", v: form.note || "",
+            on: v => setForm(f => ({ ...f, note: v })), rows: 3
+          })
+        )
+      ),
+      // ── Sezione 2: Contatti ────────────────────────────────────────────────
+      modalSection === "contatti" && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 16 } },
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 6 } }, "👤 REFERENTE"),
+          /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "Nome referente",
+              v: form.referente || form.contatto || "",
+              on: v => setForm(f => ({ ...f, referente: v })),
+              ph: "es. Mario Rossi"
+            }),
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "Cellulare referente",
+              v: form.cellulare || "",
+              on: v => setForm(f => ({ ...f, cellulare: v })),
+              ph: "es. +39 333 1234567"
+            })
+          )
+        ),
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 6 } }, "📞 CONTATTI AZIENDA"),
+          /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "Telefono fisso",
+              v: form.telefono || "",
+              on: v => setForm(f => ({ ...f, telefono: v }))
+            }),
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "Email", type: "email",
+              v: form.email || "",
+              on: v => setForm(f => ({ ...f, email: v })),
+              ph: "info@esempio.it"
+            }),
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "PEC", type: "email",
+              v: form.pec || "",
+              on: v => setForm(f => ({ ...f, pec: v }))
+            }),
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "IBAN", v: form.iban || "",
+              on: v => setForm(f => ({ ...f, iban: v })),
+              ph: "IT60 X054 2811 1010..."
+            })
+          )
+        ),
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 6 } }, "📍 INDIRIZZO"),
+          /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr 1.5fr 80px 80px", gap: 14 } },
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "Via e civico",
+              v: form.indirizzo || "",
+              on: v => setForm(f => ({ ...f, indirizzo: v }))
+            }),
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "CAP",
+              v: form.cap || "",
+              on: v => setForm(f => ({ ...f, cap: v }))
+            }),
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "Città",
+              v: form.citta || "",
+              on: v => setForm(f => ({ ...f, citta: v }))
+            }),
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "Prov.",
+              v: form.provincia || "",
+              on: v => setForm(f => ({ ...f, provincia: v }))
+            }),
+            /*#__PURE__*/React.createElement(Inp, {
+              label: "Naz.",
+              v: form.nazione || "IT",
+              on: v => setForm(f => ({ ...f, nazione: v }))
+            })
           )
         )
       ),
-      /*#__PURE__*/React.createElement("div", null,
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, letterSpacing: .6, marginBottom: 8 } }, "SEDE"),
-        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
-            /*#__PURE__*/React.createElement(Inp, { label: "Indirizzo", v: form.indirizzo || "", on: v => setForm(f => ({ ...f, indirizzo: v })), full: true })
-          ),
-          /*#__PURE__*/React.createElement(Inp, { label: "CAP", v: form.cap || "", on: v => setForm(f => ({ ...f, cap: v })) }),
-          /*#__PURE__*/React.createElement(Inp, { label: "Citt\xE0", v: form.citta || "", on: v => setForm(f => ({ ...f, citta: v })) }),
-          /*#__PURE__*/React.createElement(Inp, { label: "Provincia", v: form.provincia || "", on: v => setForm(f => ({ ...f, provincia: v })) }),
-          /*#__PURE__*/React.createElement(Inp, { label: "Nazione", v: form.nazione || "IT", on: v => setForm(f => ({ ...f, nazione: v })) })
-        )
+      // ── Sezione 3: Documenti (UI placeholder, upload viene in F4) ──────────
+      modalSection === "documenti" && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
+        /*#__PURE__*/React.createElement("div", {
+          style: { padding: "10px 14px", background: "#fff8e1", borderRadius: 8, borderLeft: `3px solid ${C.oro}`, fontSize: 12, color: "#7a5900" }
+        }, "L'upload dei documenti su Supabase Storage sarà attivato in F4. Per ora la lista mostra i documenti già allegati (se presenti)."),
+        (() => {
+          const docs = Array.isArray(form.documenti) ? form.documenti : [];
+          if (docs.length === 0) {
+            return /*#__PURE__*/React.createElement("div", {
+              style: { padding: 24, textAlign: "center", color: C.grigio400, fontStyle: "italic", background: C.grigio50, borderRadius: 8 }
+            }, "Nessun documento allegato.");
+          }
+          return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+            docs.map(doc => {
+              const tipoInfo = TIPI_DOCUMENTO_FORNITORE.find(t => t.v === doc.tipo);
+              return /*#__PURE__*/React.createElement("div", {
+                key: doc.id,
+                style: { padding: "10px 12px", background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }
+              },
+                /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.olivaScuro, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, doc.nome || "(senza nome)"),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } },
+                    (tipoInfo ? tipoInfo.l : doc.tipo || "—"), " · caricato ", fmtD(doc.dataUpload)
+                  )
+                ),
+                doc.url && /*#__PURE__*/React.createElement("a", {
+                  href: doc.url, target: "_blank", rel: "noopener noreferrer",
+                  style: { padding: "4px 10px", border: `1px solid ${C.olivaChiaro}`, color: C.olivaScuro, background: "#fff", borderRadius: 4, fontSize: 12, fontWeight: 600, textDecoration: "none" }
+                }, "👁 Apri")
+              );
+            })
+          );
+        })()
       ),
-      /*#__PURE__*/React.createElement("div", null,
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, letterSpacing: .6, marginBottom: 8 } }, "CONTATTI"),
-        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
-            /*#__PURE__*/React.createElement(Inp, { label: "Referente", v: form.referente || form.contatto || "", on: v => setForm(f => ({ ...f, referente: v })), full: true })
+      // ── Sezione 4: Connessioni (readonly) ──────────────────────────────────
+      modalSection === "connessioni" && (() => {
+        if (!form.id) {
+          return /*#__PURE__*/React.createElement("div", {
+            style: { padding: 24, textAlign: "center", color: C.grigio400, fontStyle: "italic", background: C.grigio50, borderRadius: 8 }
+          }, "Salva il fornitore per vedere le connessioni con lotti e bottiglie.");
+        }
+        const lottiOlive = (dati.lotti || []).filter(l => l.fornitoreOliveId === form.id);
+        const lottiFrantoio = (dati.lotti || []).filter(l => l.frantoioId === form.id);
+        const bottiglie = (dati.bottiglie || []).filter(b => b.fornitoreId === form.id);
+        const tot = lottiOlive.length + lottiFrantoio.length + bottiglie.length;
+        if (tot === 0) {
+          return /*#__PURE__*/React.createElement("div", {
+            style: { padding: 24, textAlign: "center", color: C.grigio400, fontStyle: "italic", background: C.grigio50, borderRadius: 8 }
+          }, "Nessun collegamento attivo. Questo fornitore non è ancora usato in lotti o bottiglie.");
+        }
+        const renderLottoRow = (l, ruolo) => /*#__PURE__*/React.createElement("div", {
+          key: ruolo + "_" + l.id,
+          style: { padding: "8px 12px", background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }
+        },
+          /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.olivaScuro } }, "🌿 Raccolta ", l.annata || "?"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } },
+              l.varieta || "—", " · ", l.qtaOlio || 0, " L",
+              l.codLotto && /*#__PURE__*/React.createElement("span", { style: { marginLeft: 6, fontFamily: "monospace", color: C.grigio400 } }, l.codLotto)
+            )
           ),
-          /*#__PURE__*/React.createElement(Inp, { label: "Telefono", v: form.telefono || "", on: v => setForm(f => ({ ...f, telefono: v })) }),
-          /*#__PURE__*/React.createElement(Inp, { label: "Cellulare", v: form.cellulare || "", on: v => setForm(f => ({ ...f, cellulare: v })) }),
-          /*#__PURE__*/React.createElement(Inp, { label: "Email", type: "email", v: form.email || "", on: v => setForm(f => ({ ...f, email: v })) }),
-          /*#__PURE__*/React.createElement(Inp, { label: "PEC", type: "email", v: form.pec || "", on: v => setForm(f => ({ ...f, pec: v })) })
-        )
-      ),
-      /*#__PURE__*/React.createElement("div", null,
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, letterSpacing: .6, marginBottom: 8 } }, "ALTRO"),
-        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          /*#__PURE__*/React.createElement(Inp, { label: "IBAN", v: form.iban || "", on: v => setForm(f => ({ ...f, iban: v })) }),
-          /*#__PURE__*/React.createElement(Inp, { label: "Sito web", v: form.sitoWeb || "", on: v => setForm(f => ({ ...f, sitoWeb: v })) }),
-          /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
-            /*#__PURE__*/React.createElement(Inp, { label: "Note", v: form.note || "", on: v => setForm(f => ({ ...f, note: v })), rows: 3, full: true })
+          /*#__PURE__*/React.createElement("span", {
+            style: { fontSize: 10, background: ruolo === "olive" ? "#e8f5e9" : "#fff3e0", color: ruolo === "olive" ? "#2e7d32" : "#e65100", padding: "3px 8px", borderRadius: 4, fontWeight: 700 }
+          }, ruolo === "olive" ? "FORNITORE OLIVE" : "FRANTOIO")
+        );
+        const renderBottigliaRow = (b) => {
+          const sku = (dati.magazzino || []).find(m => m.id === b.skuId);
+          return /*#__PURE__*/React.createElement("div", {
+            key: "bot_" + b.id,
+            style: { padding: "8px 12px", background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }
+          },
+            /*#__PURE__*/React.createElement("div", null,
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.olivaScuro } }, "🍾 ", b.formato || "?"),
+              sku && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, sku.prodotto, " R.", sku.annata)
+            ),
+            /*#__PURE__*/React.createElement("span", {
+              style: { fontSize: 10, background: "#e3f2fd", color: "#1565c0", padding: "3px 8px", borderRadius: 4, fontWeight: 700 }
+            }, "BOTTIGLIA PACKAGING")
+          );
+        };
+        return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 16 } },
+          lottiOlive.length > 0 && /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 6 } }, "🌿 LOTTI — FORNITORE OLIVE (", lottiOlive.length, ")"),
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+              lottiOlive.map(l => renderLottoRow(l, "olive"))
+            )
+          ),
+          lottiFrantoio.length > 0 && /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 6 } }, "🫒 LOTTI — FRANTOIO (", lottiFrantoio.length, ")"),
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+              lottiFrantoio.map(l => renderLottoRow(l, "frantoio"))
+            )
+          ),
+          bottiglie.length > 0 && /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 6 } }, "🍾 BOTTIGLIE — PACKAGING (", bottiglie.length, ")"),
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+              bottiglie.map(b => renderBottigliaRow(b))
+            )
           )
-        )
-      ),
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 8, borderTop: `1px solid ${C.grigio100}` } },
-        /*#__PURE__*/React.createElement(Btn, { ch: "Annulla", v: "sec", onClick: () => setModal(null) }),
-        /*#__PURE__*/React.createElement(Btn, { ch: "Salva", onClick: saveF })
+        );
+      })(),
+      // ── Footer ─────────────────────────────────────────────────────────────
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", gap: 8, borderTop: `1px solid ${C.grigio200}`, paddingTop: 14, marginTop: 4 } },
+        /*#__PURE__*/React.createElement(Btn, {
+          ch: "Annulla", v: "sec",
+          onClick: () => { setModal(null); setModalSection("anagrafica"); }
+        }),
+        /*#__PURE__*/React.createElement(Btn, {
+          ch: form.id ? "💾 Salva modifiche" : "💾 Crea fornitore",
+          onClick: saveF
+        })
       )
     )
   }), modal === "of" && /*#__PURE__*/React.createElement(Modal, {
