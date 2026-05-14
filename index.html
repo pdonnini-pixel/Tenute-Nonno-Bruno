@@ -6927,9 +6927,28 @@ _firmaContact;
         gridColumn: "span 2",
         display: "flex",
         justifyContent: "flex-end",
-        gap: 8
+        gap: 8,
+        alignItems: "center"
       }
-    }, /*#__PURE__*/React.createElement(Btn, {
+    },
+    // v53-golive (GL4 fix): "Converti in Cliente" anche dal modal di edit prospect.
+    // Visibile per qualsiasi stato attivo (non_interessato escluso) e solo in edit
+    // di un prospect esistente (form.id presente), non in "new". Salva prima, poi
+    // converte, così non si perdono modifiche pendenti del form.
+    modal === "edit" && form.id && form.stato !== "non_interessato" && /*#__PURE__*/React.createElement(Btn, {
+      ch: form.stato === "acquisito" ? "✅ Crea record Cliente" : "✅ Converti in Cliente",
+      v: "sec",
+      style: { marginRight: "auto", background: "#e8f5e9", border: "1px solid #2e7d32", color: "#2e7d32", fontWeight: 700 },
+      onClick: () => {
+        // Salva eventuali modifiche pendenti del form prima della conversione
+        if (typeof saveProspectSilent === "function") saveProspectSilent();
+        // Usa il prospect dal dati corrente (con override del form per i campi non ancora salvati)
+        const pAttuale = (dati.prospect || []).find(x => x.id === form.id) || form;
+        const pMerged = { ...pAttuale, ...form };
+        convertToCliente(pMerged, () => setModal(null));
+      }
+    }),
+    /*#__PURE__*/React.createElement(Btn, {
       ch: "Annulla",
       v: "sec",
       onClick: () => setModal(null)
