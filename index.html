@@ -1231,7 +1231,7 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260513-v52-costi1
+</script><script>// TNB-BUILD-20260514-v53-golive
 // v52 Costi & Margini: BOM reale + Listino editabile + tracciabilità + break-even.
 // - migrateV52CostiMargini: popola dati.listino[] dalla const LISTINO (idempotente).
 // - Listino: editabile inline (prezzoBase + scaglioni dinamici + toggle attivo) con
@@ -2088,6 +2088,30 @@ const migrateV52CostiMargini = (dataObj) => {
     }));
   }
   out._migration_v52_costi = true;
+  return out;
+};
+
+// v53-golive: Contratti completo — scadenze, rinnovo, importo, frequenza pagamento,
+// upload docs, collegamento a clienti E fornitori (oltre a clienti). Idempotente.
+const migrateV53Contratti = (dataObj) => {
+  if (!dataObj || dataObj._migration_v53_contratti) return dataObj;
+  const out = { ...dataObj };
+  const today = (typeof todayStr === "function" ? todayStr() : new Date().toISOString().slice(0, 10));
+  out.contratti = (out.contratti || []).map(c => ({
+    ...c,
+    fornitoreId: c.fornitoreId || null,
+    tipoControparte: c.tipoControparte || (c.fornitoreId ? "fornitore" : "cliente"),
+    dataInizio: c.dataInizio || c.dataCreazione || "",
+    dataScadenza: c.dataScadenza || "",
+    dataRinnovo: c.dataRinnovo || "",
+    rinnovoAutomatico: typeof c.rinnovoAutomatico === "boolean" ? c.rinnovoAutomatico : false,
+    importo: typeof c.importo === "number" ? c.importo : null,
+    frequenzaPagamento: c.frequenzaPagamento || "",
+    documenti: Array.isArray(c.documenti) ? c.documenti : [],
+    note: c.note || "",
+    dataModifica: c.dataModifica || today
+  }));
+  out._migration_v53_contratti = true;
   return out;
 };
 
@@ -13131,7 +13155,9 @@ function Fornitori({
     const lottiOlive = (dati.lotti || []).filter(l => l.fornitoreOliveId === fId).length;
     const lottiFrantoio = (dati.lotti || []).filter(l => l.frantoioId === fId).length;
     const bottiglie = (dati.bottiglie || []).filter(b => b.fornitoreId === fId).length;
-    return { lottiOlive, lottiFrantoio, bottiglie, totale: lottiOlive + lottiFrantoio + bottiglie };
+    // v53-golive: contratti dove il fornitore è controparte
+    const contratti = (dati.contratti || []).filter(c => c.fornitoreId === fId).length;
+    return { lottiOlive, lottiFrantoio, bottiglie, contratti, totale: lottiOlive + lottiFrantoio + bottiglie + contratti };
   };
   // v51-forn1: save merge-safe con validazione e audit dataModifica.
   const saveF = () => {
@@ -13379,6 +13405,10 @@ function Fornitori({
                 title: "Bottiglie con questo packaging",
                 style: { fontSize: 10, background: "#e3f2fd", color: "#1565c0", padding: "2px 7px", borderRadius: 4, fontWeight: 600 }
               }, "🍾 ", conn.bottiglie, " bottiglie"),
+              conn.contratti > 0 && /*#__PURE__*/React.createElement("span", {
+                title: "Contratti collegati al fornitore",
+                style: { fontSize: 10, background: "#f3e5f5", color: "#6a1b9a", padding: "2px 7px", borderRadius: 4, fontWeight: 600 }
+              }, "📄 ", conn.contratti, " contratti"),
               numDoc > 0 && /*#__PURE__*/React.createElement("span", {
                 title: "Documenti allegati",
                 style: { fontSize: 10, background: "#fff8e1", color: "#7a5900", padding: "2px 7px", borderRadius: 4, fontWeight: 600 }
@@ -13763,7 +13793,48 @@ function Fornitori({
             /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
               bottiglie.map(b => renderBottigliaRow(b))
             )
-          )
+          ),
+          // v53-golive: sezione contratti collegati al fornitore
+          (() => {
+            const contrattiF = (dati.contratti || []).filter(c => c.fornitoreId === form.id);
+            if (contrattiF.length === 0) return null;
+            return /*#__PURE__*/React.createElement("div", null,
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.grigio400, letterSpacing: 0.5, marginBottom: 6 } }, "📄 CONTRATTI (", contrattiF.length, ")"),
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+                contrattiF.map(c => {
+                  const tipoInfo = CONTRATTO_TIPI[c.tipo] || {};
+                  return /*#__PURE__*/React.createElement("div", {
+                    key: c.id,
+                    style: { padding: "8px 12px", background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }
+                  },
+                    /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.olivaScuro } }, "📄 ", tipoInfo.label || c.tipo),
+                      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } },
+                        c.dataInizio && fmtD(c.dataInizio),
+                        c.dataScadenza && " → " + fmtD(c.dataScadenza),
+                        c.importo && " · " + fmt(c.importo)
+                      )
+                    ),
+                    /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
+                      /*#__PURE__*/React.createElement("span", {
+                        style: { fontSize: 10, background: (CONTRATTO_STATI[c.stato]?.c || C.grigio400) + "22", color: CONTRATTO_STATI[c.stato]?.c || C.grigio400, padding: "3px 8px", borderRadius: 4, fontWeight: 700 }
+                      }, (CONTRATTO_STATI[c.stato]?.l || c.stato || "?").toUpperCase()),
+                      /*#__PURE__*/React.createElement("button", {
+                        type: "button",
+                        onClick: () => {
+                          window._tnbNav = { targetContrattoId: c.id };
+                          setModal(null); setModalSection("anagrafica");
+                          if (window._nav) window._nav("contratti");
+                        },
+                        title: "Apri contratto",
+                        style: { padding: "4px 10px", border: `1px solid ${C.olivaChiaro}`, color: C.olivaScuro, background: "#fff", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer" }
+                      }, "Apri →")
+                    )
+                  );
+                })
+              )
+            );
+          })()
         );
       })(),
       // ── Footer ─────────────────────────────────────────────────────────────
@@ -15168,7 +15239,7 @@ function App() {
           if (u) setCurrentUser(u);
         }
         const r = await window.storage.get("tnb-pro-v2");
-        const parsed = migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0))))))))))))));
+        const parsed = migrateV53Contratti(migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))))))))));
         if (parsed.agendaState) {
           const validIds = new Set([
             ...parsed.ordini.map(o => `firma_${o.id}`),
@@ -17999,6 +18070,48 @@ function AlertsPage({
     icon: "📞",
     color: C.viola
   })),
+  // v53-golive: Contratti scaduti (firmati con dataScadenza < oggi)
+  ...(dati.contratti || []).filter(c => c.stato === "firmato" && c.dataScadenza && c.dataScadenza < oggi).map(c => {
+    const controparte = c.fornitoreId
+      ? ((dati.fornitori || []).find(f => f.id === c.fornitoreId)?.ragioneSociale || "?")
+      : ((dati.clienti || []).find(cl => cl.id === c.clienteId)?.insegna || (dati.clienti || []).find(cl => cl.id === c.clienteId)?.ragioneSociale || "?");
+    const gg = Math.abs(Math.floor((new Date(oggi) - new Date(c.dataScadenza)) / 86400000));
+    return {
+      id: "cscad_" + c.id,
+      tipo: "contratto_scaduto",
+      priorita: "alta",
+      titolo: `Contratto scaduto: ${controparte}`,
+      desc: `${(CONTRATTO_TIPI[c.tipo]?.label || c.tipo)} scaduto da ${gg} giorni${c.rinnovoAutomatico ? " (rinnovo auto attivo)" : ""}`,
+      cta: "Apri Contratto",
+      modulo: "contratti",
+      targetId: c.id,
+      icon: "📄",
+      color: C.rosso
+    };
+  }),
+  // v53-golive: Contratti in scadenza nei prossimi 30gg
+  ...(dati.contratti || []).filter(c => {
+    if (c.stato !== "firmato" || !c.dataScadenza || c.dataScadenza < oggi) return false;
+    const gg = Math.floor((new Date(c.dataScadenza) - new Date(oggi)) / 86400000);
+    return gg >= 0 && gg <= 30;
+  }).map(c => {
+    const controparte = c.fornitoreId
+      ? ((dati.fornitori || []).find(f => f.id === c.fornitoreId)?.ragioneSociale || "?")
+      : ((dati.clienti || []).find(cl => cl.id === c.clienteId)?.insegna || (dati.clienti || []).find(cl => cl.id === c.clienteId)?.ragioneSociale || "?");
+    const gg = Math.floor((new Date(c.dataScadenza) - new Date(oggi)) / 86400000);
+    return {
+      id: "cprox_" + c.id,
+      tipo: "contratto_scadenza",
+      priorita: "media",
+      titolo: `Contratto in scadenza: ${controparte}`,
+      desc: `${(CONTRATTO_TIPI[c.tipo]?.label || c.tipo)} scade tra ${gg} giorni — ${fmtD(c.dataScadenza)}`,
+      cta: "Apri Contratto",
+      modulo: "contratti",
+      targetId: c.id,
+      icon: "📄",
+      color: C.arancio
+    };
+  }),
   // CV in scadenza entro 7gg
   ...dati.ordini.filter(o => {
     if (o.modalita !== "conto_vendita" || o.statoPagamento === "pagato" || !o.scadenzaCV) return false;
@@ -18825,8 +18938,37 @@ const CONTRATTO_TIPI = {
   distribuzione: {
     label: "Distribuzione",
     color: C.blu
+  },
+  // v53-golive: nuovi tipi per controparte fornitore o servizi
+  fornitura: {
+    label: "Fornitura",
+    color: "#8d6e63"
+  },
+  servizio: {
+    label: "Servizio",
+    color: "#0288d1"
+  },
+  altro: {
+    label: "Altro",
+    color: C.grigio400
   }
 };
+// v53-golive: stati contratto
+const CONTRATTO_STATI = {
+  bozza:    { l: "Bozza",    c: C.grigio400 },
+  inviato:  { l: "Inviato",  c: C.oro },
+  firmato:  { l: "Firmato",  c: C.verde },
+  scaduto:  { l: "Scaduto",  c: C.rosso }
+};
+// v53-golive: frequenza pagamento contratto
+const CONTRATTO_FREQ = [
+  { v: "", l: "—" },
+  { v: "mensile", l: "Mensile" },
+  { v: "trimestrale", l: "Trimestrale" },
+  { v: "semestrale", l: "Semestrale" },
+  { v: "annuale", l: "Annuale" },
+  { v: "una_tantum", l: "Una tantum" }
+];
 function PreventiviTab(p2){
   var dati=p2.dati,setDati=p2.setDati,logAction=p2.logAction;
   var _s=useState({clienteId:"",righe:[],spedizione:"firenze",modalitaPagamento:"bonifico_anticipato",note:""});
@@ -18947,24 +19089,147 @@ function ContrattiModule({
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [preview, setPreview] = useState(null);
+  // v53-golive: filtri tabella + state upload documenti
+  const [filtroTesto, setFiltroTesto] = useState("");
+  const [filtroStato, setFiltroStato] = useState("");
+  const [filtroControparte, setFiltroControparte] = useState("");
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  // v53-golive: nav cross-modulo da Fornitori → contratto specifico
+  useEffect(() => {
+    setTimeout(() => {
+      if (window._tnbNav && window._tnbNav.targetContrattoId) {
+        const c = (dati.contratti || []).find(x => x.id === window._tnbNav.targetContrattoId);
+        if (c) { setForm({ ...c }); setModal("edit"); }
+        window._tnbNav = null;
+      }
+    }, 80);
+  }, []);
   const contratti = dati.contratti || [];
   const saveContratto = () => {
-    if (!form.clienteId || !form.tipo) return;
-    const isNew = !form.id;
-    const c = {
-      ...form,
-      id: form.id || uid(),
-      dataCreazione: form.dataCreazione || todayStr(),
-      stato: form.stato || "bozza"
-    };
-    setDati(d => ({
-      ...d,
-      contratti: isNew ? [...(d.contratti || []), c] : (d.contratti || []).map(x => x.id === c.id ? c : x)
-    }));
-    if (logAction) logAction(isNew ? "Nuovo contratto" : "Modifica contratto", "contratti", `${form.tipo} — ${dati.clienti.find(cl => cl.id === form.clienteId)?.ragioneSociale}`);
+    const errors = [];
+    if (!form.tipo) errors.push("Tipo contratto obbligatorio");
+    const isFornitore = form.tipoControparte === "fornitore";
+    if (isFornitore && !form.fornitoreId) errors.push("Seleziona un fornitore");
+    if (!isFornitore && !form.clienteId) errors.push("Seleziona un cliente");
+    if (errors.length > 0) {
+      if (window.tnbToast) window.tnbToast(errors.join(" · "), "err");
+      return;
+    }
+    const today = todayStr();
+    setDati(d => {
+      const existing = form.id ? (d.contratti || []).find(c => c.id === form.id) : null;
+      const merged = {
+        ...(existing || {}),
+        ...form,
+        id: form.id || uid(),
+        tipoControparte: form.tipoControparte || "cliente",
+        dataCreazione: form.dataCreazione || (existing && existing.dataCreazione) || today,
+        dataInizio: form.dataInizio || form.dataCreazione || today,
+        stato: form.stato || "bozza",
+        documenti: Array.isArray(form.documenti) ? form.documenti : (existing && existing.documenti) || [],
+        rinnovoAutomatico: !!form.rinnovoAutomatico,
+        dataModifica: today
+      };
+      const isNew = !existing;
+      const lista = isNew ? [...(d.contratti || []), merged] : (d.contratti || []).map(x => x.id === merged.id ? merged : x);
+      return { ...d, contratti: lista };
+    });
+    const controparte = form.tipoControparte === "fornitore"
+      ? (dati.fornitori || []).find(f => f.id === form.fornitoreId)
+      : (dati.clienti || []).find(cl => cl.id === form.clienteId);
+    if (logAction) logAction(form.id ? "Modifica contratto" : "Nuovo contratto", "contratti", `${form.tipo} — ${controparte?.ragioneSociale || controparte?.nome || "—"}`);
+    if (window.tnbToast) window.tnbToast("✓ Contratto salvato");
     setModal(null);
   };
   const cl = id => dati.clienti.find(c => c.id === id);
+  // v53-golive: helper per nome controparte (cliente o fornitore)
+  const getControparteName = (c) => {
+    if (c.tipoControparte === "fornitore" && c.fornitoreId) {
+      const f = (dati.fornitori || []).find(x => x.id === c.fornitoreId);
+      return f ? (f.ragioneSociale || f.nome || "—") : "(fornitore eliminato)";
+    }
+    if (c.clienteId) {
+      const cli = (dati.clienti || []).find(x => x.id === c.clienteId);
+      return cli ? (cli.insegna || cli.ragioneSociale || "—") : "(cliente eliminato)";
+    }
+    return "—";
+  };
+  // v53-golive: upload documenti contratto su Supabase Storage (bucket tnb-firme, prefix "contratto")
+  const handleUploadDocContratto = async (contrattoId, file) => {
+    if (!contrattoId || !file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      if (window.tnbToast) window.tnbToast("⚠ File troppo grande (max 10 MB)", "err");
+      return;
+    }
+    if (!window.tnbStorage) return;
+    setUploadingDoc(true);
+    try {
+      const result = await window.tnbStorage.uploadDocumento(contrattoId, file, "contratto");
+      const nuovoDoc = {
+        id: uid(),
+        nome: file.name,
+        path: result.path,
+        mime: result.mime || "",
+        size: result.size || 0,
+        dataUpload: todayStr()
+      };
+      const aggiornati = [...(form.documenti || []), nuovoDoc];
+      setForm(f => ({ ...f, documenti: aggiornati }));
+      setDati(d => ({
+        ...d,
+        contratti: (d.contratti || []).map(c =>
+          c.id === contrattoId ? { ...c, documenti: aggiornati, dataModifica: todayStr() } : c
+        )
+      }));
+      if (window.tnbToast) window.tnbToast("✅ Documento caricato");
+    } catch (err) {
+      console.error("[Contratti] upload error:", err);
+      if (window.tnbToast) window.tnbToast("⚠ Upload fallito: " + (err && err.message ? err.message : err), "err");
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+  const handleDeleteDocContratto = (contrattoId, docId) => {
+    const doc = (form.documenti || []).find(d => d.id === docId);
+    if (!doc || !window.tnbConfirm) return;
+    window.tnbConfirm(`Eliminare "${doc.nome}"?`, () => {
+      if (doc.path && window.tnbStorage) {
+        window.tnbStorage.deleteDocumento(doc.path).catch(e => console.warn("[Contratti] delete fail:", e));
+      }
+      const aggiornati = (form.documenti || []).filter(d => d.id !== docId);
+      setForm(f => ({ ...f, documenti: aggiornati }));
+      setDati(d => ({
+        ...d,
+        contratti: (d.contratti || []).map(c => c.id === contrattoId ? { ...c, documenti: aggiornati, dataModifica: todayStr() } : c)
+      }));
+      if (window.tnbToast) window.tnbToast("🗑 Documento eliminato");
+    }, { title: "Conferma", okLabel: "Elimina", danger: true });
+  };
+  // v53-golive: delete contratto (con cleanup documenti)
+  const deleteContratto = () => {
+    if (!form.id || !window.tnbConfirm) return;
+    const nome = getControparteName(form);
+    window.tnbConfirm(
+      `Eliminare definitivamente il contratto con "${nome}"? Tutti i documenti allegati verranno cancellati. L'operazione è irreversibile.`,
+      () => {
+        (form.documenti || []).forEach(doc => {
+          if (doc.path && window.tnbStorage) {
+            window.tnbStorage.deleteDocumento(doc.path).catch(e => console.warn("[Contratti] cleanup fail:", e));
+          }
+        });
+        setDati(d => ({ ...d, contratti: (d.contratti || []).filter(c => c.id !== form.id) }));
+        setModal(null);
+        if (logAction) logAction("Elimina contratto", "contratti", nome);
+        if (window.tnbToast) window.tnbToast("🗑 Contratto eliminato");
+      },
+      { title: "Conferma eliminazione", okLabel: "Elimina", danger: true }
+    );
+  };
+  // v53-golive: calcola giorni a scadenza (negativo = scaduto)
+  const giorniScadenza = (c) => {
+    if (!c.dataScadenza) return null;
+    return Math.floor((new Date(c.dataScadenza) - new Date(todayStr())) / 86400000);
+  };
   const scaricaPDF = c => {
     try {
       const {
@@ -19120,17 +19385,24 @@ Data: ___/___/______                      Data: ___/___/______
       }
     })
   }), /*#__PURE__*/React.createElement(PageSummary, { items: (() => {
+    // v53-golive: KPI estesi su scadenza/rinnovo/valore
     const c = dati.contratti || [];
     const oggiStr = todayStr();
-    const scaduti = c.filter(x => x.dataFine && x.dataFine < oggiStr).length;
-    const attivi = c.filter(x => x.stato === "attivo" || (!x.stato && x.dataFine && x.dataFine >= oggiStr)).length;
-    const bozze = c.filter(x => x.stato === "bozza").length;
+    const oggiDate = new Date(oggiStr);
+    const firmati = c.filter(x => x.stato === "firmato").length;
+    const scaduti = c.filter(x => x.stato === "firmato" && x.dataScadenza && x.dataScadenza < oggiStr).length;
+    const inScadenza = c.filter(x => {
+      if (x.stato !== "firmato" || !x.dataScadenza) return false;
+      const gg = Math.floor((new Date(x.dataScadenza) - oggiDate) / 86400000);
+      return gg >= 0 && gg <= 30;
+    }).length;
+    const valoreTot = c.filter(x => x.stato === "firmato").reduce((s, x) => s + (Number(x.importo) || 0), 0);
     return [
-      { label: "Totale", value: c.length, color: "#3a3a3a" },
-      { label: "Attivi", value: attivi, color: "#4a5c2f" },
-      { label: "Bozze", value: bozze, color: "#7a7a7a" },
-      scaduti > 0 ? { label: "Scaduti", value: scaduti, color: "#c0392b" } : null
-    ].filter(Boolean);
+      { label: "Contratti firmati", value: firmati, color: "#4a5c2f" },
+      { label: "In scadenza ≤30gg", value: inScadenza, color: inScadenza > 0 ? "#f57c00" : "#7a7a7a" },
+      { label: "Scaduti", value: scaduti, color: scaduti > 0 ? "#c0392b" : "#7a7a7a" },
+      { label: "Valore firmati", value: valoreTot > 0 ? fmt(valoreTot) : "—", color: "#3a3a3a" }
+    ];
   })() }), /*#__PURE__*/React.createElement(Tab, {
     tabs: [{k:"lista",l:"Tutti i contratti",n:contratti.length},{k:"preventivi",l:"Preventivi"},{k:"bozze",l:"Bozze"},{k:"attivi",l:"Attivi/Firmati"}],
     active: tab,
@@ -19157,32 +19429,69 @@ Data: ___/___/______                      Data: ___/___/______
       fontSize: 13,
       marginTop: 4
     }
-  }, "Crea il primo contratto con il pulsante in alto a destra")), /*#__PURE__*/React.createElement(Card, {
+  }, "Crea il primo contratto con il pulsante in alto a destra")),
+  // v53-golive: filtri tab lista (solo per tab "lista")
+  tab === "lista" && /*#__PURE__*/React.createElement("div", {
+    style: { display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr auto", gap: 10, alignItems: "end", marginBottom: 12 }
+  },
+    /*#__PURE__*/React.createElement(Inp, {
+      label: "Cerca", v: filtroTesto, on: v => setFiltroTesto(v),
+      ph: "cliente, fornitore, tipo, note…"
+    }),
+    /*#__PURE__*/React.createElement(Sel, {
+      label: "Stato", v: filtroStato, on: v => setFiltroStato(v),
+      opts: [{ v: "", l: "Tutti" }].concat(Object.entries(CONTRATTO_STATI).map(([k, v]) => ({ v: k, l: v.l })))
+    }),
+    /*#__PURE__*/React.createElement(Sel, {
+      label: "Controparte", v: filtroControparte, on: v => setFiltroControparte(v),
+      opts: [
+        { v: "", l: "Tutte" },
+        { v: "cliente", l: "👤 Solo clienti" },
+        { v: "fornitore", l: "🤝 Solo fornitori" }
+      ]
+    }),
+    /*#__PURE__*/React.createElement("button", {
+      onClick: () => { setFiltroTesto(""); setFiltroStato(""); setFiltroControparte(""); },
+      style: { padding: "8px 14px", border: "1px solid " + C.grigio200, background: "#fff", color: C.grigio600, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", height: 38 }
+    }, "✕ Reset")
+  ),
+  /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(Tbl, {
-      cols: ["N°", "Cliente", "Tipo", "Data", "Totale", "Stato", ""],
+      cols: ["N°", "Controparte", "Tipo", "Inizio → Scadenza", "Importo", "Stato", ""],
       data: contratti.filter(c => {
         if (tab === "bozze") return c.stato === "bozza";
         if (tab === "attivi") return c.stato === "firmato" || c.stato === "inviato";
+        // v53-golive: applica filtri solo su tab "lista"
+        if (filtroStato && c.stato !== filtroStato) return false;
+        if (filtroControparte === "cliente" && c.tipoControparte === "fornitore") return false;
+        if (filtroControparte === "fornitore" && c.tipoControparte !== "fornitore") return false;
+        if (filtroTesto) {
+          const t = filtroTesto.toLowerCase();
+          const hay = [
+            getControparteName(c),
+            CONTRATTO_TIPI[c.tipo]?.label || c.tipo,
+            c.note || ""
+          ].join(" ").toLowerCase();
+          if (!hay.includes(t)) return false;
+        }
         return true;
       }),
       renderRow: (c, i) => {
         const tot = (c.righe || []).reduce((s, r) => s + r.qta * r.prezzoUnitario, 0);
+        const importo = (typeof c.importo === "number" && c.importo > 0) ? c.importo : (tot > 0 ? tot * 1.04 : null);
+        const gg = giorniScadenza(c);
+        const isFornitore = c.tipoControparte === "fornitore";
         return /*#__PURE__*/React.createElement(TR, {
           key: c.id,
           ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TD, {
             ch: /*#__PURE__*/React.createElement("span", {
-              style: {
-                fontWeight: 700,
-                fontSize: 12,
-                color: C.olivaScuro
-              }
+              style: { fontWeight: 700, fontSize: 12, color: C.olivaScuro }
             }, "TNB-", String(i + 1).padStart(3, "0"))
           }), /*#__PURE__*/React.createElement(TD, {
-            ch: /*#__PURE__*/React.createElement("strong", {
-              style: {
-                fontSize: 12
-              }
-            }, cl(c.clienteId)?.insegna || cl(c.clienteId)?.ragioneSociale || "—")
+            ch: /*#__PURE__*/React.createElement("span", null,
+              /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, marginRight: 4 }, title: isFornitore ? "Fornitore" : "Cliente" }, isFornitore ? "🤝" : "👤"),
+              /*#__PURE__*/React.createElement("strong", { style: { fontSize: 12 } }, getControparteName(c))
+            )
           }), /*#__PURE__*/React.createElement(TD, {
             ch: /*#__PURE__*/React.createElement("span", {
               style: {
@@ -19195,9 +19504,21 @@ Data: ___/___/______                      Data: ___/___/______
               }
             }, CONTRATTO_TIPI[c.tipo]?.label || c.tipo)
           }), /*#__PURE__*/React.createElement(TD, {
-            ch: fmtD(c.dataCreazione)
+            ch: /*#__PURE__*/React.createElement("span", { style: { fontSize: 11 } },
+              c.dataInizio ? fmtD(c.dataInizio) : (c.dataCreazione ? fmtD(c.dataCreazione) : "—"),
+              c.dataScadenza ? /*#__PURE__*/React.createElement("span", null,
+                " → ",
+                /*#__PURE__*/React.createElement("strong", null, fmtD(c.dataScadenza)),
+                gg !== null && c.stato === "firmato" && gg < 0 && /*#__PURE__*/React.createElement("span", {
+                  style: { marginLeft: 6, fontSize: 9, background: C.rosso, color: "#fff", padding: "1px 6px", borderRadius: 3, fontWeight: 700 }
+                }, "❌ SCADUTO " + Math.abs(gg) + "GG"),
+                gg !== null && c.stato === "firmato" && gg >= 0 && gg <= 30 && /*#__PURE__*/React.createElement("span", {
+                  style: { marginLeft: 6, fontSize: 9, background: C.arancio, color: "#fff", padding: "1px 6px", borderRadius: 3, fontWeight: 700 }
+                }, "⚠ " + gg + "GG")
+              ) : null
+            )
           }), /*#__PURE__*/React.createElement(TD, {
-            ch: /*#__PURE__*/React.createElement("strong", null, fmt(tot * 1.04))
+            ch: importo != null ? /*#__PURE__*/React.createElement("strong", null, fmt(importo)) : /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "—")
           }), /*#__PURE__*/React.createElement(TD, {
             ch: /*#__PURE__*/React.createElement(Bdg, {
               v: c.stato || "bozza",
@@ -19316,25 +19637,37 @@ Data: ___/___/______                      Data: ___/___/______
         flexDirection: "column",
         gap: 14
       }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 14
-      }
+    },
+      // v53-golive: selector tipo controparte (cliente o fornitore)
+      /*#__PURE__*/React.createElement("div", {
+        style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }
+      },
+        /*#__PURE__*/React.createElement(Sel, {
+          label: "Tipo controparte", req: true,
+          v: form.tipoControparte || "cliente",
+          on: v => setForm(f => ({ ...f, tipoControparte: v, clienteId: v === "cliente" ? f.clienteId : null, fornitoreId: v === "fornitore" ? f.fornitoreId : null })),
+          opts: [
+            { v: "cliente", l: "👤 Cliente" },
+            { v: "fornitore", l: "🤝 Fornitore" }
+          ]
+        }),
+        (form.tipoControparte || "cliente") === "cliente"
+          ? /*#__PURE__*/React.createElement(Sel, {
+              label: "Cliente", req: true,
+              v: form.clienteId || "",
+              on: v => setForm(f => ({ ...f, clienteId: v })),
+              opts: [{ v: "", l: "— Seleziona —" }].concat((dati.clienti || []).map(c => ({ v: c.id, l: c.insegna || c.ragioneSociale })))
+            })
+          : /*#__PURE__*/React.createElement(Sel, {
+              label: "Fornitore", req: true,
+              v: form.fornitoreId || "",
+              on: v => setForm(f => ({ ...f, fornitoreId: v })),
+              opts: [{ v: "", l: "— Seleziona —" }].concat(((dati.fornitori || []).filter(f => f.attivo !== false)).map(f => ({ v: f.id, l: f.ragioneSociale || f.nome || "—" })))
+            })
+      ),
+      /*#__PURE__*/React.createElement("div", {
+      style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }
     }, /*#__PURE__*/React.createElement(Sel, {
-      label: "Cliente",
-      v: form.clienteId || "",
-      on: v => setForm(f => ({
-        ...f,
-        clienteId: v
-      })),
-      req: true,
-      opts: dati.clienti.map(c => ({
-        v: c.id,
-        l: c.insegna || c.ragioneSociale
-      }))
-    }), /*#__PURE__*/React.createElement(Sel, {
       label: "Tipo contratto",
       v: form.tipo || "",
       on: v => setForm(f => ({
@@ -19346,7 +19679,45 @@ Data: ___/___/______                      Data: ___/___/______
         v: k,
         l: v.label
       }))
-    }), /*#__PURE__*/React.createElement(Inp, {
+    }),
+      // v53-golive: campi date/importo/frequenza
+      /*#__PURE__*/React.createElement(Inp, {
+        label: "Data inizio", type: "date",
+        v: form.dataInizio || "",
+        on: v => setForm(f => ({ ...f, dataInizio: v }))
+      }),
+      /*#__PURE__*/React.createElement(Inp, {
+        label: "Data scadenza", type: "date",
+        v: form.dataScadenza || "",
+        on: v => setForm(f => ({ ...f, dataScadenza: v }))
+      }),
+      /*#__PURE__*/React.createElement(Inp, {
+        label: "Data prossimo rinnovo", type: "date",
+        v: form.dataRinnovo || "",
+        on: v => setForm(f => ({ ...f, dataRinnovo: v }))
+      }),
+      /*#__PURE__*/React.createElement(Inp, {
+        label: "Importo (€)", type: "number", step: 0.01, min: 0,
+        v: form.importo != null ? form.importo : "",
+        on: v => setForm(f => ({ ...f, importo: v === "" ? null : Number(v) })),
+        ph: "valore complessivo"
+      }),
+      /*#__PURE__*/React.createElement(Sel, {
+        label: "Frequenza pagamento",
+        v: form.frequenzaPagamento || "",
+        on: v => setForm(f => ({ ...f, frequenzaPagamento: v })),
+        opts: CONTRATTO_FREQ
+      }),
+      /*#__PURE__*/React.createElement("label", {
+        style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: C.olivaScuro, cursor: "pointer", paddingTop: 22 }
+      },
+        /*#__PURE__*/React.createElement("input", {
+          type: "checkbox", checked: !!form.rinnovoAutomatico,
+          onChange: e => setForm(f => ({ ...f, rinnovoAutomatico: e.target.checked })),
+          style: { width: 16, height: 16, cursor: "pointer" }
+        }),
+        form.rinnovoAutomatico ? "🔄 Rinnovo automatico attivo" : "🔄 Rinnovo automatico"
+      ), /*#__PURE__*/React.createElement(Inp, {
       label: "Data",
       type: "date",
       v: form.dataCreazione || "",
@@ -19551,13 +19922,80 @@ Data: ___/___/______                      Data: ___/___/______
         note: v
       })),
       rows: 3
-    }), /*#__PURE__*/React.createElement("div", {
+    }),
+    // v53-golive: Sezione documenti allegati (Supabase Storage)
+    form.id && /*#__PURE__*/React.createElement("div", {
+      style: { borderTop: `1px solid ${C.grigio200}`, paddingTop: 14, marginTop: 4 }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, letterSpacing: 0.5, marginBottom: 10 } }, "📎 DOCUMENTI ALLEGATI"),
+      (form.documenti || []).length === 0 && /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 11, color: C.grigio400, fontStyle: "italic", padding: 10, background: C.grigio50, borderRadius: 6 }
+      }, "Nessun documento allegato."),
+      (form.documenti || []).map(doc => {
+        const kb = doc.size ? Math.round(doc.size / 1024) : 0;
+        return /*#__PURE__*/React.createElement("div", {
+          key: doc.id,
+          style: { padding: "8px 12px", background: "#fff", border: `1px solid ${C.grigio200}`, borderRadius: 6, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 600, color: C.olivaScuro, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, doc.nome || "(senza nome)"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } },
+              "caricato ", fmtD(doc.dataUpload),
+              kb > 0 && /*#__PURE__*/React.createElement("span", null, " · ", kb, " KB")
+            )
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6 } },
+            /*#__PURE__*/React.createElement("button", {
+              type: "button",
+              onClick: () => window.tnbStorage && window.tnbStorage.openDocumento(doc),
+              style: { padding: "4px 10px", border: `1px solid ${C.olivaChiaro}`, color: C.olivaScuro, background: "#fff", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer" }
+            }, "👁 Apri"),
+            /*#__PURE__*/React.createElement("button", {
+              type: "button",
+              onClick: () => handleDeleteDocContratto(form.id, doc.id),
+              style: { padding: "4px 8px", border: `1px solid ${C.rosso}44`, color: C.rosso, background: "#fff", borderRadius: 4, fontSize: 12, fontWeight: 700, cursor: "pointer" }
+            }, "🗑")
+          )
+        );
+      }),
+      /*#__PURE__*/React.createElement("label", {
+        style: { display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", border: `1px dashed ${uploadingDoc ? C.grigio300 : C.olivaScuro}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: uploadingDoc ? C.grigio400 : C.olivaScuro, cursor: uploadingDoc ? "wait" : "pointer", background: uploadingDoc ? "#f0f0ec" : "#fff", marginTop: 6 }
+      },
+        uploadingDoc ? "⏳ Carico..." : "📤 Carica documento",
+        /*#__PURE__*/React.createElement("input", {
+          type: "file",
+          accept: ".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx",
+          disabled: uploadingDoc,
+          style: { display: "none" },
+          onChange: e => {
+            const f = e.target.files && e.target.files[0];
+            if (!f) return;
+            handleUploadDocContratto(form.id, f);
+            e.target.value = "";
+          }
+        })
+      ),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 4, fontStyle: "italic" } }, "PDF, JPG, PNG, DOC, DOCX — max 10 MB")
+    ),
+    !form.id && /*#__PURE__*/React.createElement("div", {
+      style: { padding: "8px 12px", background: "#fff8e1", borderRadius: 6, fontSize: 11, color: "#7a5900", borderLeft: `3px solid ${C.oro}` }
+    }, "📎 Salva il contratto per poter allegare documenti."),
+    // v53-golive: Footer con Annulla + Elimina (se form.id) + Salva
+    /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         justifyContent: "flex-end",
-        gap: 8
+        gap: 8,
+        borderTop: `1px solid ${C.grigio200}`,
+        paddingTop: 14
       }
-    }, /*#__PURE__*/React.createElement(Btn, {
+    },
+      form.id && /*#__PURE__*/React.createElement(Btn, {
+        ch: "🗑 Elimina contratto", v: "dan", sz: "sm",
+        style: { marginRight: "auto" },
+        onClick: deleteContratto
+      }),
+      /*#__PURE__*/React.createElement(Btn, {
       ch: "Annulla",
       v: "sec",
       onClick: () => setModal(null)
