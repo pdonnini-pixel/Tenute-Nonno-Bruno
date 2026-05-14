@@ -7441,18 +7441,18 @@ async function loadTnbLogo(variante) {
   }
 }
 
-// Font loader: scarica Karla + EB Garamond da CDN stabile (jsdelivr mirror of expo/google-fonts)
+// Font loader: scarica Karla + EB Garamond da CDN stabile (jsdelivr npm mirror @expo-google-fonts)
 // e li registra in jsPDF. Cache in window._tnbPdfFonts.
 // Best-effort: se il fetch fallisce (CORS/offline) fallback su helvetica.
-// v47.3: sostituiti gli URL fonts.gstatic.com (versionati v31/v30, instabili → 404) con
-// jsdelivr/gh expo/google-fonts (TTF reali, CDN-cached, CORS *).
+// v53-golive: sostituiti gli URL /gh/expo/google-fonts (occasionali 503/CORS) con
+// /npm/@expo-google-fonts/ (pacchetti npm immutabili, edge-cache più stabile, CORS *).
 async function loadPdfFonts() {
   if (window._tnbPdfFonts && window._tnbPdfFonts.loaded) return window._tnbPdfFonts;
   const URLS = {
-    karla_normal: "https://cdn.jsdelivr.net/gh/expo/google-fonts/font-packages/karla/400Regular/Karla_400Regular.ttf",
-    karla_bold: "https://cdn.jsdelivr.net/gh/expo/google-fonts/font-packages/karla/700Bold/Karla_700Bold.ttf",
-    garamond_normal: "https://cdn.jsdelivr.net/gh/expo/google-fonts/font-packages/eb-garamond/400Regular/EBGaramond_400Regular.ttf",
-    garamond_bold: "https://cdn.jsdelivr.net/gh/expo/google-fonts/font-packages/eb-garamond/700Bold/EBGaramond_700Bold.ttf"
+    karla_normal: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/karla/400Regular/Karla_400Regular.ttf",
+    karla_bold: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/karla/700Bold/Karla_700Bold.ttf",
+    garamond_normal: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/eb-garamond/400Regular/EBGaramond_400Regular.ttf",
+    garamond_bold: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/eb-garamond/700Bold/EBGaramond_700Bold.ttf"
   };
   const arrayBufferToBase64 = buf => {
     const bytes = new Uint8Array(buf);
