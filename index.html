@@ -1232,6 +1232,47 @@ function HBarChartSVG({
   }));
 }
 </script><script>// TNB-BUILD-20260514-v53-golive
+// ═══════════════════════════════════════════════════════════════════════════
+// v53 GO-LIVE READY — inventario gruppi (commit history):
+//
+//   GL1 (30c5327) — Contratti completo: migrazione v53_contratti, controparte
+//                   cliente/fornitore, scadenze + rinnovo, upload docs, alert.
+//   F1  (781848d) — Fix console: assets logo committati, font CDN su mirror
+//                   npm (cdn.jsdelivr.net/npm/@expo-google-fonts/...).
+//   F2  (6c202bb) — Contratti UI read-only via flag READONLY_MODE (banner +
+//                   modal disabled + hide create/delete). Codice preservato.
+//   F3  (b89975e) — Reset Go-Live: bottone Impostazioni che svuota dati di
+//                   test conservando dati.azienda + impostazioni + flag
+//                   _migration_*. Pulisce anche file su Storage.
+//   GL2 (8130103) — Dati aziendali configurabili: migrateV53Azienda +
+//                   AZIENDA_DEFAULTS + form Impostazioni + sostituzione di
+//                   tutti gli hardcoded in PDF/email/contratti. Helpers
+//                   getAzienda, getTnbAnag, _tnbFirma, _tnbNome, _tnbLuogo.
+//   GL3 (be90922) — Backup/Restore JSON in Impostazioni + fix Dashboard
+//                   (annata corrente dinamica, "Non assegnato" per canale
+//                   undefined, difese costiConfig/magazzino).
+//   GL4 (b2ffc15 + 9fb9336) — Pipeline "Converti in Cliente" robusto
+//                   (tnbConfirm, doppione detection P.IVA/RS, da qualsiasi
+//                   stato attivo, in detail + edit modal) + 2 alert estesi
+//                   (lotti senza imbottigliamento >30gg, bottiglie BOM
+//                   senza prezzo listino).
+//   GL5 — Questo build marker + verifica finale.
+//
+// Migration chain attiva (setDati useEffect, ordine: oldest→newest):
+//   v34 → v36 → v41 → v44 → v46_clienti → v46_ordini → v48 → v49 →
+//   v50 → v50_imbott → v50_bottiglie → v50_litri → v51_fornitori →
+//   v52_costi → v53_contratti → v53_azienda
+//
+// Workflow go-live cliente (DOPO test su deploy):
+//   1. Impostazioni → 💾 Backup → "Esporta backup JSON" (file su disco).
+//   2. Impostazioni → 🏢 Dati Aziendali → modifica con dati reali cliente.
+//   3. Impostazioni → 🚀 Reset Go-Live → doppio confirm → svuota test.
+//   4. Importa dati reali via 💾 Backup → "Importa backup JSON", oppure
+//      inserimento manuale dai moduli.
+//   5. Verifica PDF/email su qualche ordine reale.
+//   6. Riattiva modulo Contratti (cambia READONLY_MODE = false) quando
+//      pronti a usare contratti formali.
+// ═══════════════════════════════════════════════════════════════════════════
 // v52 Costi & Margini: BOM reale + Listino editabile + tracciabilità + break-even.
 // - migrateV52CostiMargini: popola dati.listino[] dalla const LISTINO (idempotente).
 // - Listino: editabile inline (prezzoBase + scaglioni dinamici + toggle attivo) con
