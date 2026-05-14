@@ -1405,6 +1405,65 @@ const fmt = n => {
 const fmtN = n => n != null ? Number(Math.round(n)).toLocaleString("it-IT") : "—";
 const fmtD = d => d ? new Date(d).toLocaleDateString("it-IT") : "—";
 const todayStr = () => new Date().toISOString().slice(0, 10);
+// v53-golive: helper per leggere dati.azienda con fallback ai default storici TNB.
+// Usato da PDF generators e template email. Se l'utente non ha ancora editato
+// `dati.azienda` (es. prima del prossimo load + migrazione), restituisce i valori
+// di default — quindi sicuro da chiamare ovunque senza controlli aggiuntivi.
+const AZIENDA_DEFAULTS = {
+  ragioneSociale: "Tenute Nonno Bruno",
+  // Ragione sociale "lunga" per anagrafica formale (usata nei PDF privacy / contratti).
+  // Se vuota, fallback su ragioneSociale.
+  ragioneSocialeLunga: "Nonno Bruno Soc. Agricola Sas",
+  formaSocietaria: "Azienda Agricola Familiare",
+  indirizzo: "Fattucchia",
+  via: "Via del Fornaccio 40",
+  cap: "50012",
+  citta: "Bagno a Ripoli",
+  provincia: "FI",
+  paese: "Italia",
+  partitaIva: "IT07267640485",
+  codiceFiscale: "",
+  rea: "FI-691528",
+  capitaleSociale: "€ 3.870,00",
+  sito: "tenutenonnobruno.it",
+  email: "info@tenutenonnobruno.it",
+  pec: "aziendaagricolanonnobruno@pec.it",
+  telefono: "+39 334 9907855",
+  payoff: "Olio EVO Biologico",
+  certificazioneBio: "IT-BIO-013",
+  foroCompetente: "Tribunale di Firenze",
+  iban: "IT93S0306937720100000005807",
+  referenteNome: "Irene Paggetti",
+  referenteRuolo: "Key Account Manager",
+  referenteEmail: "irene.paggetti@tenutenonnobruno.it",
+  referenteTelefono: "338 1427611"
+};
+const getAzienda = (dati) => ({ ...AZIENDA_DEFAULTS, ...((dati && dati.azienda) || {}) });
+// Compone una stringa "indirizzo completo" per header PDF / contratti.
+// Esempio: "Fattucchia, Bagno a Ripoli (FI) — 50012"
+const aziendaIndirizzoFull = (az) => {
+  const a = az || AZIENDA_DEFAULTS;
+  const cityProv = [a.citta, a.provincia ? `(${a.provincia})` : ""].filter(Boolean).join(" ");
+  const left = [a.indirizzo, cityProv].filter(Boolean).join(", ");
+  return a.cap ? `${left} — ${a.cap}` : left;
+};
+// Map dati.azienda → schema TNB_ANAG (usato dai PDF v47). Conserva i field name attesi.
+const aziendaToAnag = (az) => {
+  const a = { ...AZIENDA_DEFAULTS, ...(az || {}) };
+  const sedeLegale = [a.via, [a.cap, a.citta].filter(Boolean).join(" "), a.provincia ? `(${a.provincia})` : ""]
+    .filter(Boolean).join(" — ").replace(/\s+—\s+\(/, " (");
+  return {
+    ragioneSociale: a.ragioneSocialeLunga || a.ragioneSociale,
+    sedeLegale: sedeLegale || aziendaIndirizzoFull(a),
+    piva: a.partitaIva,
+    rea: a.rea,
+    capSoc: a.capitaleSociale,
+    email: a.email,
+    pec: a.pec,
+    tel: a.telefono,
+    web: a.sito ? (a.sito.startsWith("www.") || a.sito.startsWith("http") ? a.sito : "www." + a.sito) : ""
+  };
+};
 const MESI = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"];
 const mLabel = s => {
   if (!s) return "—";
@@ -2112,6 +2171,21 @@ const migrateV53Contratti = (dataObj) => {
     dataModifica: c.dataModifica || today
   }));
   out._migration_v53_contratti = true;
+  return out;
+};
+
+// v53-golive: Dati Aziendali configurabili — seed di `dati.azienda` con i valori
+// storicamente hardcoded di TNB. Idempotente via `_migration_v53_azienda`.
+// Dopo questa migrazione, tutti i PDF / email / contratti pescano da
+// `dati.azienda` invece che da stringhe hardcoded, ed esiste un form in
+// Impostazioni per editarli prima del go-live cliente.
+const migrateV53Azienda = (dataObj) => {
+  if (!dataObj || dataObj._migration_v53_azienda) return dataObj;
+  const out = { ...dataObj };
+  // Merge non-distruttivo con AZIENDA_DEFAULTS (definito sopra): preserva eventuali
+  // override già presenti in out.azienda. AZIENDA_DEFAULTS è la single source of truth.
+  out.azienda = { ...AZIENDA_DEFAULTS, ...(out.azienda || {}) };
+  out._migration_v53_azienda = true;
   return out;
 };
 
@@ -4795,8 +4869,12 @@ function composeEmailOrdine(ordine, cliente, ordiniCliente, opts) {
   ];
   const chiusuraIdx = varianteIdx % chiusure.length;
   const chiusura = chiusure[chiusuraIdx];
-  // Firma Irene
-  const firma = "Un caro saluto,\nIrene Paggetti\nKey Account Manager · Tenute Nonno Bruno\nirene.paggetti@tenutenonnobruno.it · 338 1427611";
+  // Firma referente — v53-golive: legge da dati.azienda
+  const _AZ_FIRMA = window._tnbAzienda || AZIENDA_DEFAULTS;
+  const _firmaContatti = [_AZ_FIRMA.referenteEmail, _AZ_FIRMA.referenteTelefono].filter(Boolean).join(" · ");
+  const firma = "Un caro saluto,\n" + (_AZ_FIRMA.referenteNome || "") + "\n" +
+    [(_AZ_FIRMA.referenteRuolo || ""), (_AZ_FIRMA.ragioneSociale || "")].filter(Boolean).join(" · ") + "\n" +
+    _firmaContatti;
   // Riepilogo prezzi
   const blocPrezzi = (
     "Imponibile: " + fmt(imp) + "\n" +
@@ -4822,7 +4900,7 @@ function composeEmailOrdine(ordine, cliente, ordiniCliente, opts) {
     const introNew = [
       "che piacere averti come nuovo cliente! Ti invio la conferma del tuo primo ordine, lo trovi in allegato.",
       "grazie per la fiducia: ecco la conferma del tuo primo ordine. Sotto trovi il riepilogo, il dettaglio completo è nel PDF.",
-      "benvenuto in Tenute Nonno Bruno! Allego la conferma del tuo primo ordine: è un piacere iniziare questa collaborazione.",
+      "benvenuto in " + ((window._tnbAzienda && window._tnbAzienda.ragioneSociale) || "Tenute Nonno Bruno") + "! Allego la conferma del tuo primo ordine: è un piacere iniziare questa collaborazione.",
       "come d'accordo, ti invio la conferma del nostro primo ordine insieme. Il documento è in allegato."
     ];
     intro = introNew[varianteIdx % introNew.length];
@@ -4855,7 +4933,7 @@ function composeEmailOrdine(ordine, cliente, ordiniCliente, opts) {
     cta + "\n\n" +
     chiusura + "\n\n" +
     firma;
-  const oggetto = oggettoBase + " n. " + numero + " — Tenute Nonno Bruno";
+  const oggetto = oggettoBase + " n. " + numero + " — " + ((window._tnbAzienda && window._tnbAzienda.ragioneSociale) || "Tenute Nonno Bruno");
   return { oggetto, corpo, meta: { isPrimoOrdine, isAbituale, nOrdiniCliente, varianteIdx, formal, isCV } };
 }
 
@@ -6736,19 +6814,26 @@ function Pipeline({
           var intestazione = nomeRef ? "Gentile " + nomeRef : "Buongiorno";
           var canaleLabel = CANALE[form.canale] || "";
           var canaleTxt = canaleLabel ? " a seguito del nostro contatto" : "";
-          var ogg = "Olio EVO biologico di Fattucchia — Tenute Nonno Bruno";
+          // v53-golive: pesca da dati.azienda
+          var _AZ_P = (window._tnbAzienda || AZIENDA_DEFAULTS);
+          var _AZ_NOME = _AZ_P.ragioneSociale || "Tenute Nonno Bruno";
+          var _AZ_LUOGO = [_AZ_P.indirizzo, _AZ_P.citta].filter(Boolean).join(", ");
+          var _AZ_PAYOFF = _AZ_P.payoff || "Olio EVO biologico";
+          var ogg = _AZ_PAYOFF + (_AZ_LUOGO ? " di " + (_AZ_P.indirizzo || _AZ_P.citta) : "") + " — " + _AZ_NOME;
+          var _firmaAz = _AZ_NOME + (_AZ_LUOGO ? " — " + _AZ_LUOGO + (_AZ_P.provincia ? " (" + _AZ_P.provincia + ")" : "") : "");
+          var _firmaContact = [_AZ_P.referenteEmail, _AZ_P.referenteTelefono].filter(Boolean).join(" | ");
           var corpo = intestazione + "," + "\n\n" +
 "grazie per la disponibilità" + canaleTxt + ". Come anticipato, le invio qualche dettaglio sul nostro prodotto." + "\n\n" +
-"Tenute Nonno Bruno produce olio extravergine di oliva biologico sulle colline di Fattucchia, a Bagno a Ripoli — a pochi chilometri da Firenze, in un territorio con oliveti pluricentenari." + "\n\n" +
+_AZ_NOME + " produce olio extravergine di oliva biologico" + (_AZ_LUOGO ? " sulle colline di " + (_AZ_P.indirizzo || _AZ_P.citta) + ", a " + _AZ_P.citta : "") + (_AZ_P.provincia === "FI" ? " — a pochi chilometri da Firenze" : "") + ", in un territorio con oliveti pluricentenari." + "\n\n" +
 "Il blend è Frantoio, Moraiolo e Leccino: raccolta rigorosamente manuale, frangitura a freddo entro poche ore. Produzione limitata, certificazione biologica." + "\n" +
 "Un olio a fruttato medio-intenso, equilibrato in amaro e piccante, che si distingue sia a crudo che nella valorizzazione in sala." + "\n\n" +
 "Formati disponibili: 100 ml · 250 ml · 500 ml · Latta 3 L · Latta 5 L" + "\n\n" +
 "Se è disponibile, le faccio recapitare un campione senza impegno: preferisco che sia il prodotto a presentarsi." + "\n\n" +
 "Resto a disposizione per qualsiasi domanda o per fissare un incontro." + "\n\n" +
 "Cordiali saluti," + "\n" +
-"Irene Paggetti" + "\n" +
-"Tenute Nonno Bruno — Fattucchia, Bagno a Ripoli (FI)" + "\n" +
-"irene.paggetti@tenutenonnobruno.it | 338 1427611";
+(_AZ_P.referenteNome || "") + "\n" +
+_firmaAz + "\n" +
+_firmaContact;
           window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(form.email) + "&su=" + encodeURIComponent(ogg) + "&body=" + encodeURIComponent(corpo), "_blank");
           if(logAction) logAction("Mail pres.", "pipeline", form.ragioneSociale);
           if(form.id) {
@@ -7319,14 +7404,15 @@ function generateModuloPDF(ordine, clienti, isCV) {
   var numero = ordine.numero || ordine.id || '—';
   var data = ordine.data || todayStr();
 
-  // Intestazione
+  // Intestazione — v53-golive: legge da dati.azienda
+  var _AZL = window._tnbAzienda || AZIENDA_DEFAULTS;
   doc.setFontSize(18);
   doc.setTextColor(62, 79, 31);
-  doc.text('Tenute Nonno Bruno', 20, 20);
+  doc.text(_AZL.ragioneSociale || 'Tenute Nonno Bruno', 20, 20);
   doc.setFontSize(10);
   doc.setTextColor(100, 100, 100);
-  doc.text('Fattucchia, Bagno a Ripoli (FI) — tenutenonnobruno.it', 20, 27);
-  doc.text('irene.paggetti@tenutenonnobruno.it — 338 1427611', 20, 33);
+  doc.text(aziendaIndirizzoFull(_AZL) + (_AZL.sito ? ' — ' + _AZL.sito : ''), 20, 27);
+  doc.text([_AZL.referenteEmail, _AZL.referenteTelefono].filter(Boolean).join(' — '), 20, 33);
 
   // Linea separatrice
   doc.setDrawColor(191, 198, 113);
@@ -7411,7 +7497,7 @@ function generateModuloPDF(ordine, clienti, isCV) {
   // Footer
   doc.setFontSize(8);
   doc.setTextColor(150, 150, 150);
-  doc.text('Tenute Nonno Bruno — P.IVA/CF: — tenutenonnobruno.it', 20, 285);
+  doc.text([(_AZL.ragioneSociale || 'Tenute Nonno Bruno'), 'P.IVA/CF: ' + (_AZL.partitaIva || ''), (_AZL.sito || 'tenutenonnobruno.it')].join(' — '), 20, 285);
 
   doc.save('Ordine_' + numero + '_' + nomeCliente + '.pdf');
 
@@ -7512,9 +7598,12 @@ const LISTINO_PDF = {
   "20 ml|2025": { pezziCollo: 50, scaglioni: { 1: 100, 2: 180 } }
 };
 
-// Costanti TNB — anagrafica fissa usata in tutti i PDF (v47).
-const TNB_IBAN = "IT93S0306937720100000005807";
-const TNB_ANAG = {
+// Costanti TNB — anagrafica usata in tutti i PDF (v47).
+// v53-golive (GL2): TNB_ANAG ora deriva da dati.azienda (override utente) con
+// fallback ai valori storici. getTnbAnag() legge da window._tnbAzienda_anag,
+// popolato a load + ogni save. Compatibilità retro: getTnbAnag() restituisce
+// la stessa shape che TNB_ANAG aveva prima.
+const _TNB_ANAG_FALLBACK = {
   ragioneSociale: "Nonno Bruno Soc. Agricola Sas",
   sedeLegale: "Via del Fornaccio 40 — 50012 Bagno a Ripoli (FI)",
   piva: "07267640485",
@@ -7525,6 +7614,9 @@ const TNB_ANAG = {
   tel: "+39 334 9907855",
   web: "www.tenutenonnobruno.it"
 };
+const getTnbAnag = () => ({ ..._TNB_ANAG_FALLBACK, ...(window._tnbAzienda_anag || {}) });
+const getTnbIban = () => (window._tnbAzienda && window._tnbAzienda.iban) || "IT93S0306937720100000005807";
+const TNB_IBAN = "IT93S0306937720100000005807"; // legacy alias (mantenuto se referenziato altrove)
 const TNB_C_DARK = [48, 52, 50];
 const TNB_C_OLIVE = [191, 198, 113];
 const TNB_C_TEXT = [45, 45, 45];
@@ -7546,25 +7638,28 @@ function formatReferente(ref) {
 }
 
 // drawPdfHeaderFull: header completo con logo grande + anagrafica TNB destra (Pag.1 Vendita/CV).
+// v53-golive: nome azienda e anagrafica leggono da dati.azienda via getTnbAnag().
 function drawPdfHeaderFull(doc, opts) {
   const M = 18, W = 210;
   const FONT_BODY = opts.fontBody || "helvetica";
+  const _ANAG = getTnbAnag();
+  const _AZ = window._tnbAzienda || AZIENDA_DEFAULTS;
   if (opts.logo) {
     try { doc.addImage(opts.logo, "PNG", M, M, 20, 22); } catch (e) { /* skip */ }
   }
   doc.setFont(FONT_BODY, "bold");
   doc.setFontSize(11);
   doc.setTextColor(...TNB_C_DARK);
-  doc.text("Tenute Nonno Bruno", W - M, M + 4, { align: "right" });
+  doc.text(_AZ.ragioneSociale || "Tenute Nonno Bruno", W - M, M + 4, { align: "right" });
   doc.setFont(FONT_BODY, "normal");
   doc.setFontSize(8);
   doc.setTextColor(...TNB_C_GRAY);
   const lines = [
-    TNB_ANAG.ragioneSociale,
-    TNB_ANAG.sedeLegale,
-    "P.IVA " + TNB_ANAG.piva + " · REA " + TNB_ANAG.rea + " · Cap.soc. " + TNB_ANAG.capSoc,
-    TNB_ANAG.email + " · PEC " + TNB_ANAG.pec,
-    TNB_ANAG.tel + " · " + TNB_ANAG.web
+    _ANAG.ragioneSociale,
+    _ANAG.sedeLegale,
+    "P.IVA " + _ANAG.piva + " · REA " + _ANAG.rea + " · Cap.soc. " + _ANAG.capSoc,
+    _ANAG.email + " · PEC " + _ANAG.pec,
+    _ANAG.tel + " · " + _ANAG.web
   ];
   lines.forEach((l, i) => doc.text(l, W - M, M + 8 + i * 3.2, { align: "right" }));
   doc.setDrawColor(...TNB_C_OLIVE);
@@ -7574,16 +7669,18 @@ function drawPdfHeaderFull(doc, opts) {
 }
 
 // drawPdfHeaderMini: header ridotto per pagine 2+ (logo piccolo + titolo breve).
+// v53-golive: titolo di default da dati.azienda.ragioneSociale.
 function drawPdfHeaderMini(doc, opts) {
   const M = 18, W = 210;
   const FONT_BODY = opts.fontBody || "helvetica";
+  const _AZ = window._tnbAzienda || AZIENDA_DEFAULTS;
   if (opts.logo) {
     try { doc.addImage(opts.logo, "PNG", M, M, 11, 12); } catch (e) { /* skip */ }
   }
   doc.setFont(FONT_BODY, "bold");
   doc.setFontSize(10);
   doc.setTextColor(...TNB_C_DARK);
-  doc.text(opts.titolo || "Tenute Nonno Bruno", M + 14, M + 7);
+  doc.text(opts.titolo || _AZ.ragioneSociale || "Tenute Nonno Bruno", M + 14, M + 7);
   doc.setFont(FONT_BODY, "normal");
   doc.setFontSize(8);
   doc.setTextColor(...TNB_C_GRAY);
@@ -7887,7 +7984,7 @@ function _drawPdfPagina2(doc, ordine, cliente, opts, tipoDoc, ctx) {
   let y = drawPdfHeaderMini(doc, {
     fontBody: FONT_BODY,
     logo: opts.logo,
-    titolo: "Tenute Nonno Bruno · " + (isCV ? "Ordine CV" : "Modulo d'ordine") + " N° " + ctx.numero,
+    titolo: ((window._tnbAzienda && window._tnbAzienda.ragioneSociale) || "Tenute Nonno Bruno") + " · " + (isCV ? "Ordine CV" : "Modulo d'ordine") + " N° " + ctx.numero,
     subTitolo: cliente?.ragioneSociale || cliente?.insegna || ""
   });
 
@@ -7927,7 +8024,7 @@ function _drawPdfPagina2(doc, ordine, cliente, opts, tipoDoc, ctx) {
   doc.setDrawColor(...TNB_C_OLIVE); doc.line(M, y + 1.5, M + 70, y + 1.5);
   y += 7;
   doc.setFont(FONT_BODY, "normal"); doc.setFontSize(9.5); doc.setTextColor(...TNB_C_TEXT);
-  const privP = "Titolare: " + TNB_ANAG.ragioneSociale + ". Per il dettaglio completo dei trattamenti, basi giuridiche, periodi di conservazione e diritti dell'interessato si rimanda all'Informativa Privacy estesa TNB-PRIV-v1.0 allegata al presente modulo.";
+  const privP = "Titolare: " + getTnbAnag().ragioneSociale + ". Per il dettaglio completo dei trattamenti, basi giuridiche, periodi di conservazione e diritti dell'interessato si rimanda all'Informativa Privacy estesa TNB-PRIV-v1.0 allegata al presente modulo.";
   const privLines = doc.splitTextToSize(privP, W - 2 * M);
   doc.text(privLines, M, y);
   y += privLines.length * 4.5 + 4;
@@ -8030,7 +8127,7 @@ function _renderPrivacyDoc(doc, FONT_BODY, FONT_HEAD, logoData) {
   const drawHeaderPriv = (pageN) => {
     if (logoData) { try { doc.addImage(logoData, "PNG", M, M, 11, 12); } catch (e) {} }
     doc.setFont(FONT_BODY, "bold"); doc.setFontSize(9); doc.setTextColor(...TNB_C_DARK);
-    doc.text("Tenute Nonno Bruno · Informativa Privacy — TNB-PRIV-v1.0", M + 14, M + 7);
+    doc.text(((window._tnbAzienda && window._tnbAzienda.ragioneSociale) || "Tenute Nonno Bruno") + " · Informativa Privacy — TNB-PRIV-v1.0", M + 14, M + 7);
     doc.setDrawColor(...TNB_C_OLIVE); doc.setLineWidth(0.6);
     doc.line(M, M + 14, W - M, M + 14);
   };
@@ -8105,19 +8202,21 @@ function _renderPrivacyDoc(doc, FONT_BODY, FONT_HEAD, logoData) {
   doc.text(discLines, M + 4, y + 4);
   y += 26;
   y = heading("1. Titolare del trattamento", y);
-  y = para("Il titolare del trattamento dei dati personali raccolti tramite il presente modulo, il sito web tenutenonnobruno.it e ogni altro canale di interazione commerciale è:", y);
+  const _privSito = getTnbAnag().web || "tenutenonnobruno.it";
+  y = para("Il titolare del trattamento dei dati personali raccolti tramite il presente modulo, il sito web " + _privSito + " e ogni altro canale di interazione commerciale è:", y);
   y += 1;
-  // Tabella anagrafica
+  // Tabella anagrafica — v53-golive: legge da dati.azienda via getTnbAnag()
+  const _ANAG_PRIV = getTnbAnag();
   const anagRows = [
-    ["Ragione sociale", TNB_ANAG.ragioneSociale],
-    ["Sede legale", TNB_ANAG.sedeLegale],
-    ["P. IVA / C.F.", TNB_ANAG.piva],
-    ["Numero REA", TNB_ANAG.rea],
-    ["Capitale sociale", TNB_ANAG.capSoc],
-    ["Email", TNB_ANAG.email],
-    ["PEC", TNB_ANAG.pec],
-    ["Telefono", TNB_ANAG.tel],
-    ["Sito web", TNB_ANAG.web]
+    ["Ragione sociale", _ANAG_PRIV.ragioneSociale],
+    ["Sede legale", _ANAG_PRIV.sedeLegale],
+    ["P. IVA / C.F.", _ANAG_PRIV.piva],
+    ["Numero REA", _ANAG_PRIV.rea],
+    ["Capitale sociale", _ANAG_PRIV.capSoc],
+    ["Email", _ANAG_PRIV.email],
+    ["PEC", _ANAG_PRIV.pec],
+    ["Telefono", _ANAG_PRIV.tel],
+    ["Sito web", _ANAG_PRIV.web]
   ];
   doc.setFont(FONT_BODY, "normal"); doc.setFontSize(9); doc.setTextColor(...TNB_C_TEXT);
   anagRows.forEach((r, i) => {
@@ -8258,7 +8357,7 @@ function _renderPrivacyDoc(doc, FONT_BODY, FONT_HEAD, logoData) {
   const facLines = doc.splitTextToSize(facT, W - 2 * M - 12);
   doc.text(facLines, M + 11, y + 12);
   doc.setFont(FONT_BODY, "italic"); doc.setFontSize(8.5); doc.setTextColor(...TNB_C_GRAY);
-  doc.text("Il consenso è revocabile in qualsiasi momento scrivendo a " + TNB_ANAG.email + ".", M + 11, y + 28);
+  doc.text("Il consenso è revocabile in qualsiasi momento scrivendo a " + getTnbAnag().email + ".", M + 11, y + 28);
   y += 38;
   // Firma estesa
   doc.setDrawColor(...TNB_C_GRAY); doc.setLineWidth(0.3);
@@ -8542,7 +8641,13 @@ function Ordini({
       "La consegna programmata di " + cons.qta + "× " + cons.formato + (cons.annata ? " (annata " + cons.annata + ")" : "") + " era prevista per il giorno " + fmtD(cons.dataPrev) + ".\n\n" +
       "Le chiediamo cortesemente conferma del giorno e dell'orario in cui possiamo organizzare la consegna, così da coordinarci al meglio con i nostri tempi di spedizione.\n\n" +
       "Restiamo a Sua disposizione per qualsiasi necessità.\n\n" +
-      "Cordiali saluti,\nIrene Paggetti\nKey Account Manager — Tenute Nonno Bruno\nirene.paggetti@tenutenonnobruno.it · 338 1427611";
+      (() => {
+        const _AZ = (window._tnbAzienda || AZIENDA_DEFAULTS);
+        const _contact = [_AZ.referenteEmail, _AZ.referenteTelefono].filter(Boolean).join(" · ");
+        return "Cordiali saluti,\n" + (_AZ.referenteNome || "") + "\n" +
+          [(_AZ.referenteRuolo || ""), (_AZ.ragioneSociale || "")].filter(Boolean).join(" — ") + "\n" +
+          _contact;
+      })();
     setSolleciaModalData({ cons, cliente, oggetto, corpo });
   };
   useEffect(() => { setTimeout(() => {
@@ -8583,7 +8688,7 @@ function Ordini({
     const clienteNome = cl.insegna || cl.ragioneSociale || "Cliente";
     const numero = (o.numero || o.id || "ordine").toString().replace(/[\/\\]/g, "_");
     const nomeFile = (isCV ? "TNB_OrdineCV_" : "TNB_Ordine_") + numero + "_" + layout + ".pdf";
-    const oggetto = (isCV ? "Ordine Conto Vendita" : "Conferma Ordine") + " n. " + (o.numero || "") + " — Tenute Nonno Bruno";
+    const oggetto = (isCV ? "Ordine Conto Vendita" : "Conferma Ordine") + " n. " + (o.numero || "") + " — " + ((window._tnbAzienda && window._tnbAzienda.ragioneSociale) || "Tenute Nonno Bruno");
     setPdfInvioModal({ generating: true, ordine: o, isCV, clienteNome, nomeFile, oggetto, email: cl.email || "" });
     try {
       const fn = isCV ? (layout === "A" ? generaPdfContoVenditaA : generaPdfContoVenditaB) : (layout === "A" ? generaPdfVenditaA : generaPdfVenditaB);
@@ -15239,7 +15344,13 @@ function App() {
           if (u) setCurrentUser(u);
         }
         const r = await window.storage.get("tnb-pro-v2");
-        const parsed = migrateV53Contratti(migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))))))))));
+        const parsed = migrateV53Azienda(migrateV53Contratti(migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0))))))))))))))));
+        // v53-golive (GL2): stash azienda per PDF/email generators che non hanno
+        // accesso al React state. Riaggiornato a ogni setDatiSave (vedi sotto).
+        try {
+          window._tnbAzienda = parsed.azienda || AZIENDA_DEFAULTS;
+          window._tnbAzienda_anag = aziendaToAnag(window._tnbAzienda);
+        } catch (_) {}
         if (parsed.agendaState) {
           const validIds = new Set([
             ...parsed.ordini.map(o => `firma_${o.id}`),
@@ -15290,6 +15401,14 @@ function App() {
       const next = typeof upd === "function" ? upd(prev) : upd;
       setSaving(true);
       window.storage.set("tnb-pro-v2", JSON.stringify(next)).finally(() => setSaving(false));
+      // v53-golive (GL2): tieni allineato lo stash window._tnbAzienda usato da
+      // PDF/email generators che non hanno accesso al React state.
+      try {
+        if (next && next.azienda) {
+          window._tnbAzienda = next.azienda;
+          window._tnbAzienda_anag = aziendaToAnag(next.azienda);
+        }
+      } catch (_) {}
       return next;
     });
   }, []);
@@ -15624,7 +15743,7 @@ function App() {
       fontSize: 11,
       color: C.grigio400
     }
-  }, "Fattucchia, Bagno a Ripoli \xB7 Raccolta 2025 \xB7 ", new Date().toLocaleDateString("it-IT", {
+  }, (((dati && dati.azienda) || AZIENDA_DEFAULTS).indirizzo || "Fattucchia") + ", " + (((dati && dati.azienda) || AZIENDA_DEFAULTS).citta || "Bagno a Ripoli") + " \xB7 Raccolta 2025 \xB7 ", new Date().toLocaleDateString("it-IT", {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -18563,55 +18682,71 @@ const ALLEGATI_CANVA = [
   }
 ];
 
+// v53-golive (GL2): helper per costruire firma email + nome azienda dinamici da dati.azienda.
+// Eseguiti a call-time, quindi vedono sempre il valore aggiornato di window._tnbAzienda.
+const _tnbNome = () => (window._tnbAzienda && window._tnbAzienda.ragioneSociale) || "Tenute Nonno Bruno";
+const _tnbLuogo = () => {
+  const a = window._tnbAzienda || AZIENDA_DEFAULTS;
+  const cityProv = [a.citta, a.provincia ? "(" + a.provincia + ")" : ""].filter(Boolean).join(" ");
+  return [a.indirizzo, cityProv].filter(Boolean).join(", ");
+};
+const _tnbFirma = () => {
+  const a = window._tnbAzienda || AZIENDA_DEFAULTS;
+  const luogo = _tnbLuogo();
+  const contatto = [a.referenteEmail, a.referenteTelefono].filter(Boolean).join(" | ");
+  return (a.referenteNome || "") + "\n" +
+    (a.ragioneSociale || "Tenute Nonno Bruno") + (luogo ? " — " + luogo : "") + "\n" +
+    contatto;
+};
 const MAIL_TEMPLATES = {
   primo_contatto: {
     label: "📧 Primo contatto",
     colore: C.blu,
     target: ["clienti","prospect"],
-    oggetto: (dest) => "Olio EVO biologico di Fattucchia \u2014 Tenute Nonno Bruno",
-    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\ngrazie per la disponibilit\u00e0. Come anticipato, le invio qualche dettaglio sul nostro olio.\n\nTenute Nonno Bruno produce olio extravergine di oliva biologico sulle colline di Fattucchia, a Bagno a Ripoli \u2014 oliveti pluricentenari, blend Frantoio, Moraiolo e Leccino. Raccolta manuale, frangitura a freddo entro poche ore. Produzione limitata, certificazione biologica.\n\nUn olio a fruttato medio-intenso, equilibrato in amaro e piccante, pensato per chi vuole distinguersi nella proposta al tavolo o sullo scaffale.\n\nFormati: 100 ml \u00b7 250 ml \u00b7 500 ml \u00b7 Latta 3 L \u00b7 Latta 5 L\n\nSe \u00e8 disponibile, le faccio recapitare un campione senza impegno: preferisco che sia il prodotto a presentarsi.\n\nResto a disposizione per qualsiasi domanda o per fissare un incontro.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
+    oggetto: (dest) => "Olio EVO biologico di " + (((window._tnbAzienda || AZIENDA_DEFAULTS).indirizzo) || "Fattucchia") + " \u2014 " + _tnbNome(),
+    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\ngrazie per la disponibilit\u00e0. Come anticipato, le invio qualche dettaglio sul nostro olio.\n\n" + _tnbNome() + " produce olio extravergine di oliva biologico sulle colline di " + _tnbLuogo() + " \u2014 oliveti pluricentenari, blend Frantoio, Moraiolo e Leccino. Raccolta manuale, frangitura a freddo entro poche ore. Produzione limitata, certificazione biologica.\n\nUn olio a fruttato medio-intenso, equilibrato in amaro e piccante, pensato per chi vuole distinguersi nella proposta al tavolo o sullo scaffale.\n\nFormati: 100 ml \u00b7 250 ml \u00b7 500 ml \u00b7 Latta 3 L \u00b7 Latta 5 L\n\nSe \u00e8 disponibile, le faccio recapitare un campione senza impegno: preferisco che sia il prodotto a presentarsi.\n\nResto a disposizione per qualsiasi domanda o per fissare un incontro.\n\nCordiali saluti,\n" + _tnbFirma()
   },
   campionatura: {
     label: "\uD83D\uDCE6 Campionatura",
     colore: "#7b1fa2",
     target: ["clienti","prospect"],
-    oggetto: (dest) => "Tenute Nonno Bruno \u2014 Campione olio EVO biologico in arrivo",
-    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\ncome concordato, le invieremo nei prossimi giorni un campione del nostro olio extravergine di oliva biologico \u2014 Raccolta 2025.\n\nLe arriver\u00e0:\n\u2022 1 bottiglia da 250 ml \u2014 blend Frantoio, Moraiolo, Leccino\n\nLa preghiamo di assaggiarlo a crudo, su pane o su una bruschetta leggera: \u00e8 il modo migliore per apprezzare la complessit\u00e0 aromatica e la struttura del fruttato.\n\nDopo qualche giorno, la ricontatter\u00f2 per un riscontro.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
+    oggetto: (dest) => _tnbNome() + " \u2014 Campione olio EVO biologico in arrivo",
+    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\ncome concordato, le invieremo nei prossimi giorni un campione del nostro olio extravergine di oliva biologico \u2014 Raccolta 2025.\n\nLe arriver\u00e0:\n\u2022 1 bottiglia da 250 ml \u2014 blend Frantoio, Moraiolo, Leccino\n\nLa preghiamo di assaggiarlo a crudo, su pane o su una bruschetta leggera: \u00e8 il modo migliore per apprezzare la complessit\u00e0 aromatica e la struttura del fruttato.\n\nDopo qualche giorno, la ricontatter\u00f2 per un riscontro.\n\nCordiali saluti,\n" + _tnbFirma()
   },
   followup_offerta: {
     label: "\uD83D\uDCE8 Follow-up offerta",
     colore: "#f57c00",
     target: ["clienti","prospect"],
-    oggetto: (dest) => "Tenute Nonno Bruno \u2014 In attesa di un suo riscontro",
-    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\nle scrivo per sapere se ha avuto modo di valutare la nostra proposta.\n\nSiamo consapevoli che le decisioni di acquisto richiedono tempo, ed \u00e8 giusto cos\u00ec. Se ha domande sul prodotto, sui formati o sulle condizioni, sono qui.\n\nSe preferisce, possiamo anche fissare una breve chiamata o una visita per chiarire qualsiasi aspetto.\n\nRimango a disposizione.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
+    oggetto: (dest) => _tnbNome() + " \u2014 In attesa di un suo riscontro",
+    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\nle scrivo per sapere se ha avuto modo di valutare la nostra proposta.\n\nSiamo consapevoli che le decisioni di acquisto richiedono tempo, ed \u00e8 giusto cos\u00ec. Se ha domande sul prodotto, sui formati o sulle condizioni, sono qui.\n\nSe preferisce, possiamo anche fissare una breve chiamata o una visita per chiarire qualsiasi aspetto.\n\nRimango a disposizione.\n\nCordiali saluti,\n" + _tnbFirma()
   },
   recall: {
     label: "\uD83D\uDD04 Recall / Ricontatto",
     colore: C.viola,
     target: ["clienti","prospect"],
-    oggetto: (dest) => "Tenute Nonno Bruno \u2014 Aggiornamento disponibilit\u00e0 Raccolta 2025",
-    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\nla ricontatto come concordato in occasione del nostro precedente incontro.\n\nLa Raccolta 2025 \u00e8 disponibile in tutti i formati. Quest'anno la resa \u00e8 stata particolarmente buona e la qualit\u00e0 dell'olio \u00e8 eccellente \u2014 polifenoli elevati, fruttato intenso e buona persistenza.\n\nSe desidera ricevere un campione o concordare un ordine, siamo a sua completa disposizione.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
+    oggetto: (dest) => _tnbNome() + " \u2014 Aggiornamento disponibilit\u00e0 Raccolta 2025",
+    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\nla ricontatto come concordato in occasione del nostro precedente incontro.\n\nLa Raccolta 2025 \u00e8 disponibile in tutti i formati. Quest'anno la resa \u00e8 stata particolarmente buona e la qualit\u00e0 dell'olio \u00e8 eccellente \u2014 polifenoli elevati, fruttato intenso e buona persistenza.\n\nSe desidera ricevere un campione o concordare un ordine, siamo a sua completa disposizione.\n\nCordiali saluti,\n" + _tnbFirma()
   },
   proposta_ordine: {
     label: "\uD83D\uDCCB Proposta ordine",
     colore: C.oliva,
     target: ["clienti"],
-    oggetto: (dest, ord) => "Tenute Nonno Bruno \u2014 Proposta ordine per " + (dest.nomeDisplay || dest.insegna || dest.ragioneSociale || ""),
-    corpo: (dest, ord) => "Gentile " + (dest.referente || "") + ",\n\nin seguito alla nostra conversazione, le inviamo il riepilogo della proposta:\n\n" + ((ord && ord.righe) ? ord.righe.map(function(r){ return "\u2022 " + r.qta + " \u00d7 " + r.formato + " Raccolta " + r.annata + " \u2014 " + fmt(r.prezzoUnitario) + " cad."; }).join("\n") : "") + "\n\nTotale imponibile: " + fmt(ord ? totOrdine(ord) : 0) + "\nIVA 4%: " + fmt(ord ? totIVA(totOrdine(ord)) : 0) + (ord && costoSpedizione(ord) > 0 ? "\nSpedizione: " + fmt(costoSpedizione(ord)) : "") + "\nTotale finale: " + fmt(ord ? totFinale(ord) : 0) + "\n\nPer procedere con l'ordine le invieremo il modulo da firmare.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
+    oggetto: (dest, ord) => _tnbNome() + " \u2014 Proposta ordine per " + (dest.nomeDisplay || dest.insegna || dest.ragioneSociale || ""),
+    corpo: (dest, ord) => "Gentile " + (dest.referente || "") + ",\n\nin seguito alla nostra conversazione, le inviamo il riepilogo della proposta:\n\n" + ((ord && ord.righe) ? ord.righe.map(function(r){ return "\u2022 " + r.qta + " \u00d7 " + r.formato + " Raccolta " + r.annata + " \u2014 " + fmt(r.prezzoUnitario) + " cad."; }).join("\n") : "") + "\n\nTotale imponibile: " + fmt(ord ? totOrdine(ord) : 0) + "\nIVA 4%: " + fmt(ord ? totIVA(totOrdine(ord)) : 0) + (ord && costoSpedizione(ord) > 0 ? "\nSpedizione: " + fmt(costoSpedizione(ord)) : "") + "\nTotale finale: " + fmt(ord ? totFinale(ord) : 0) + "\n\nPer procedere con l'ordine le invieremo il modulo da firmare.\n\nCordiali saluti,\n" + _tnbFirma()
   },
   conferma_ordine: {
     label: "\u2705 Conferma ordine",
     colore: C.verde,
     target: ["clienti"],
-    oggetto: (dest, ord) => "Tenute Nonno Bruno \u2014 Conferma ordine " + (ord && ord.numero ? ord.numero : ""),
-    corpo: (dest, ord) => "Gentile " + (dest.referente || "") + ",\n\nsiamo lieti di confermare il suo ordine n\u00b0 " + (ord && ord.numero ? ord.numero : "") + " del " + fmtD(ord && ord.data ? ord.data : "") + ".\n\n" + ((ord && ord.righe) ? ord.righe.map(function(r){ return "\u2022 " + r.qta + " \u00d7 " + r.formato + " Raccolta " + r.annata; }).join("\n") : "") + "\n\nTotale finale: " + fmt(ord ? totFinale(ord) : 0) + "\n\nLa consegna \u00e8 prevista nei prossimi giorni. La contatteremo per concordare modalit\u00e0 e orari.\n\nGrazie per la fiducia.\n\nCordiali saluti,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
+    oggetto: (dest, ord) => _tnbNome() + " \u2014 Conferma ordine " + (ord && ord.numero ? ord.numero : ""),
+    corpo: (dest, ord) => "Gentile " + (dest.referente || "") + ",\n\nsiamo lieti di confermare il suo ordine n\u00b0 " + (ord && ord.numero ? ord.numero : "") + " del " + fmtD(ord && ord.data ? ord.data : "") + ".\n\n" + ((ord && ord.righe) ? ord.righe.map(function(r){ return "\u2022 " + r.qta + " \u00d7 " + r.formato + " Raccolta " + r.annata; }).join("\n") : "") + "\n\nTotale finale: " + fmt(ord ? totFinale(ord) : 0) + "\n\nLa consegna \u00e8 prevista nei prossimi giorni. La contatteremo per concordare modalit\u00e0 e orari.\n\nGrazie per la fiducia.\n\nCordiali saluti,\n" + _tnbFirma()
   },
   ringraziamento: {
     label: "\uD83D\uDE4F Ringraziamento",
     colore: "#2e7d32",
     target: ["clienti"],
-    oggetto: (dest) => "Grazie \u2014 Tenute Nonno Bruno",
-    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\nla ringraziamo per aver scelto il nostro olio.\n\nSperiamo che il prodotto risponda alle sue aspettative. Se desidera condividere un riscontro \u2014 positivo o costruttivo \u2014 lo accogliamo con piacere: ci aiuta a migliorare.\n\nSiamo a disposizione per qualsiasi necessit\u00e0, ri-ordini o formato diverso.\n\nA presto,\nIrene Paggetti\nTenute Nonno Bruno \u2014 Fattucchia, Bagno a Ripoli (FI)\nirene.paggetti@tenutenonnobruno.it | 338 1427611"
+    oggetto: (dest) => "Grazie \u2014 " + _tnbNome(),
+    corpo: (dest) => "Gentile " + (dest.referente || dest.nomeDisplay || "") + ",\n\nla ringraziamo per aver scelto il nostro olio.\n\nSperiamo che il prodotto risponda alle sue aspettative. Se desidera condividere un riscontro \u2014 positivo o costruttivo \u2014 lo accogliamo con piacere: ci aiuta a migliorare.\n\nSiamo a disposizione per qualsiasi necessit\u00e0, ri-ordini o formato diverso.\n\nA presto,\n" + _tnbFirma()
   }
 };
 
@@ -18987,9 +19122,12 @@ function PreventiviTab(p2){
       var doc=new window.jspdf.jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
       doc.setFillColor(46,58,28);doc.rect(0,0,210,22,"F");
       doc.setTextColor(240,212,131);doc.setFontSize(14);doc.setFont("helvetica","bold");
-      doc.text("Tenute Nonno Bruno",15,10);
+      // v53-golive: legge da dati.azienda
+      var _AZ_PV=getAzienda(dati);
+      doc.text(_AZ_PV.ragioneSociale||"Tenute Nonno Bruno",15,10);
       doc.setFontSize(8);doc.setFont("helvetica","normal");
-      doc.text("Olio EVO Biologico - Fattucchia, Bagno a Ripoli (FI)",15,16);
+      var _subPV=[_AZ_PV.payoff,aziendaIndirizzoFull(_AZ_PV)].filter(Boolean).join(" - ");
+      doc.text(_subPV||"Olio EVO Biologico - Fattucchia, Bagno a Ripoli (FI)",15,16);
       doc.setTextColor(46,44,40);doc.setFontSize(12);doc.setFont("helvetica","bold");
       doc.text("PREVENTIVO",15,32);
       doc.setFontSize(9);doc.setFont("helvetica","normal");
@@ -19014,7 +19152,7 @@ function PreventiviTab(p2){
       doc.setFont("helvetica","normal");doc.setFontSize(8);
       if(fPv.note)doc.text("Note: "+fPv.note,15,y);
       doc.setFontSize(7);doc.setTextColor(160,157,149);
-      doc.text("Tenute Nonno Bruno - tenutenonnobruno.it - P.IVA IT07267640485",15,287);
+      doc.text([(_AZ_PV.ragioneSociale||"Tenute Nonno Bruno"),(_AZ_PV.sito||"tenutenonnobruno.it"),"P.IVA "+(_AZ_PV.partitaIva||"IT07267640485")].join(" - "),15,287);
       var nome=(cl.insegna||cl.ragioneSociale||"prev").replace(/[^a-z0-9]/gi,"_").toLowerCase();
       doc.save("preventivo_"+nome+"_"+todayStr()+".pdf");
       if(logAction)logAction("Preventivo generato","preventivi",cl.ragioneSociale||"");
@@ -19255,10 +19393,13 @@ function ContrattiModule({
       doc.setTextColor(240, 212, 131);
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text("Tenute Nonno Bruno", 15, 10);
+      // v53-golive: legge da dati.azienda
+      const _AZ_C = getAzienda(dati);
+      doc.text(_AZ_C.ragioneSociale || "Tenute Nonno Bruno", 15, 10);
       doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
-      doc.text("Olio EVO Biologico · Fattucchia, Bagno a Ripoli (FI)", 15, 16);
+      const _subC = [_AZ_C.payoff, aziendaIndirizzoFull(_AZ_C)].filter(Boolean).join(" · ");
+      doc.text(_subC || "Olio EVO Biologico · Fattucchia, Bagno a Ripoli (FI)", 15, 16);
       // Body
       doc.setTextColor(46, 44, 40);
       doc.setFontSize(8.5);
@@ -19272,7 +19413,7 @@ function ContrattiModule({
         doc.text(`Pag. ${i} / ${pageCount}`, 190, 287, {
           align: "right"
         });
-        doc.text("Tenute Nonno Bruno · tenutenonnobruno.it · P.IVA IT07267640485", 20, 287);
+        doc.text([_AZ_C.ragioneSociale, _AZ_C.sito, "P.IVA " + (_AZ_C.partitaIva || "")].filter(Boolean).join(" · "), 20, 287);
       }
       const nome = (cliente2.insegna || cliente2.ragioneSociale || "contratto").replace(/[^a-z0-9]/gi, "_").toLowerCase();
       doc.save(`contratto_${nome}_${c.dataCreazione || todayStr()}.pdf`);
@@ -19288,20 +19429,23 @@ function ContrattiModule({
       month: "long",
       year: "numeric"
     });
+    // v53-golive: legge da dati.azienda
+    const _AZP = getAzienda(dati);
+    const _luogoIntestazione = [_AZP.indirizzo, _AZP.citta].filter(Boolean).join(", ") || "Fattucchia, Bagno a Ripoli";
     return `
 CONTRATTO DI ${(CONTRATTO_TIPI[c.tipo]?.label || c.tipo).toUpperCase()}
 ══════════════════════════════════════════════════════
 
-Fattucchia, Bagno a Ripoli — ${oggi2}
+${_luogoIntestazione} — ${oggi2}
 
 PARTI
 
 Fornitore
-Tenute Nonno Bruno
-Azienda Agricola Familiare
-Fattucchia, Bagno a Ripoli (FI) — 50012
-P.IVA IT07267640485
-tenutenonnobruno.it
+${_AZP.ragioneSociale || "Tenute Nonno Bruno"}
+${_AZP.formaSocietaria || "Azienda Agricola Familiare"}
+${aziendaIndirizzoFull(_AZP)}
+P.IVA ${_AZP.partitaIva || "IT07267640485"}
+${_AZP.sito || "tenutenonnobruno.it"}
 
 Acquirente / Distributore
 ${cliente.ragioneSociale || "—"}
@@ -19318,7 +19462,7 @@ L'acquirente si impegna a:
 • Vendere i prodotti entro la scadenza indicata: ${fmtD(c.scadenzaCV) || "—"}
 • Rendicontare le vendite con cadenza mensile
 • Restituire l'invenduto entro la scadenza
-• Liquidare il dovuto entro ${c.giorniPagamento || 30} giorni dalla rendicontazione` : c.tipo === "distribuzione" ? `Il fornitore concede all'acquirente la distribuzione dei prodotti Tenute Nonno Bruno
+• Liquidare il dovuto entro ${c.giorniPagamento || 30} giorni dalla rendicontazione` : c.tipo === "distribuzione" ? `Il fornitore concede all'acquirente la distribuzione dei prodotti ${_AZP.ragioneSociale || "Tenute Nonno Bruno"}
 nelle seguenti aree geografiche: ${c.areaDist || "—"}
 Durata: ${fmtD(c.dataInizio) || "—"} — ${fmtD(c.dataFine) || "—"}
 Obiettivo minimo: ${c.obiettivoMin || "—"}` : `Il fornitore cede all'acquirente i prodotti indicati alle condizioni seguenti.
@@ -19337,15 +19481,15 @@ TOTALE IVA INCL.:   ${fmt((c.righe || []).reduce((s, r) => s + r.qta * r.prezzoU
 ══════════════════════════════════════════════════════
 CONDIZIONI GENERALI
 
-• I prodotti sono certificati biologici (IT-BIO-013)
+• I prodotti sono certificati biologici (${_AZP.certificazioneBio || "IT-BIO-013"})
 • Il fornitore garantisce la qualità e la conformità alla normativa vigente
-• Foro competente: Tribunale di Firenze
+• Foro competente: ${_AZP.foroCompetente || "Tribunale di Firenze"}
 • Legge applicabile: Diritto italiano
 
 ══════════════════════════════════════════════════════
 FIRME
 
-Per Tenute Nonno Bruno                    Per ${(cliente.insegna || cliente.ragioneSociale || "").slice(0, 30)}
+Per ${(_AZP.ragioneSociale || "Tenute Nonno Bruno").padEnd(30)} Per ${(cliente.insegna || cliente.ragioneSociale || "").slice(0, 30)}
 
 _______________________                   _______________________
 Data: ___/___/______                      Data: ___/___/______
@@ -20100,6 +20244,82 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
         })
       )
     }),
+    // ── DATI AZIENDALI (GL2 / v53-golive) ──
+    // Form per editare `dati.azienda`. Usato da PDF generators + email templates.
+    // Helper updateAzienda mantiene merge non-distruttivo.
+    (function() {
+      const az = (dati.azienda || AZIENDA_DEFAULTS);
+      const updateAzienda = (patch) => setDati(d => ({ ...d, azienda: { ...AZIENDA_DEFAULTS, ...(d.azienda || {}), ...patch } }));
+      const grid2 = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };
+      const grid3 = { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 };
+      return /*#__PURE__*/React.createElement(Card, {
+        style: { marginTop: 16 },
+        ch: /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 13, marginBottom: 4, color: C.grigio600, letterSpacing: 0.5 } }, "🏢 DATI AZIENDALI"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, marginBottom: 14 } },
+            "Questi valori compaiono in PDF (ordini, contratti, preventivi, privacy) ed email. Modificali prima del go-live cliente."),
+          // Riga 1 — ragione sociale + forma
+          /*#__PURE__*/React.createElement("div", { style: grid2 },
+            /*#__PURE__*/React.createElement(Inp, { label: "Ragione sociale", v: az.ragioneSociale, on: v => updateAzienda({ ragioneSociale: v }) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Forma societaria", v: az.formaSocietaria, on: v => updateAzienda({ formaSocietaria: v }), ph: "es. Azienda Agricola Familiare" })
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { height: 12 } }),
+          // Riga 2 — indirizzo
+          /*#__PURE__*/React.createElement("div", { style: grid2 },
+            /*#__PURE__*/React.createElement(Inp, { label: "Indirizzo / Località", v: az.indirizzo, on: v => updateAzienda({ indirizzo: v }) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Città", v: az.citta, on: v => updateAzienda({ citta: v }) })
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { height: 12 } }),
+          // Riga 3 — CAP, Provincia, Paese
+          /*#__PURE__*/React.createElement("div", { style: grid3 },
+            /*#__PURE__*/React.createElement(Inp, { label: "CAP", v: az.cap, on: v => updateAzienda({ cap: v }) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Provincia (sigla)", v: az.provincia, on: v => updateAzienda({ provincia: v }), ph: "FI" }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Paese", v: az.paese, on: v => updateAzienda({ paese: v }) })
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { height: 12 } }),
+          // Riga 4 — P.IVA + CF
+          /*#__PURE__*/React.createElement("div", { style: grid2 },
+            /*#__PURE__*/React.createElement(Inp, { label: "Partita IVA", v: az.partitaIva, on: v => updateAzienda({ partitaIva: v }), ph: "IT00000000000" }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Codice Fiscale", v: az.codiceFiscale, on: v => updateAzienda({ codiceFiscale: v }) })
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { height: 12 } }),
+          // Riga 5 — sito + email + telefono
+          /*#__PURE__*/React.createElement("div", { style: grid3 },
+            /*#__PURE__*/React.createElement(Inp, { label: "Sito web", v: az.sito, on: v => updateAzienda({ sito: v }) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Email aziendale", v: az.email, on: v => updateAzienda({ email: v }) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Telefono", v: az.telefono, on: v => updateAzienda({ telefono: v }) })
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { height: 12 } }),
+          // Riga 6 — payoff + certificazione + foro
+          /*#__PURE__*/React.createElement("div", { style: grid3 },
+            /*#__PURE__*/React.createElement(Inp, { label: "Payoff / Settore", v: az.payoff, on: v => updateAzienda({ payoff: v }), ph: "Olio EVO Biologico" }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Certificazione bio", v: az.certificazioneBio, on: v => updateAzienda({ certificazioneBio: v }), ph: "IT-BIO-013" }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Foro competente", v: az.foroCompetente, on: v => updateAzienda({ foroCompetente: v }), ph: "Tribunale di Firenze" })
+          ),
+          // Sezione referente
+          /*#__PURE__*/React.createElement("div", { style: { height: 18 } }),
+          /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 12, marginBottom: 4, color: C.grigio600, letterSpacing: 0.5 } }, "👤 REFERENTE COMMERCIALE"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, marginBottom: 12 } },
+            "Firma email di default e contatto cliente."),
+          /*#__PURE__*/React.createElement("div", { style: grid2 },
+            /*#__PURE__*/React.createElement(Inp, { label: "Nome e cognome", v: az.referenteNome, on: v => updateAzienda({ referenteNome: v }) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Ruolo", v: az.referenteRuolo, on: v => updateAzienda({ referenteRuolo: v }), ph: "Key Account Manager" })
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { height: 12 } }),
+          /*#__PURE__*/React.createElement("div", { style: grid2 },
+            /*#__PURE__*/React.createElement(Inp, { label: "Email referente", v: az.referenteEmail, on: v => updateAzienda({ referenteEmail: v }) }),
+            /*#__PURE__*/React.createElement(Inp, { label: "Telefono referente", v: az.referenteTelefono, on: v => updateAzienda({ referenteTelefono: v }) })
+          ),
+          // Preview
+          /*#__PURE__*/React.createElement("div", { style: { marginTop: 18, padding: 12, background: "#f4f3ef", borderRadius: 6, border: `1px solid ${C.grigio200}` } },
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginBottom: 6, letterSpacing: 0.5 } }, "ANTEPRIMA INTESTAZIONE PDF / EMAIL"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#2e3a1c" } }, az.ragioneSociale || "—"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, marginTop: 2 } }, [az.payoff, aziendaIndirizzoFull(az)].filter(Boolean).join(" · ")),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, marginTop: 2 } }, [az.sito, az.partitaIva ? "P.IVA " + az.partitaIva : "", az.email].filter(Boolean).join(" · "))
+          )
+        )
+      });
+    })(),
     // ── DANGER ZONE (solo Super Admin) ──
     isSuperAdmin && /*#__PURE__*/React.createElement("div", {
       style: { marginTop: 24, background: "#fff5f4", border: "2px solid #c0392b", borderRadius: 10, padding: 18 }
