@@ -21272,12 +21272,14 @@ function ListinoPage({ dati, setDati }) {
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.olivaScuro, letterSpacing: 0.5, marginBottom: 6 } }, "\u270F\uFE0F SCAGLIONI HORECA"),
       (draft.scaglioni || []).map((s, idx) => /*#__PURE__*/React.createElement("div", {
         key: idx,
-        style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 6, marginBottom: 4 }
+        // Fix overflow: minWidth:0 sulla grid permette alle colonne 1fr di scendere sotto
+        // la min-width intrinseca degli input number (che altrimenti spingono il cestino fuori dal Card).
+        style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 6, marginBottom: 4, minWidth: 0 }
       },
-        /*#__PURE__*/React.createElement("input", { type: "number", value: s.colli, onChange: e => updScaglione(idx, "colli", e.target.value), placeholder: "Colli", style: { padding: "3px 6px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11 } }),
-        /*#__PURE__*/React.createElement("input", { type: "number", value: s.qta, onChange: e => updScaglione(idx, "qta", e.target.value), placeholder: "Qta", style: { padding: "3px 6px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11 } }),
-        /*#__PURE__*/React.createElement("input", { type: "number", step: 0.01, value: s.prezzo, onChange: e => updScaglione(idx, "prezzo", e.target.value), placeholder: "\u20AC/pz", style: { padding: "3px 6px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11 } }),
-        /*#__PURE__*/React.createElement("button", { type: "button", onClick: () => removeScaglione(idx), style: { padding: "2px 8px", border: `1px solid ${C.rosso}44`, background: "#fff", color: C.rosso, borderRadius: 4, fontSize: 12, cursor: "pointer", fontWeight: 700 } }, "\uD83D\uDDD1")
+        /*#__PURE__*/React.createElement("input", { type: "number", value: s.colli, onChange: e => updScaglione(idx, "colli", e.target.value), placeholder: "Colli", style: { padding: "3px 6px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, width: "100%", minWidth: 0, boxSizing: "border-box" } }),
+        /*#__PURE__*/React.createElement("input", { type: "number", value: s.qta, onChange: e => updScaglione(idx, "qta", e.target.value), placeholder: "Qta", style: { padding: "3px 6px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, width: "100%", minWidth: 0, boxSizing: "border-box" } }),
+        /*#__PURE__*/React.createElement("input", { type: "number", step: 0.01, value: s.prezzo, onChange: e => updScaglione(idx, "prezzo", e.target.value), placeholder: "\u20AC/pz", style: { padding: "3px 6px", border: `1px solid ${C.grigio200}`, borderRadius: 4, fontSize: 11, width: "100%", minWidth: 0, boxSizing: "border-box" } }),
+        /*#__PURE__*/React.createElement("button", { type: "button", onClick: () => removeScaglione(idx), title: "Elimina scaglione", style: { padding: "2px 8px", border: `1px solid ${C.rosso}44`, background: "#fff", color: C.rosso, borderRadius: 4, fontSize: 12, cursor: "pointer", fontWeight: 700, flexShrink: 0 } }, "\uD83D\uDDD1")
       )),
       /*#__PURE__*/React.createElement("button", {
         type: "button",
