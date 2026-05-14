@@ -20061,7 +20061,7 @@ Data: ___/___/______                      Data: ___/___/______
 function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
   const imp = dati.impostazioni || {};
   const isSuperAdmin = currentUser?.role === "superadmin";
-  const [dangerBusy, setDangerBusy] = useState(null); // null | "ordini" | "reset" | "firme"
+  const [dangerBusy, setDangerBusy] = useState(null); // null | "ordini" | "reset" | "firme" | "golive"
   return /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement(SH, { title: "⚙ Impostazioni" }),
     /*#__PURE__*/React.createElement(Card, {
@@ -20214,6 +20214,100 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
             },
             style: { padding: "8px 14px", border: "1.5px solid #c0392b", background: dangerBusy === "reset" ? "#f0f0ec" : "#c0392b", color: "#fff", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: dangerBusy === "reset" ? "wait" : "pointer" }
           }, dangerBusy === "reset" ? "⏳ Reset in corso..." : "Reset totale")
+        )
+      ),
+      // F3 (2026-05-14): RESET GO-LIVE — pulizia dati di test conservando config + migrazioni
+      /*#__PURE__*/React.createElement("div", { style: { marginTop: 10, padding: 12, background: "#fff", borderRadius: 8, border: "1.5px solid #1976d2" } },
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" } },
+          /*#__PURE__*/React.createElement("div", { style: { flex: "1 1 60%", minWidth: 240 } },
+            /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: "#0d47a1" } }, "🚀 RESET GO-LIVE — pulizia dati di test"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, marginTop: 4, lineHeight: 1.5 } },
+              "Cancella TUTTI i dati di test (clienti, ordini, magazzino, lotti, fornitori, contratti, prospect, listino, agenda, mailing, log, costi config).",
+              /*#__PURE__*/React.createElement("br", null),
+              /*#__PURE__*/React.createElement("strong", null, "Mantiene: "), "configurazione azienda, impostazioni utente, tutti i flag di migrazione.",
+              /*#__PURE__*/React.createElement("br", null),
+              "Cancella anche firme/DDT/fatture/documenti fornitori/documenti contratti su Storage.",
+              /*#__PURE__*/React.createElement("br", null),
+              /*#__PURE__*/React.createElement("strong", { style: { color: "#c0392b" } }, "IRREVERSIBILE. "), "Esegui un backup (export JSON) prima di procedere."
+            )
+          ),
+          /*#__PURE__*/React.createElement("button", {
+            type: "button",
+            disabled: dangerBusy === "golive",
+            onClick: () => {
+              const n = (dati.ordini || []).length;
+              const c = (dati.clienti || []).length;
+              const l = (dati.lotti || []).length;
+              const f = (dati.fornitori || []).length;
+              window.tnbConfirm(
+                "⚠️ RESET GO-LIVE: cancellerò tutti i dati di test (" + c + " clienti, " + n + " ordini, " + l + " lotti, " + f + " fornitori, + magazzino/listino/contratti/prospect/agenda/mailing/log/costi). Manterrò solo configurazione azienda + impostazioni + flag migrazione. Cancellerò anche tutti i documenti su Storage. IRREVERSIBILE.",
+                async function() {
+                  // Doppia conferma — pattern già usato nel prompt utente
+                  window.tnbConfirm(
+                    "🔴 CONFERMA DEFINITIVA: tutti i dati di test verranno eliminati. Hai esportato un backup JSON dal modulo Impostazioni? Continuare?",
+                    async function() {
+                      setDangerBusy("golive");
+                      try {
+                        // 1. Raccogli TUTTI i path su Storage
+                        const paths = [];
+                        (dati.ordini || []).forEach(o => {
+                          if (o.firma && o.firma.path) paths.push({ p: o.firma.path, type: "firma" });
+                          (Array.isArray(o.ddt) ? o.ddt : (o.ddt ? [o.ddt] : [])).forEach(d => { if (d && d.path) paths.push({ p: d.path, type: "doc" }); });
+                          (o.fatture || []).forEach(fat => { if (fat && fat.path) paths.push({ p: fat.path, type: "doc" }); });
+                        });
+                        (dati.fornitori || []).forEach(f => {
+                          (f.documenti || []).forEach(d => { if (d && d.path) paths.push({ p: d.path, type: "doc" }); });
+                        });
+                        (dati.contratti || []).forEach(c => {
+                          (c.documenti || []).forEach(d => { if (d && d.path) paths.push({ p: d.path, type: "doc" }); });
+                        });
+                        if (paths.length > 0 && window.tnbStorage) {
+                          await Promise.all(paths.map(x =>
+                            (x.type === "firma" ? window.tnbStorage.deleteFirma(x.p) : window.tnbStorage.deleteDocumento(x.p)).catch(_=>{})
+                          ));
+                        }
+                        // 2. Reset dati conservando azienda + impostazioni + tutti i flag _migration_*
+                        setDati(d => {
+                          const nuovo = {};
+                          nuovo.azienda = d.azienda || {};
+                          nuovo.impostazioni = d.impostazioni || {};
+                          // Conserva qualsiasi flag _migration_*
+                          Object.keys(d).forEach(k => {
+                            if (k.startsWith("_migration_")) nuovo[k] = d[k];
+                          });
+                          // Reset entità di business
+                          nuovo.clienti = [];
+                          nuovo.ordini = [];
+                          nuovo.movimenti = [];
+                          nuovo.magazzino = [];
+                          nuovo.lotti = [];
+                          nuovo.bottiglie = [];
+                          nuovo.listino = [];
+                          nuovo.fornitori = [];
+                          nuovo.prospect = [];
+                          nuovo.contratti = [];
+                          nuovo.agenda = [];
+                          nuovo.mailing = [];
+                          nuovo.log = [];
+                          nuovo.costiConfig = { costiStruttura: [], vociExtra: [] };
+                          return nuovo;
+                        });
+                        if (logAction) logAction("RESET GO-LIVE (SuperAdmin)", "impostazioni",
+                          "Dati di test cancellati: " + c + " clienti, " + n + " ordini, " + l + " lotti, " + f + " fornitori. " +
+                          paths.length + " file Storage rimossi. Conservati: azienda, impostazioni, flag migrazione.");
+                        if (window.tnbToast) window.tnbToast("✅ Reset Go-Live completato. " + paths.length + " file rimossi da Storage.");
+                      } finally {
+                        setDangerBusy(null);
+                      }
+                    },
+                    { title: "🔴 Conferma definitiva", okLabel: "Sì, cancella tutto", danger: true }
+                  );
+                },
+                { title: "🚀 RESET GO-LIVE", okLabel: "Procedi", danger: true }
+              );
+            },
+            style: { padding: "8px 14px", border: "1.5px solid #1976d2", background: dangerBusy === "golive" ? "#f0f0ec" : "#1976d2", color: "#fff", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: dangerBusy === "golive" ? "wait" : "pointer" }
+          }, dangerBusy === "golive" ? "⏳ Reset in corso..." : "🚀 Reset Go-Live")
         )
       )
     )
