@@ -6428,7 +6428,60 @@ function Pipeline({
   };
   const stati = ["da_contattare","in_trattativa","interessato","acquisito","non_interessato","in_sospeso"];
   const CANALI_LABEL = {fiera:"Fiera",call_diretta:"Call",contatto_aziendale:"Aziendale",web:"Web",passaparola:"Passaparola",email:"Email",visita:"Visita",altro:"Altro"};
-  const convertToCliente = (p) => { if(!window.confirm("Convertire "+p.ragioneSociale+" in cliente?")) return; setDati(d=>({...d,clienti:[...d.clienti,{id:uid(),ragioneSociale:p.ragioneSociale,insegna:p.insegna||p.ragioneSociale,referente:p.referente||"",email:p.email||"",telefono:p.telefono||"",indirizzo:p.indirizzo||"",tipo:p.tipo||"horeca",canale:p.canale||"irene",piva:p.piva||""}],prospect:d.prospect.map(x=>x.id===p.id?{...x,stato:"acquisito"}:x)})); if(logAction) logAction("Prospect->Cliente","pipeline",p.ragioneSociale); };
+  // v53-golive (GL4): pipeline "Converti in Cliente" — disponibile da qualsiasi stato,
+  // usa tnbConfirm, rileva doppioni (P.IVA o ragione sociale identica), carry-over
+  // di più campi dal prospect. onDone() opzionale per chiudere modali del chiamante.
+  const convertToCliente = (p, onDone) => {
+    if (!p) return;
+    // Duplicate detection — match su P.IVA (se presente) o ragioneSociale (case/space-insensitive)
+    const norm = s => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+    const pivaP = String(p.piva || "").trim();
+    const rsP = norm(p.ragioneSociale);
+    const dup = (dati.clienti || []).find(c =>
+      (pivaP && String(c.piva || "").trim() === pivaP) ||
+      (rsP && norm(c.ragioneSociale) === rsP)
+    );
+    const doConvert = () => {
+      setDati(d => ({
+        ...d,
+        clienti: [...(d.clienti || []), {
+          id: uid(),
+          ragioneSociale: p.ragioneSociale || "",
+          insegna: p.insegna || p.ragioneSociale || "",
+          referente: p.referente || "",
+          email: p.email || "",
+          telefono: p.telefono || "",
+          indirizzo: p.indirizzo || "",
+          tipo: p.tipo || "horeca",
+          canale: p.canale || "irene",
+          piva: p.piva || "",
+          pec: p.pec || "",
+          codiceFiscale: p.codiceFiscale || "",
+          note: p.note ? "[Da prospect] " + p.note : "",
+          _fromProspectId: p.id,
+          _conversionDate: todayStr()
+        }],
+        prospect: (d.prospect || []).map(x => x.id === p.id ? { ...x, stato: "acquisito", dataConversione: todayStr() } : x)
+      }));
+      if (logAction) logAction("Prospect → Cliente", "pipeline", p.ragioneSociale + (dup ? " (FORZATO con doppione)" : ""));
+      if (window.tnbToast) window.tnbToast("✅ " + p.ragioneSociale + " convertito in cliente");
+      if (typeof onDone === "function") onDone();
+    };
+    if (dup) {
+      window.tnbConfirm(
+        "⚠️ Doppione rilevato: esiste già un cliente '" + (dup.insegna || dup.ragioneSociale) + "'" +
+        (dup.piva ? " (P.IVA " + dup.piva + ")" : "") + ".\n\nProcedere comunque con la conversione di '" + p.ragioneSociale + "'? Verrà creato un secondo record cliente.",
+        doConvert,
+        { title: "Doppione potenziale", okLabel: "Crea comunque", danger: true }
+      );
+    } else {
+      window.tnbConfirm(
+        "Convertire '" + p.ragioneSociale + "' da prospect a cliente? Il prospect verrà marcato come 'acquisito' e verrà creato un nuovo record cliente con i dati anagrafici copiati.",
+        doConvert,
+        { title: "Converti in Cliente", okLabel: "Converti", danger: false }
+      );
+    }
+  };
   const filtered = dati.prospect.filter(p => {
     if (!filter) return true;
     const q = filter.toLowerCase();
@@ -6728,11 +6781,19 @@ function Pipeline({
       v: "dan",
       sz: "sm",
       onClick: () => { delProspect(detail.id); setDetailId(null); }
-    })), detail.stato === "acquisito" && /*#__PURE__*/React.createElement("div", { style: { borderTop: `1px solid ${C.grigio200}`, paddingTop: 10, marginTop: 4 } },
+    })),
+    // v53-golive (GL4): "Converti in Cliente" disponibile da QUALSIASI stato attivo
+    // (escluso "non_interessato"). Etichetta cambia se il prospect è già acquisito.
+    detail.stato !== "non_interessato" && /*#__PURE__*/React.createElement("div", { style: { borderTop: `1px solid ${C.grigio200}`, paddingTop: 10, marginTop: 4 } },
       /*#__PURE__*/React.createElement(Btn, {
-        ch: "✅ Sposta in Clienti",
-        onClick: () => { convertToCliente(detail); setDetailId(null); window.alert('✅ Prospect convertito in cliente'); }
-      })
+        ch: detail.stato === "acquisito" ? "✅ Crea record Cliente" : "✅ Converti in Cliente",
+        onClick: () => convertToCliente(detail, () => setDetailId(null))
+      }),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 6, marginLeft: 2 } },
+        detail.stato === "acquisito"
+          ? "Crea il record cliente nella sezione Clienti. Useremo tnbConfirm per la conferma."
+          : "Crea il record cliente nella sezione Clienti. Il prospect verrà marcato come 'acquisito'. Rileva doppioni su P.IVA / Ragione Sociale."
+      )
     ))
   }), modal === "doppioni" && /*#__PURE__*/React.createElement(Modal, {
     title: "🔍 Scansione doppioni prospect",
@@ -18262,7 +18323,52 @@ function AlertsPage({
       icon: "⏰",
       color: C.giallo
     };
-  })];
+  }),
+  // v53-golive (GL4): Lotti senza imbottigliamento da >30gg dalla frangitura
+  // (rischio ossidazione / valore commerciale fermo nel serbatoio).
+  ...(dati.lotti || []).filter(l => {
+    if (!l.dataFrangitura) return false;
+    const imb = Array.isArray(l.imbottigliamenti) ? l.imbottigliamenti : [];
+    if (imb.length > 0) return false; // già imbottigliato almeno una volta
+    const gg = Math.floor((new Date(oggi) - new Date(l.dataFrangitura)) / 86400000);
+    return gg > 30;
+  }).map(l => {
+    const gg = Math.floor((new Date(oggi) - new Date(l.dataFrangitura)) / 86400000);
+    return {
+      id: "lotto_noimb_" + l.id,
+      tipo: "lotto_imbott_pending",
+      priorita: "media",
+      titolo: `Lotto ${l.annata || l.id} senza imbottigliamento`,
+      desc: `Frangitura il ${fmtD(l.dataFrangitura)} (${gg} giorni fa) — ${l.qtaOlio || 0} L in attesa di imbottigliamento`,
+      cta: "Vai a Produzione",
+      modulo: "produzione",
+      targetId: l.id,
+      icon: "🫒",
+      color: C.arancio
+    };
+  }),
+  // v53-golive (GL4): Bottiglie (BOM) senza prezzo listino — usabili per produzione
+  // ma non vendibili. Match formato vs dati.listino[].prezzoBase.
+  ...(dati.bottiglie || []).filter(b => {
+    const fmt = String(b.formato || "").toLowerCase().replace(/\s+/g, " ").trim();
+    if (!fmt) return false;
+    const entry = (dati.listino || []).find(l => {
+      const lf = String(l.formato || "").toLowerCase().replace(/\s+/g, " ").trim();
+      return lf === fmt && l.attivo !== false;
+    });
+    return !entry || !entry.prezzoBase || entry.prezzoBase <= 0;
+  }).map(b => ({
+    id: "bot_noprice_" + b.id,
+    tipo: "bottiglia_no_listino",
+    priorita: "media",
+    titolo: `Bottiglia ${b.formato} senza prezzo listino`,
+    desc: `Anagrafica BOM presente ma manca il prezzo base in listino — non vendibile`,
+    cta: "Vai a Listino",
+    modulo: "listino",
+    targetId: b.id,
+    icon: "🏷️",
+    color: C.arancio
+  }))];
   const alertsDedup = (() => { const result=[]; const cg={}; alerts.forEach(a => { if((a.tipo==="firma"||a.tipo==="pagamento")&&a.clienteId){const key=a.tipo+"_"+a.clienteId; if(!cg[key]){cg[key]={...a,_ordini:[a]};result.push(cg[key]);}else{cg[key]._ordini.push(a);const cl=dati.clienti.find(c=>c.id===a.clienteId);const nome=cl?.insegna||cl?.ragioneSociale||"Cliente";cg[key].titolo=(a.tipo==="firma"?"Da firmare: ":"Da riscuotere: ")+nome;cg[key].desc=cg[key]._ordini.length+" ordini";cg[key].targetId=null;}}else{result.push(a);}});return result;})();
   const byPriorita = {
     alta: alertsDedup.filter(a => a.priorita === "alta"),
