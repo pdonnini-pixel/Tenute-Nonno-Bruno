@@ -19085,6 +19085,10 @@ function ContrattiModule({
   setDati,
   logAction
 }) {
+  // F2 (2026-05-14): modulo Contratti in fase di attivazione — UI in sola lettura.
+  // Il codice di create/edit/delete è preservato ma disabilitato a livello di UI.
+  // Per riattivare il modulo, mettere READONLY_MODE = false.
+  const READONLY_MODE = true;
   const [tab, setTab] = useState("lista");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
@@ -19372,7 +19376,7 @@ Data: ___/___/______                      Data: ___/___/______
   const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml"];
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83D\uDCDD Contratti",
-    action: /*#__PURE__*/React.createElement(Btn, {
+    action: READONLY_MODE ? null : /*#__PURE__*/React.createElement(Btn, {
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Nuovo contratto"),
       sz: "sm",
       onClick: () => {
@@ -19384,7 +19388,30 @@ Data: ___/___/______                      Data: ___/___/______
         setModal("new");
       }
     })
-  }), /*#__PURE__*/React.createElement(PageSummary, { items: (() => {
+  }),
+  // F2: banner read-only mode
+  READONLY_MODE && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 16px",
+      background: "#e3f2fd",
+      border: "1px solid #90caf9",
+      borderLeft: "4px solid #1976d2",
+      borderRadius: 8,
+      marginBottom: 14,
+      fontSize: 13,
+      color: "#0d47a1",
+      display: "flex",
+      alignItems: "center",
+      gap: 10
+    }
+  },
+    /*#__PURE__*/React.createElement("span", { style: { fontSize: 18 } }, "\u2139\uFE0F"),
+    /*#__PURE__*/React.createElement("span", null,
+      /*#__PURE__*/React.createElement("strong", null, "Modulo Contratti in fase di attivazione"),
+      " \u2014 solo consultazione. Creazione, modifica ed eliminazione sono temporaneamente disabilitate."
+    )
+  ),
+  /*#__PURE__*/React.createElement(PageSummary, { items: (() => {
     // v53-golive: KPI estesi su scadenza/rinnovo/valore
     const c = dati.contratti || [];
     const oggiStr = todayStr();
@@ -19548,6 +19575,7 @@ Data: ___/___/______                      Data: ___/___/______
               }
             }), /*#__PURE__*/React.createElement("select", {
               value: c.stato || "bozza",
+              disabled: READONLY_MODE, // F2: read-only mode
               onChange: e => setDati(d => ({
                 ...d,
                 contratti: (d.contratti || []).map(x => x.id === c.id ? {
@@ -19560,8 +19588,9 @@ Data: ___/___/______                      Data: ___/___/______
                 border: `1px solid ${C.grigio200}`,
                 borderRadius: 4,
                 padding: "2px 5px",
-                background: C.bianco,
-                cursor: "pointer"
+                background: READONLY_MODE ? C.grigio100 : C.bianco,
+                cursor: READONLY_MODE ? "not-allowed" : "pointer",
+                opacity: READONLY_MODE ? 0.6 : 1
               }
             }, Object.entries(STATI).map(([k, v]) => /*#__PURE__*/React.createElement("option", {
               key: k,
@@ -19614,7 +19643,7 @@ Data: ___/___/______                      Data: ___/___/______
         color: "#fff",
         border: "none"
       }
-    })), /*#__PURE__*/React.createElement(Btn, {
+    })), !READONLY_MODE && /*#__PURE__*/React.createElement(Btn, {
       ch: "\u2705 Segna come firmato",
       onClick: () => {
         setDati(d => ({
@@ -19628,7 +19657,9 @@ Data: ___/___/______                      Data: ___/___/______
       }
     })))
   }), (modal === "new" || modal === "edit") && /*#__PURE__*/React.createElement(Modal, {
-    title: modal === "new" ? "Nuovo Contratto" : "Modifica Contratto",
+    title: READONLY_MODE
+      ? "Contratto (sola lettura)"
+      : (modal === "new" ? "Nuovo Contratto" : "Modifica Contratto"),
     onClose: () => setModal(null),
     wide: true,
     ch: /*#__PURE__*/React.createElement("div", {
@@ -19638,6 +19669,24 @@ Data: ___/___/______                      Data: ___/___/______
         gap: 14
       }
     },
+      // F2: banner read-only dentro al modal
+      READONLY_MODE && /*#__PURE__*/React.createElement("div", {
+        style: {
+          padding: "10px 12px",
+          background: "#e3f2fd",
+          border: "1px solid #90caf9",
+          borderLeft: "3px solid #1976d2",
+          borderRadius: 6,
+          fontSize: 12,
+          color: "#0d47a1"
+        }
+      }, "ℹ️ Modulo in fase di attivazione — i campi sono visibili ma non modificabili."),
+      // F2: wrapper read-only su tutti i campi del form (pointerEvents:none + opacity)
+      /*#__PURE__*/React.createElement("div", {
+        style: READONLY_MODE
+          ? { display: "flex", flexDirection: "column", gap: 14, pointerEvents: "none", opacity: 0.65, filter: "grayscale(0.2)", userSelect: "text" }
+          : { display: "flex", flexDirection: "column", gap: 14 }
+      },
       // v53-golive: selector tipo controparte (cliente o fornitore)
       /*#__PURE__*/React.createElement("div", {
         style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }
@@ -19979,8 +20028,10 @@ Data: ___/___/______                      Data: ___/___/______
     ),
     !form.id && /*#__PURE__*/React.createElement("div", {
       style: { padding: "8px 12px", background: "#fff8e1", borderRadius: 6, fontSize: 11, color: "#7a5900", borderLeft: `3px solid ${C.oro}` }
-    }, "📎 Salva il contratto per poter allegare documenti."),
+    }, "📎 Salva il contratto per poter allegare documenti.")
+    ), // F2: chiude wrapper read-only (campi disabilitati)
     // v53-golive: Footer con Annulla + Elimina (se form.id) + Salva
+    // F2: in read-only mode mostra solo "Chiudi"; nascondi delete e save.
     /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
@@ -19990,16 +20041,16 @@ Data: ___/___/______                      Data: ___/___/______
         paddingTop: 14
       }
     },
-      form.id && /*#__PURE__*/React.createElement(Btn, {
+      !READONLY_MODE && form.id && /*#__PURE__*/React.createElement(Btn, {
         ch: "🗑 Elimina contratto", v: "dan", sz: "sm",
         style: { marginRight: "auto" },
         onClick: deleteContratto
       }),
       /*#__PURE__*/React.createElement(Btn, {
-      ch: "Annulla",
+      ch: READONLY_MODE ? "Chiudi" : "Annulla",
       v: "sec",
       onClick: () => setModal(null)
-    }), /*#__PURE__*/React.createElement(Btn, {
+    }), !READONLY_MODE && /*#__PURE__*/React.createElement(Btn, {
       ch: "Salva contratto",
       onClick: saveContratto
     })))
