@@ -5881,12 +5881,15 @@ function Dashboard({
       name: clientiMap[id]?.insegna || clientiMap[id]?.ragioneSociale || id,
       rev: Math.round(rev)
     }));
+    // v53-golive (GL3): bucket esplicito per clienti senza canale assegnato,
+    // così evitiamo il "undefined" pollution nel grafico.
     const canaleMap = {};
     dati.clienti.forEach(c => {
-      canaleMap[c.canale] = (canaleMap[c.canale] || 0) + 1;
+      const k = c.canale || "_nessuno_";
+      canaleMap[k] = (canaleMap[k] || 0) + 1;
     });
     const byC = Object.entries(canaleMap).map(([k, v]) => ({
-      name: CANALE[k] || k,
+      name: k === "_nessuno_" ? "Non assegnato" : (CANALE[k] || k),
       value: v
     }));
     const byM = Object.entries(mesiMap).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => ({
@@ -5898,8 +5901,16 @@ function Dashboard({
       formato: k.replace(" (latta)", ""),
       rev: Math.round(v)
     }));
-    const mF = Object.entries(dati.costiConfig.voci).map(([fmt]) => {
-      const sku = dati.magazzino.find(m => m.formato === fmt && m.annata === "2025");
+    // v53-golive (GL3): annata corrente dinamica = max annata presente in magazzino,
+    // fallback all'anno corrente. Evita hardcoded "2025" che invecchia.
+    const _annate = (dati.magazzino || []).map(m => String(m.annata || "")).filter(Boolean);
+    const _annataCorrente = _annate.length > 0
+      ? _annate.sort().slice(-1)[0]
+      : String(new Date().getFullYear());
+    // v53-golive (GL3): difesa contro costiConfig.voci undefined (post-reset Go-Live)
+    const _voci = (dati.costiConfig && dati.costiConfig.voci) || {};
+    const mF = Object.entries(_voci).map(([fmt]) => {
+      const sku = (dati.magazzino || []).find(m => m.formato === fmt && m.annata === _annataCorrente);
       const prezzoL = sku?.prezzoListino || 0;
       const costo = costoFormatoTot(fmt, dati);
       return {
@@ -20316,6 +20327,163 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#2e3a1c" } }, az.ragioneSociale || "—"),
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, marginTop: 2 } }, [az.payoff, aziendaIndirizzoFull(az)].filter(Boolean).join(" · ")),
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, marginTop: 2 } }, [az.sito, az.partitaIva ? "P.IVA " + az.partitaIva : "", az.email].filter(Boolean).join(" · "))
+          )
+        )
+      });
+    })(),
+    // ── BACKUP / RESTORE JSON (GL3 / v53-golive) ──
+    // Esporta tutto il `dati` corrente come file JSON scaricabile.
+    // Importa un file JSON precedente (con doppia conferma) e sostituisce
+    // lo stato attuale. Critico per il workflow go-live:
+    //   1) Esporta backup pre-import dati reali
+    //   2) (opzionale) Reset Go-Live se fallisce qualcosa
+    //   3) Importa il backup
+    (function() {
+      const exportBackup = () => {
+        try {
+          const ora = new Date();
+          const stamp = ora.getFullYear() + "-" +
+            String(ora.getMonth() + 1).padStart(2, "0") + "-" +
+            String(ora.getDate()).padStart(2, "0") + "_" +
+            String(ora.getHours()).padStart(2, "0") +
+            String(ora.getMinutes()).padStart(2, "0");
+          const payload = {
+            _tnbBackup: {
+              version: "v53-golive",
+              exportedAt: ora.toISOString(),
+              schemaVersion: "tnb-pro-v2",
+              counts: {
+                clienti: (dati.clienti || []).length,
+                ordini: (dati.ordini || []).length,
+                magazzino: (dati.magazzino || []).length,
+                lotti: (dati.lotti || []).length,
+                fornitori: (dati.fornitori || []).length,
+                contratti: (dati.contratti || []).length,
+                prospect: (dati.prospect || []).length
+              }
+            },
+            dati: dati
+          };
+          const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "tnb_backup_" + stamp + ".json";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          if (logAction) logAction("Backup JSON esportato", "impostazioni",
+            payload._tnbBackup.counts.clienti + " clienti, " + payload._tnbBackup.counts.ordini + " ordini, " + payload._tnbBackup.counts.lotti + " lotti");
+          if (window.tnbToast) window.tnbToast("✅ Backup scaricato: tnb_backup_" + stamp + ".json");
+        } catch (e) {
+          console.error("[Backup] errore export:", e);
+          if (window.tnbToast) window.tnbToast("❌ Errore export: " + e.message, "err");
+        }
+      };
+      const importBackup = (file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          let parsed;
+          try {
+            parsed = JSON.parse(ev.target.result);
+          } catch (e) {
+            if (window.tnbToast) window.tnbToast("❌ File non valido: JSON malformato", "err");
+            return;
+          }
+          // Validazione minima — accetta sia il formato wrapped (con _tnbBackup + dati)
+          // che il formato "raw dati" (per import diretto di tnb-pro-v2 da Supabase).
+          let datiNuovi;
+          if (parsed && parsed._tnbBackup && parsed.dati) {
+            datiNuovi = parsed.dati;
+          } else if (parsed && (Array.isArray(parsed.clienti) || Array.isArray(parsed.ordini))) {
+            datiNuovi = parsed;
+          } else {
+            if (window.tnbToast) window.tnbToast("❌ File non riconosciuto: manca _tnbBackup o struttura dati", "err");
+            return;
+          }
+          // Conteggi attuali vs futuri per il dialog
+          const cur = {
+            clienti: (dati.clienti || []).length,
+            ordini: (dati.ordini || []).length,
+            magazzino: (dati.magazzino || []).length,
+            lotti: (dati.lotti || []).length
+          };
+          const nuovi = {
+            clienti: (datiNuovi.clienti || []).length,
+            ordini: (datiNuovi.ordini || []).length,
+            magazzino: (datiNuovi.magazzino || []).length,
+            lotti: (datiNuovi.lotti || []).length
+          };
+          const meta = parsed._tnbBackup ? (" (export del " + new Date(parsed._tnbBackup.exportedAt).toLocaleString("it-IT") + ")") : "";
+          window.tnbConfirm(
+            "⚠️ IMPORT BACKUP" + meta + "\n\nVerranno SOSTITUITI i dati attuali (" +
+            cur.clienti + " clienti, " + cur.ordini + " ordini, " + cur.lotti + " lotti) con quelli del file (" +
+            nuovi.clienti + " clienti, " + nuovi.ordini + " ordini, " + nuovi.lotti + " lotti).\n\n" +
+            "I file su Storage (firme, documenti) restano invariati: assicurati che gli ID degli ordini/contratti/fornitori del backup corrispondano. Procedere?",
+            () => {
+              window.tnbConfirm(
+                "🔴 CONFERMA DEFINITIVA: lo stato attuale verrà perso (non puoi annullare). Continuare?",
+                () => {
+                  setDati(datiNuovi);
+                  if (logAction) logAction("Import JSON eseguito", "impostazioni",
+                    "Sostituiti con: " + nuovi.clienti + " clienti, " + nuovi.ordini + " ordini, " + nuovi.lotti + " lotti");
+                  if (window.tnbToast) window.tnbToast("✅ Import completato. Ricarica la pagina se vedi anomalie.");
+                },
+                { title: "🔴 Conferma definitiva", okLabel: "Sì, importa", danger: true }
+              );
+            },
+            { title: "Import backup JSON", okLabel: "Procedi", danger: true }
+          );
+        };
+        reader.onerror = () => {
+          if (window.tnbToast) window.tnbToast("❌ Errore lettura file", "err");
+        };
+        reader.readAsText(file);
+      };
+      return /*#__PURE__*/React.createElement(Card, {
+        style: { marginTop: 16 },
+        ch: /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 13, marginBottom: 4, color: C.grigio600, letterSpacing: 0.5 } }, "💾 BACKUP / RESTORE JSON"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, marginBottom: 14, lineHeight: 1.5 } },
+            "Esporta una copia completa di tutto lo stato (clienti, ordini, magazzino, contratti, fornitori, impostazioni, dati aziendali, costi). ",
+            "Importa un backup precedente per ripristinare uno stato salvato.",
+            /*#__PURE__*/React.createElement("br", null),
+            /*#__PURE__*/React.createElement("strong", null, "Consigliato"), ": esporta sempre un backup prima di import dati reali o prima del Reset Go-Live."
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, flexWrap: "wrap" } },
+            /*#__PURE__*/React.createElement("button", {
+              type: "button",
+              onClick: exportBackup,
+              style: { padding: "10px 18px", border: "1px solid #1976d2", background: "#1976d2", color: "#fff", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }
+            }, "⬇️  Esporta backup JSON"),
+            /*#__PURE__*/React.createElement("label", {
+              style: { padding: "10px 18px", border: "1px solid #5f5e5a", background: "#fff", color: "#303432", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }
+            },
+              "⬆️  Importa backup JSON",
+              /*#__PURE__*/React.createElement("input", {
+                type: "file",
+                accept: "application/json,.json",
+                onChange: e => {
+                  const f = e.target.files && e.target.files[0];
+                  importBackup(f);
+                  e.target.value = "";
+                },
+                style: { display: "none" }
+              })
+            )
+          ),
+          // Stato corrente
+          /*#__PURE__*/React.createElement("div", { style: { marginTop: 14, padding: 10, background: "#f4f3ef", borderRadius: 6, fontSize: 11, color: C.grigio600, fontFamily: "monospace" } },
+            "Stato corrente: ",
+            (dati.clienti || []).length, " clienti · ",
+            (dati.ordini || []).length, " ordini · ",
+            (dati.magazzino || []).length, " SKU magazzino · ",
+            (dati.lotti || []).length, " lotti · ",
+            (dati.fornitori || []).length, " fornitori · ",
+            (dati.contratti || []).length, " contratti · ",
+            (dati.prospect || []).length, " prospect"
           )
         )
       });
