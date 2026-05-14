@@ -2220,6 +2220,64 @@ const migrateV53Contratti = (dataObj) => {
 // Dopo questa migrazione, tutti i PDF / email / contratti pescano da
 // `dati.azienda` invece che da stringhe hardcoded, ed esiste un form in
 // Impostazioni per editarli prima del go-live cliente.
+// v53-golive (post-GL5 bugfix): normalizzazione schema scaglioni listino.
+// Mappa nomi campi legacy / alternativi su quelli attesi da ListinoPage:
+//   - minColli      → colli
+//   - minQta        → qta
+//   - prezzoMin     → prezzo
+//   - prezzoUnit    → prezzo
+//   - €/pz, prezzoPz → prezzo
+// Inoltre calcola `qta` da `colli × pezziCollo` se mancante.
+// Idempotente: se i campi sono già nel formato corretto, no-op.
+// Usata sia in migrazione v53 sia nell'import JSON.
+function normalizeListinoScaglioni(listino) {
+  if (!Array.isArray(listino)) return listino;
+  return listino.map(l => {
+    if (!l || !Array.isArray(l.scaglioni)) return l;
+    const pezziCollo = Number(l.pezziCollo) || 1;
+    const scaglioniNorm = l.scaglioni.map(s => {
+      if (!s || typeof s !== "object") return s;
+      const colli = Number(
+        s.colli != null ? s.colli :
+        s.minColli != null ? s.minColli :
+        s.numColli != null ? s.numColli :
+        s.daColli != null ? s.daColli :
+        1
+      ) || 1;
+      const prezzo = Number(
+        s.prezzo != null ? s.prezzo :
+        s.prezzoMin != null ? s.prezzoMin :
+        s.prezzoUnit != null ? s.prezzoUnit :
+        s.prezzoPz != null ? s.prezzoPz :
+        s["€/pz"] != null ? s["€/pz"] :
+        s.eurPz != null ? s.eurPz :
+        0
+      ) || 0;
+      const qta = Number(
+        s.qta != null ? s.qta :
+        s.minQta != null ? s.minQta :
+        s.totPezzi != null ? s.totPezzi :
+        (colli * pezziCollo)
+      ) || (colli * pezziCollo);
+      return { colli, qta, prezzo };
+    });
+    return { ...l, scaglioni: scaglioniNorm };
+  });
+}
+
+// v53-golive: migrazione idempotente che applica normalizeListinoScaglioni.
+// Necessaria per backup JSON con schema legacy / di terze parti che usavano
+// nomi diversi (minColli, prezzoMin, ecc.).
+const migrateV53ScaglioniNorm = (dataObj) => {
+  if (!dataObj || dataObj._migration_v53_scaglioninorm) return dataObj;
+  const out = { ...dataObj };
+  if (Array.isArray(out.listino)) {
+    out.listino = normalizeListinoScaglioni(out.listino);
+  }
+  out._migration_v53_scaglioninorm = true;
+  return out;
+};
+
 const migrateV53Azienda = (dataObj) => {
   if (!dataObj || dataObj._migration_v53_azienda) return dataObj;
   const out = { ...dataObj };
@@ -15476,7 +15534,7 @@ function App() {
           if (u) setCurrentUser(u);
         }
         const r = await window.storage.get("tnb-pro-v2");
-        const parsed = migrateV53Azienda(migrateV53Contratti(migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0))))))))))))))));
+        const parsed = migrateV53ScaglioniNorm(migrateV53Azienda(migrateV53Contratti(migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))))))))))));
         // v53-golive (GL2): stash azienda per PDF/email generators che non hanno
         // accesso al React state. Riaggiornato a ogni setDatiSave (vedi sotto).
         try {
@@ -20568,6 +20626,17 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
           } else {
             if (window.tnbToast) window.tnbToast("❌ File non riconosciuto: manca _tnbBackup o struttura dati", "err");
             return;
+          }
+          // Normalizzazione schema: applica le stesse migration trasformazioni
+          // che girerebbero al prossimo load. Garantisce che la UI veda i dati
+          // corretti subito (senza dover fare F5), e che il backup persistito
+          // su Supabase abbia già schema normalizzato.
+          try {
+            if (typeof normalizeListinoScaglioni === "function" && Array.isArray(datiNuovi.listino)) {
+              datiNuovi.listino = normalizeListinoScaglioni(datiNuovi.listino);
+            }
+          } catch (eN) {
+            console.warn("[import] normalizzazione scaglioni fallita:", eN);
           }
           // Conteggi attuali vs futuri per il dialog
           const cur = {
