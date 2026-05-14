@@ -20591,11 +20591,28 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
             () => {
               window.tnbConfirm(
                 "🔴 CONFERMA DEFINITIVA: lo stato attuale verrà perso (non puoi annullare). Continuare?",
-                () => {
+                async () => {
+                  // BUG FIX v53-golive: persist esplicito su Supabase PRIMA di aggiornare
+                  // React state, con await + try/catch. Previene il caso in cui il
+                  // fire-and-forget interno di setDatiSave fallisca silenziosamente
+                  // lasciando i vecchi dati sul DB (e quindi al prossimo refresh
+                  // ritornano i dati pre-import).
+                  try {
+                    await window.storage.set("tnb-pro-v2", JSON.stringify(datiNuovi));
+                  } catch (eP) {
+                    if (window.tnbToast) window.tnbToast("❌ Errore persist Supabase: " + (eP.message || eP), "err");
+                    return;
+                  }
+                  // Aggiorna stash globale azienda
+                  try {
+                    window._tnbAzienda = datiNuovi.azienda || AZIENDA_DEFAULTS;
+                    window._tnbAzienda_anag = aziendaToAnag(window._tnbAzienda);
+                  } catch (_) {}
+                  // Aggiorna React state (setDatiSave persisterà di nuovo in modo idempotente)
                   setDati(datiNuovi);
                   if (logAction) logAction("Import JSON eseguito", "impostazioni",
                     "Sostituiti con: " + nuovi.clienti + " clienti, " + nuovi.ordini + " ordini, " + nuovi.lotti + " lotti");
-                  if (window.tnbToast) window.tnbToast("✅ Import completato. Ricarica la pagina se vedi anomalie.");
+                  if (window.tnbToast) window.tnbToast("✅ Import completato e persistito su Supabase. Ricarica la pagina se vedi anomalie.");
                 },
                 { title: "🔴 Conferma definitiva", okLabel: "Sì, importa", danger: true }
               );
@@ -20821,35 +20838,54 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
                           ));
                         }
                         // 2. Reset dati conservando azienda + impostazioni + tutti i flag _migration_*
-                        setDati(d => {
-                          const nuovo = {};
-                          nuovo.azienda = d.azienda || {};
-                          nuovo.impostazioni = d.impostazioni || {};
-                          // Conserva qualsiasi flag _migration_*
-                          Object.keys(d).forEach(k => {
-                            if (k.startsWith("_migration_")) nuovo[k] = d[k];
-                          });
-                          // Reset entità di business
-                          nuovo.clienti = [];
-                          nuovo.ordini = [];
-                          nuovo.movimenti = [];
-                          nuovo.magazzino = [];
-                          nuovo.lotti = [];
-                          nuovo.bottiglie = [];
-                          nuovo.listino = [];
-                          nuovo.fornitori = [];
-                          nuovo.prospect = [];
-                          nuovo.contratti = [];
-                          nuovo.agenda = [];
-                          nuovo.mailing = [];
-                          nuovo.log = [];
-                          nuovo.costiConfig = { costiStruttura: [], vociExtra: [] };
-                          return nuovo;
+                        // BUG FIX v53-golive: prima si calcola `nuovo` sui dati attuali, poi si
+                        // PERSISTE ESPLICITAMENTE su Supabase via window.storage.set CON AWAIT,
+                        // quindi si aggiorna React state. Questo previene il caso in cui il
+                        // fire-and-forget interno di setDatiSave fallisca silenziosamente
+                        // (es. payload edge case o RLS) lasciando vecchi dati su DB.
+                        const nuovo = {};
+                        nuovo.azienda = dati.azienda || {};
+                        nuovo.impostazioni = dati.impostazioni || {};
+                        // Conserva qualsiasi flag _migration_*
+                        Object.keys(dati).forEach(k => {
+                          if (k.startsWith("_migration_")) nuovo[k] = dati[k];
                         });
+                        // Reset entità di business
+                        nuovo.clienti = [];
+                        nuovo.ordini = [];
+                        nuovo.movimenti = [];
+                        nuovo.magazzino = [];
+                        nuovo.lotti = [];
+                        nuovo.bottiglie = [];
+                        nuovo.listino = [];
+                        nuovo.fornitori = [];
+                        nuovo.prospect = [];
+                        nuovo.contratti = [];
+                        nuovo.agenda = [];
+                        nuovo.mailing = [];
+                        nuovo.log = [];
+                        nuovo.costiConfig = { costiStruttura: [], vociExtra: [] };
+                        // Persist esplicito su Supabase PRIMA di aggiornare React state.
+                        // Se questo fallisce, vediamo il toast d'errore e abortiamo.
+                        try {
+                          await window.storage.set("tnb-pro-v2", JSON.stringify(nuovo));
+                        } catch (eP) {
+                          if (window.tnbToast) window.tnbToast("❌ Errore persist Supabase: " + (eP.message || eP), "err");
+                          setDangerBusy(null);
+                          return;
+                        }
+                        // Aggiorna stash globale azienda (per PDF/email generators)
+                        try {
+                          window._tnbAzienda = nuovo.azienda || AZIENDA_DEFAULTS;
+                          window._tnbAzienda_anag = aziendaToAnag(window._tnbAzienda);
+                        } catch (_) {}
+                        // Aggiorna React state (setDatiSave persisterà nuovamente in modo
+                        // idempotente; merge-duplicates su Supabase rende l'op safe)
+                        setDati(nuovo);
                         if (logAction) logAction("RESET GO-LIVE (SuperAdmin)", "impostazioni",
                           "Dati di test cancellati: " + c + " clienti, " + n + " ordini, " + l + " lotti, " + f + " fornitori. " +
                           paths.length + " file Storage rimossi. Conservati: azienda, impostazioni, flag migrazione.");
-                        if (window.tnbToast) window.tnbToast("✅ Reset Go-Live completato. " + paths.length + " file rimossi da Storage.");
+                        if (window.tnbToast) window.tnbToast("✅ Reset Go-Live completato e persistito su Supabase. " + paths.length + " file rimossi da Storage.");
                       } finally {
                         setDangerBusy(null);
                       }
