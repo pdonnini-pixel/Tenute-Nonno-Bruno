@@ -16869,6 +16869,10 @@ function App() {
     k: "impostazioni",
     l: "⚙ Impostazioni",
     icon: /*#__PURE__*/React.createElement(I.alert, null)
+  }, {
+    k: "guida",
+    l: "📖 Guida",
+    icon: /*#__PURE__*/React.createElement(I.alert, null)
   }];
   const access = ROLE_ACCESS[currentUser.role] || [];
   const NAV = ALL_NAV.filter(n => access.includes(n.k));
@@ -17042,7 +17046,7 @@ function App() {
       fontWeight: 700,
       color: C.grigio800
     }
-  }, ALL_NAV.find(n => n.k === modulo)?.l), /*#__PURE__*/React.createElement("div", {
+  }, ALL_NAV.find(n => n.k === modulo)?.l, " ", /*#__PURE__*/React.createElement(HelpBtn, { modulo: modulo })), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: C.grigio400
@@ -17176,7 +17180,9 @@ function App() {
     dati: dati
   }), modulo === "log" && /*#__PURE__*/React.createElement(ActivityLog, {
     currentUser: currentUser
-  }), modulo === "listino" && /*#__PURE__*/React.createElement(ListinoPage, { dati: dati, setDati: setDatiSave }), modulo === "alerts" && /*#__PURE__*/React.createElement(AlertsPage, {
+  }),
+  modulo === "guida" && /*#__PURE__*/React.createElement(GuidaPage, null),
+  modulo === "listino" && /*#__PURE__*/React.createElement(ListinoPage, { dati: dati, setDati: setDatiSave }), modulo === "alerts" && /*#__PURE__*/React.createElement(AlertsPage, {
     dati: dati,
     setDati: setDatiSave,
     setModulo: setModulo
@@ -17443,9 +17449,9 @@ const USERS = [{
   ruoloExt: "Key Account Manager HoReCa & Retail"
 }];
 const ROLE_ACCESS = {
-  superadmin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "mailing", "contratti", "impostazioni"],
-  admin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "mailing", "contratti"],
-  commerciale: ["oggi", "pipeline", "dashboard", "clienti", "ordini", "listino", "alerts", "mailing", "contratti"]
+  superadmin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "mailing", "contratti", "impostazioni", "guida"],
+  admin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "mailing", "contratti", "guida"],
+  commerciale: ["oggi", "pipeline", "dashboard", "clienti", "ordini", "listino", "alerts", "mailing", "contratti", "guida"]
 };
 const ROLE_LABELS = {
   superadmin: "Super Admin",
@@ -22196,6 +22202,8 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
                     }
                     if (typeof D0 !== "undefined") {
                       setDati(() => JSON.parse(JSON.stringify(D0)));
+                      // Fix: cancella anche i log (chiave separata tnb-log)
+                      try { await window.storage.set("tnb-log", JSON.stringify([])); } catch(_){}
                     }
                     if (logAction) logAction("RESET COMPLETO a D0 (SuperAdmin)", "impostazioni", n + " ordini + " + c + " clienti azzerati, " + paths.length + " firme rimosse");
                     if (window.tnbToast) window.tnbToast("💣 Reset completo eseguito");
@@ -22292,6 +22300,8 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
                         // Se questo fallisce, vediamo il toast d'errore e abortiamo.
                         try {
                           await window.storage.set("tnb-pro-v2", JSON.stringify(nuovo));
+                          // Fix: cancella anche i log (chiave separata tnb-log)
+                          await window.storage.set("tnb-log", JSON.stringify([]));
                         } catch (eP) {
                           if (window.tnbToast) window.tnbToast("❌ Errore persist Supabase: " + (eP.message || eP), "err");
                           setDangerBusy(null);
@@ -22322,6 +22332,221 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
             style: { padding: "8px 14px", border: "1.5px solid #1976d2", background: dangerBusy === "golive" ? "#f0f0ec" : "#1976d2", color: "#fff", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: dangerBusy === "golive" ? "wait" : "pointer" }
           }, dangerBusy === "golive" ? "⏳ Reset in corso..." : "🚀 Reset Go-Live")
         )
+      )
+    )
+  );
+}
+
+// ─── GUIDA IN-APP ─────────────────────────────────────────────────────────────
+// Guida completa navigabile + help contestuale per modulo.
+// I contenuti sono inline per evitare chiamate esterne.
+const GUIDA_CONTENUTI = {
+  intro: {
+    titolo: "Benvenuto nel Gestionale TNB",
+    icona: "🏠",
+    corpo: "Il Gestionale TNB Pro è la piattaforma centralizzata per gestire l'intera filiera produttiva e commerciale di Tenute Nonno Bruno. Ogni modulo è accessibile dalla barra laterale sinistra. Il tuo ruolo determina quali moduli puoi vedere e modificare."
+  },
+  ruoli: {
+    titolo: "Ruoli e permessi",
+    icona: "👥",
+    corpo: "Ci sono 3 ruoli: SuperAdmin (accesso completo + impostazioni pericolose), Admin (tutto tranne impostazioni avanzate), Commerciale (pipeline, clienti, ordini, mailing, agenda, alert, listino, contratti, log). Ogni ruolo vede solo i moduli a cui ha accesso."
+  },
+  oggi: {
+    titolo: "Agenda & Azioni",
+    icona: "📅",
+    corpo: "La tua vista giornaliera. Mostra le azioni aperte (follow-up, chiamate, invii campione), i prossimi appuntamenti e le attività in scadenza. Da qui puoi segnare come completate le azioni o riprogrammarle. Il Morning Briefing in alto riassume le priorità del giorno: follow-up in ritardo, ordini in scadenza, prospect da richiamare."
+  },
+  dashboard: {
+    titolo: "Dashboard BI",
+    icona: "📊",
+    corpo: "Panoramica grafica dell'andamento aziendale. Contiene KPI principali (fatturato, ordini, clienti attivi), grafici a barre e torta per canale, stato ordini, distribuzione prospect nel funnel. I dati si aggiornano in tempo reale. Utile per riunioni settimanali e presentazioni alla direzione."
+  },
+  pipeline: {
+    titolo: "Pipeline Commerciale",
+    icona: "🎯",
+    corpo: "Gestione prospect con vista Kanban (colonne per stato: Da contattare, Interessato, In trattativa, Acquisito, Non interessato, In sospeso) e vista Lista. Ogni prospect ha scheda dettaglio con storico chiamate, azioni, note, dati campione.\n\n• Scansione doppioni: il sistema rileva prospect duplicati per email, P.IVA o ragione sociale. Per ogni coppia puoi scegliere 'Tieni A', 'Tieni B' o 'Tieni entrambi'. Scegliendo di tenere uno, tutto lo storico dell'altro (chiamate, azioni, note, campione) viene automaticamente migrato.\n\n• Conversione a cliente: quando un prospect è pronto, il bottone 'Converti in Cliente' crea il record nella sezione Clienti.\n\n• Crea Ordine: dal prospect puoi creare direttamente un ordine senza passare per Clienti."
+  },
+  clienti: {
+    titolo: "Clienti",
+    icona: "👤",
+    corpo: "Anagrafica completa dei clienti acquisiti. Ogni cliente ha: ragione sociale, P.IVA, indirizzo, referente, contatti, canale (HoReCa, Retail, GDO, etc.), stato attivo/inattivo. Dal dettaglio cliente puoi vedere lo storico ordini associati e creare nuovi ordini."
+  },
+  ordini: {
+    titolo: "Ordini & Conto Vendita",
+    icona: "📦",
+    corpo: "Gestione completa degli ordini di vendita e conto vendita. Ogni ordine ha: righe prodotto (formato, quantità, prezzo), spedizione, modalità pagamento, stato (bozza, confermato, firmato, spedito, consegnato). La firma digitale può essere caricata come allegato.\n\n• Stato pagamento: da pagare, pagato parziale, pagato. Scadenze CV monitorate.\n\n• DDT e Fatture: allega documenti di trasporto e fatture ad ogni ordine.\n\n• Alert automatici: ordini in scadenza o con pagamento in ritardo appaiono negli Alert."
+  },
+  magazzino: {
+    titolo: "Magazzino",
+    icona: "🏭",
+    corpo: "Gestione giacenze per prodotto, formato e annata. Ogni SKU ha 6 stati di giacenza: disponibile, in frantoio, da etichettare, in confezionamento, riservato, in spedizione. La soglia minima attiva alert automatici quando le scorte scendono sotto il livello impostato.\n\n• Movimenti: ogni variazione di giacenza viene tracciata con data, tipo (carico, scarico, trasferimento) e nota.\n\n• Lotti: tracciabilità per lotto di produzione con data, quantità e stato."
+  },
+  produzione: {
+    titolo: "Produzione",
+    icona: "🫒",
+    corpo: "Pianificazione e monitoraggio della produzione olearia. Gestisce i cicli produttivi: raccolta olive → frantoio → stoccaggio → etichettatura → confezionamento. Ogni lotto ha date previste ed effettive, rese, analisi qualità.\n\n• Vista calendario: pianificazione visuale delle attività produttive.\n\n• BOM (Bill of Materials): costo componenti per calcolo margine su ogni formato."
+  },
+  fornitori: {
+    titolo: "Fornitori",
+    icona: "🏢",
+    corpo: "Anagrafica fornitori con: ragione sociale, P.IVA, contatti, categoria (materie prime, packaging, servizi, trasporto). Ogni fornitore ha uno storico documenti allegabili (contratti, listini, certificazioni).\n\n• Valutazione: tieni traccia di qualità, puntualità e costi per ogni fornitore."
+  },
+  costi: {
+    titolo: "Costi & Margini",
+    icona: "💰",
+    corpo: "Configurazione e analisi dei costi strutturali e variabili. Inserisci i costi fissi (affitto, personale, utenze) e le voci extra per calcolare il margine operativo.\n\n• Il margine viene calcolato confrontando ricavi da ordini con costi totali.\n\n• Report marginalità per prodotto/formato basato sul BOM + costi struttura ripartiti."
+  },
+  listino: {
+    titolo: "Listino Prezzi",
+    icona: "📋",
+    corpo: "Listino prezzi editabile per ogni formato/annata. Mostra prezzo base, prezzo pubblico, e costo BOM medio per calcolo margine. Le modifiche al listino si riflettono automaticamente nella creazione nuovi ordini.\n\n• Scaglioni: possibilità di definire sconti per quantità."
+  },
+  mailing: {
+    titolo: "Mailing",
+    icona: "📧",
+    corpo: "Modulo per campagne email. Crea liste di destinatari dai prospect o clienti, componi il messaggio con template, invia. Lo storico invii viene tracciato per ogni destinatario.\n\n• Collegamento Pipeline: puoi inviare mailing mirate a prospect filtrati per stato funnel, canale o zona."
+  },
+  alerts: {
+    titolo: "Alert & Notifiche",
+    icona: "🔔",
+    corpo: "Centro notifiche automatico. Mostra:\n• Scorte sotto soglia (magazzino)\n• Ordini con pagamento in scadenza o scaduto\n• Follow-up prospect in ritardo\n• Azioni aperte non completate\n\nGli alert si aggiornano in tempo reale. Clicca su un alert per andare direttamente all'elemento interessato."
+  },
+  contratti: {
+    titolo: "Contratti",
+    icona: "📝",
+    corpo: "Gestione contratti con clienti e fornitori. Ogni contratto ha: parti coinvolte, date (inizio, scadenza, rinnovo), valore, stato (bozza, attivo, scaduto, rinnovato). Possibilità di allegare documenti PDF.\n\n• Scadenzario: alert automatico per contratti in scadenza."
+  },
+  report: {
+    titolo: "Report Periodo",
+    icona: "📈",
+    corpo: "Reportistica configurabile per periodo (settimana, mese, trimestre, anno). Genera report su: fatturato, ordini, nuovi clienti, performance commerciali, stato magazzino. Esportabile in formato PDF."
+  },
+  log: {
+    titolo: "Log Attività",
+    icona: "📜",
+    corpo: "Registro cronologico di tutte le azioni eseguite nel gestionale. Ogni entry mostra: data/ora, utente, azione, modulo, dettaglio. Filtrabile per utente, modulo e testo libero.\n\n• Solo il SuperAdmin può svuotare il log.\n\n• Il log viene automaticamente azzerato durante i reset dati."
+  },
+  impostazioni: {
+    titolo: "Impostazioni",
+    icona: "⚙️",
+    corpo: "Configurazione globale del gestionale. Include:\n• Dati azienda (ragione sociale, P.IVA, indirizzo, logo)\n• Gestione utenti e ruoli\n• Cancella ordini (rimuove tutti gli ordini e le firme su Storage)\n• Reset completo a D0 (ripristina dati di esempio)\n• Reset Go-Live (pulizia dati test mantenendo configurazione)\n\n⚠️ Le operazioni di reset sono IRREVERSIBILI. Solo SuperAdmin."
+  },
+  doppioni: {
+    titolo: "Gestione Doppioni (Pipeline)",
+    icona: "🔍",
+    corpo: "Il wizard doppioni nella Pipeline rileva automaticamente prospect duplicati confrontando email, P.IVA e ragione sociale. Per ogni coppia di doppioni hai 3 opzioni:\n\n✅ Tieni A — elimina B e migra tutto il suo storico (chiamate, azioni, note, campione) in A\n✅ Tieni B — elimina A e migra tutto il suo storico in B\n🤝 Tieni entrambi — marca la coppia come 'non doppioni', non appariranno più nella scansione\n\nLo storico migrato include: tutte le chiamate (ordinate per data), tutte le azioni, le note (concatenate se diverse), i dati campione (copiati se solo l'eliminato li aveva), e la prossima chiamata programmata (tenuta quella più vicina)."
+  }
+};
+function GuidaPage() {
+  const [sezione, setSezione] = useState("intro");
+  const C2 = { grigio100:"#f5f5f5", grigio200:"#e0e0e0", grigio400:"#bdbdbd", grigio600:"#757575", grigio800:"#424242", bianco:"#fff", verde:"#2e7d32", blu:"#1565c0" };
+  const sezioni = ["intro","ruoli","oggi","dashboard","pipeline","clienti","ordini","magazzino","produzione","fornitori","costi","listino","mailing","alerts","contratti","report","log","impostazioni","doppioni"];
+  const renderCorpo = (testo) => {
+    return testo.split("\n\n").map(function(para, pi) {
+      if (para.startsWith("•") || para.includes("\n•")) {
+        var lines = para.split("\n").filter(Boolean);
+        return React.createElement("div", { key: pi, style: { marginBottom: 10 } },
+          lines.map(function(line, li) {
+            if (line.startsWith("•")) {
+              return React.createElement("div", { key: li, style: { paddingLeft: 16, fontSize: 13, lineHeight: 1.6, marginBottom: 3, color: C2.grigio800 } },
+                React.createElement("span", { style: { color: C2.verde, fontWeight: 700, marginRight: 6 } }, "●"),
+                line.substring(2)
+              );
+            }
+            return React.createElement("div", { key: li, style: { fontSize: 13, lineHeight: 1.6, color: C2.grigio800, marginBottom: 4 } }, line);
+          })
+        );
+      }
+      return React.createElement("p", { key: pi, style: { fontSize: 13, lineHeight: 1.7, color: C2.grigio800, marginBottom: 10 } }, para);
+    });
+  };
+  var info = GUIDA_CONTENUTI[sezione] || GUIDA_CONTENUTI.intro;
+  return React.createElement("div", null,
+    React.createElement(SH, { title: "📖 Guida al Gestionale" }),
+    React.createElement("div", { style: { display: "flex", gap: 16, minHeight: 500 } },
+      // Sidebar indice
+      React.createElement("div", { style: { width: 220, flexShrink: 0, background: C2.grigio100, borderRadius: 8, padding: "10px 0", overflowY: "auto", maxHeight: "70vh" } },
+        React.createElement("div", { style: { padding: "6px 14px", fontSize: 11, fontWeight: 700, color: C2.grigio600, textTransform: "uppercase", letterSpacing: 1 } }, "Indice"),
+        sezioni.map(function(sk) {
+          var s = GUIDA_CONTENUTI[sk];
+          if (!s) return null;
+          var active = sk === sezione;
+          return React.createElement("div", {
+            key: sk,
+            onClick: function() { setSezione(sk); },
+            style: {
+              padding: "8px 14px", fontSize: 12, cursor: "pointer",
+              background: active ? C2.bianco : "transparent",
+              borderLeft: active ? "3px solid " + C2.blu : "3px solid transparent",
+              fontWeight: active ? 700 : 400,
+              color: active ? C2.blu : C2.grigio800,
+              transition: "all 0.15s"
+            }
+          }, s.icona + " " + s.titolo);
+        })
+      ),
+      // Contenuto
+      React.createElement("div", { style: { flex: 1, background: C2.bianco, borderRadius: 8, border: "1px solid " + C2.grigio200, padding: "20px 24px", overflowY: "auto", maxHeight: "70vh" } },
+        React.createElement("div", { style: { fontSize: 11, color: C2.grigio400, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 } }, "Guida"),
+        React.createElement("h2", { style: { fontSize: 20, fontWeight: 700, color: C2.grigio800, marginBottom: 4, marginTop: 0 } }, info.icona + " " + info.titolo),
+        React.createElement("div", { style: { width: 40, height: 3, background: C2.blu, borderRadius: 2, marginBottom: 16 } }),
+        renderCorpo(info.corpo),
+        // Navigation arrows
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 24, paddingTop: 14, borderTop: "1px solid " + C2.grigio200 } },
+          sezioni.indexOf(sezione) > 0
+            ? React.createElement("button", {
+                onClick: function() { setSezione(sezioni[sezioni.indexOf(sezione)-1]); },
+                style: { fontSize: 12, padding: "6px 14px", border: "1px solid " + C2.grigio200, borderRadius: 6, background: C2.bianco, cursor: "pointer", color: C2.grigio600, fontWeight: 600 }
+              }, "← " + (GUIDA_CONTENUTI[sezioni[sezioni.indexOf(sezione)-1]]||{}).titolo)
+            : React.createElement("span", null),
+          sezioni.indexOf(sezione) < sezioni.length - 1
+            ? React.createElement("button", {
+                onClick: function() { setSezione(sezioni[sezioni.indexOf(sezione)+1]); },
+                style: { fontSize: 12, padding: "6px 14px", border: "none", borderRadius: 6, background: C2.blu, cursor: "pointer", color: "#fff", fontWeight: 600 }
+              }, (GUIDA_CONTENUTI[sezioni[sezioni.indexOf(sezione)+1]]||{}).titolo + " →")
+            : React.createElement("span", null)
+        )
+      )
+    )
+  );
+}
+// Help contestuale: bottone "?" che apre un popover con la guida del modulo corrente
+function HelpBtn({ modulo }) {
+  const [open, setOpen] = useState(false);
+  var info = GUIDA_CONTENUTI[modulo];
+  if (!info) return null;
+  var C2 = { grigio200:"#e0e0e0", grigio600:"#757575", grigio800:"#424242", bianco:"#fff", blu:"#1565c0" };
+  return React.createElement("div", { style: { position: "relative", display: "inline-block" } },
+    React.createElement("button", {
+      onClick: function() { setOpen(!open); },
+      title: "Aiuto — " + info.titolo,
+      style: {
+        width: 26, height: 26, borderRadius: "50%", border: "1.5px solid " + C2.grigio200,
+        background: open ? C2.blu : C2.bianco, color: open ? "#fff" : C2.grigio600,
+        fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+        transition: "all 0.15s", lineHeight: 1
+      }
+    }, "?"),
+    open && React.createElement("div", {
+      style: {
+        position: "absolute", top: 32, right: 0, zIndex: 999, width: 340, maxHeight: 400,
+        background: C2.bianco, border: "1px solid " + C2.grigio200, borderRadius: 10,
+        boxShadow: "0 8px 24px rgba(0,0,0,.12)", padding: "16px 18px", overflowY: "auto"
+      }
+    },
+      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 } },
+        React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C2.grigio800 } }, info.icona + " " + info.titolo),
+        React.createElement("button", {
+          onClick: function() { setOpen(false); },
+          style: { background: "none", border: "none", fontSize: 16, cursor: "pointer", color: C2.grigio600, padding: 0 }
+        }, "✕")
+      ),
+      React.createElement("div", { style: { fontSize: 12, lineHeight: 1.7, color: C2.grigio800, whiteSpace: "pre-line" } }, info.corpo),
+      React.createElement("div", { style: { marginTop: 12, paddingTop: 8, borderTop: "1px solid " + C2.grigio200, display: "flex", justifyContent: "flex-end" } },
+        React.createElement("button", {
+          onClick: function() { setOpen(false); if (window._nav) window._nav("guida"); },
+          style: { fontSize: 11, padding: "4px 12px", border: "none", borderRadius: 5, background: C2.blu, color: "#fff", cursor: "pointer", fontWeight: 600 }
+        }, "📖 Apri guida completa")
       )
     )
   );
