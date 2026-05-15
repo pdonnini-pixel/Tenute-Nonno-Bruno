@@ -6290,145 +6290,121 @@ function DoppioniFinder({ prospect, onOpen, onMerge, onMarkNotDup, ignoredPairs 
     var tipo=pair[0], map=pair[1];
     Object.entries(map).filter(function(e){return e[1].length>1;}).forEach(function(e) {
       var key=e[0], items=e[1];
-      // Filter out ignored pairs
       var filtered = items.filter(function(a,i) {
         return items.some(function(b,j) { return j!==i && !isIgnored(a.p.id, b.p.id); });
       });
       if (filtered.length > 1) risultati.push({tipo, key, items: filtered});
     });
   });
-  const [mergeGroup, setMergeGroup] = useState(null); // {a: prospect, b: prospect, picks: {field: "a"|"b"}}
+  const [compareGroup, setCompareGroup] = useState(null); // {a: prospect, b: prospect}
   const C2 = { grigio100:"#f5f5f5", grigio200:"#e0e0e0", grigio400:"#bdbdbd", grigio600:"#757575", grigio800:"#424242", rosso:"#e53935", bianco:"#fff", verde:"#2e7d32", blu:"#1565c0" };
-  const MERGE_FIELDS = [
-    {k:"ragioneSociale", l:"Ragione Sociale"},
-    {k:"tipo", l:"Tipo attività"},
-    {k:"referente", l:"Referente"},
-    {k:"email", l:"Email"},
-    {k:"telefono", l:"Telefono"},
-    {k:"piva", l:"P.IVA"},
-    {k:"indirizzo", l:"Indirizzo"},
-    {k:"canale", l:"Canale"},
-    {k:"stato", l:"Stato funnel"},
-    {k:"note", l:"Note"},
-    {k:"campioneInviato", l:"Campione inviato"},
-  ];
-  const STATO_ORDER = {acquisito:6, in_trattativa:5, interessato:4, da_contattare:3, in_sospeso:2, non_interessato:1};
-  // Auto-pick the "best" value for each field
-  const autoPick = (a, b) => {
-    const picks = {};
-    MERGE_FIELDS.forEach(f => {
-      const va = a[f.k], vb = b[f.k];
-      if (f.k === "stato") { picks[f.k] = (STATO_ORDER[va]||0) >= (STATO_ORDER[vb]||0) ? "a" : "b"; }
-      else if (f.k === "note") { picks[f.k] = ((va||"").length >= (vb||"").length) ? "a" : "b"; }
-      else if (f.k === "ragioneSociale") { picks[f.k] = ((va||"").length >= (vb||"").length) ? "a" : "b"; }
-      else if (f.k === "campioneInviato") { picks[f.k] = (va && !vb) ? "a" : (vb && !va) ? "b" : "a"; }
-      else { picks[f.k] = (va && !vb) ? "a" : (vb && !va) ? "b" : "a"; }
-    });
-    return picks;
-  };
-  const startMerge = (pA, pB) => { setMergeGroup({ a: pA, b: pB, picks: autoPick(pA, pB) }); };
-  const togglePick = (field) => {
-    setMergeGroup(mg => ({ ...mg, picks: { ...mg.picks, [field]: mg.picks[field]==="a" ? "b" : "a" } }));
-  };
-  const doMerge = () => {
-    if (!mergeGroup) return;
-    const {a, b, picks} = mergeGroup;
-    // Build merged prospect: start from "a", override with picks
-    const merged = { ...a };
-    MERGE_FIELDS.forEach(f => {
-      if (picks[f.k] === "b") merged[f.k] = b[f.k];
-    });
-    // Merge arrays: calls, azioni, nextCall (keep the earliest future one)
-    merged.calls = [...(a.calls||[]), ...(b.calls||[])].sort((x,y) => (y.data||"").localeCompare(x.data||""));
-    merged.azioni = [...(a.azioni||[]), ...(b.azioni||[])];
-    // nextCall: keep whichever has a future date
-    const ncA = a.nextCall && a.nextCall.data, ncB = b.nextCall && b.nextCall.data;
-    if (ncA && ncB) merged.nextCall = ncA <= ncB ? a.nextCall : b.nextCall;
-    else if (ncB) merged.nextCall = b.nextCall;
-    // Campione: keep if either had it
-    if (b.campioneInviato && !a.campioneInviato) {
-      merged.campioneInviato = true; merged.campioneData = b.campioneData;
-      merged.campioneFormati = b.campioneFormati; merged.campioneNote = b.campioneNote;
-      merged.campioneFollowUp = b.campioneFollowUp;
+  // Migrate all history from "source" into "keeper" and return the enriched keeper
+  const migrateHistory = (keeper, source) => {
+    const merged = { ...keeper };
+    // Merge calls (sorted by date desc)
+    merged.calls = [...(keeper.calls||[]), ...(source.calls||[])].sort((x,y) => (y.data||"").localeCompare(x.data||""));
+    // Merge azioni
+    merged.azioni = [...(keeper.azioni||[]), ...(source.azioni||[])];
+    // nextCall: keep the earliest future one
+    const ncK = keeper.nextCall && keeper.nextCall.data, ncS = source.nextCall && source.nextCall.data;
+    if (ncK && ncS) merged.nextCall = ncK <= ncS ? keeper.nextCall : source.nextCall;
+    else if (ncS && !ncK) merged.nextCall = source.nextCall;
+    // Campione: if source has it and keeper doesn't, copy over
+    if (source.campioneInviato && !keeper.campioneInviato) {
+      merged.campioneInviato = true;
+      merged.campioneData = source.campioneData;
+      merged.campioneFormati = source.campioneFormati;
+      merged.campioneNote = source.campioneNote;
+      merged.campioneFollowUp = source.campioneFollowUp;
     }
-    // Notes: combine if both have content
-    if (a.note && b.note && a.note !== b.note) merged.note = a.note + "\n---\n" + b.note;
-    // Keep a's id, remove b
-    onMerge(merged, b.id);
-    setMergeGroup(null);
-    if (window.tnbToast) window.tnbToast("✅ Prospect unificati");
+    // Notes: combine if both have content and they differ
+    if (keeper.note && source.note && keeper.note !== source.note) {
+      merged.note = keeper.note + "\n---\n" + source.note;
+    } else if (!keeper.note && source.note) {
+      merged.note = source.note;
+    }
+    return merged;
   };
-  // ── MERGE WIZARD VIEW ──
-  if (mergeGroup) {
-    const {a, b, picks} = mergeGroup;
-    const nameA = a.ragioneSociale || ((a.nome||"")+" "+(a.cognome||"")).trim();
-    const nameB = b.ragioneSociale || ((b.nome||"")+" "+(b.cognome||"")).trim();
+  const doKeep = (keeper, toRemove) => {
+    const enriched = migrateHistory(keeper, toRemove);
+    onMerge(enriched, toRemove.id);
+    setCompareGroup(null);
+    if (window.tnbToast) window.tnbToast("✅ Prospect unificato — storico migrato");
+  };
+  // ── COMPARE VIEW ──
+  if (compareGroup) {
+    const {a, b} = compareGroup;
+    const nameA = a.ragioneSociale || ((a.nome||"")+" "+(a.cognome||"")).trim() || "Prospect A";
+    const nameB = b.ragioneSociale || ((b.nome||"")+" "+(b.cognome||"")).trim() || "Prospect B";
+    const COMPARE_FIELDS = [
+      {k:"ragioneSociale", l:"Ragione Sociale"},
+      {k:"tipo", l:"Tipo attività"},
+      {k:"referente", l:"Referente"},
+      {k:"email", l:"Email"},
+      {k:"telefono", l:"Telefono"},
+      {k:"piva", l:"P.IVA"},
+      {k:"indirizzo", l:"Indirizzo"},
+      {k:"canale", l:"Canale"},
+      {k:"stato", l:"Stato funnel"},
+      {k:"note", l:"Note"},
+      {k:"campioneInviato", l:"Campione inviato"},
+    ];
+    var callsA = (a.calls||[]).length, callsB = (b.calls||[]).length;
+    var azioniA = (a.azioni||[]).length, azioniB = (b.azioni||[]).length;
     return /*#__PURE__*/React.createElement("div", null,
-      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 700, marginBottom: 12, color: C2.grigio800 } },
-        "Confronto: scegli quale valore tenere per ogni campo"),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 700, marginBottom: 8, color: C2.grigio800 } },
+        "Confronto doppioni"),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C2.grigio600, marginBottom: 14, lineHeight: 1.5 } },
-        "Il sistema ha pre-selezionato il valore migliore per ogni campo (sfondo verde). Clicca su una cella per cambiarla. Storico chiamate, azioni e note vengono sempre uniti."),
+        "Scegli quale prospect tenere. Tutto lo storico (chiamate, azioni, note, campione) del prospect eliminato verrà migrato in quello mantenuto."),
       // Header row
       /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 1, marginBottom: 1 } },
         /*#__PURE__*/React.createElement("div", { style: { background: C2.grigio800, color: "#fff", padding: "8px 10px", fontSize: 11, fontWeight: 700, borderRadius: "6px 0 0 0" } }, "Campo"),
-        /*#__PURE__*/React.createElement("div", { style: { background: C2.grigio800, color: "#fff", padding: "8px 10px", fontSize: 11, fontWeight: 700, textAlign: "center" } }, "A: " + nameA.substring(0, 25)),
-        /*#__PURE__*/React.createElement("div", { style: { background: C2.grigio800, color: "#fff", padding: "8px 10px", fontSize: 11, fontWeight: 700, textAlign: "center", borderRadius: "0 6px 0 0" } }, "B: " + nameB.substring(0, 25))
+        /*#__PURE__*/React.createElement("div", { style: { background: C2.blu, color: "#fff", padding: "8px 10px", fontSize: 11, fontWeight: 700, textAlign: "center" } }, "A: " + nameA.substring(0, 25)),
+        /*#__PURE__*/React.createElement("div", { style: { background: C2.blu, color: "#fff", padding: "8px 10px", fontSize: 11, fontWeight: 700, textAlign: "center", borderRadius: "0 6px 0 0" } }, "B: " + nameB.substring(0, 25))
       ),
       // Field rows
-      MERGE_FIELDS.map(function(f, fi) {
+      COMPARE_FIELDS.map(function(f, fi) {
         var va = a[f.k], vb = b[f.k];
         var dispA = f.k === "campioneInviato" ? (va ? "✅ Sì" : "—") : f.k === "stato" ? (STATO_FUNNEL[va]||{}).l||va||"—" : (va||"—");
         var dispB = f.k === "campioneInviato" ? (vb ? "✅ Sì" : "—") : f.k === "stato" ? (STATO_FUNNEL[vb]||{}).l||vb||"—" : (vb||"—");
-        var same = (va||"") === (vb||"");
-        var pickA = picks[f.k] === "a";
+        var same = String(va||"") === String(vb||"");
+        var bgBase = fi%2===0 ? "#f8f8f6" : "#fff";
         return /*#__PURE__*/React.createElement("div", {
           key: f.k,
           style: { display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 1, marginBottom: 1 }
         },
-          /*#__PURE__*/React.createElement("div", { style: { background: fi%2===0 ? "#f8f8f6" : "#fff", padding: "7px 10px", fontSize: 11, fontWeight: 600, color: C2.grigio600, display: "flex", alignItems: "center" } }, f.l),
-          /*#__PURE__*/React.createElement("div", {
-            onClick: function() { if (!same) togglePick(f.k); },
-            style: {
-              padding: "7px 10px", fontSize: 11, cursor: same ? "default" : "pointer",
-              background: same ? (fi%2===0 ? "#f8f8f6" : "#fff") : (pickA ? "#e8f5e9" : (fi%2===0 ? "#f8f8f6" : "#fff")),
-              borderLeft: pickA && !same ? "3px solid "+C2.verde : "3px solid transparent",
-              color: C2.grigio800, wordBreak: "break-word",
-              transition: "background 0.15s"
-            }
-          }, dispA, !same && pickA && /*#__PURE__*/React.createElement("span", { style: { marginLeft: 6, fontSize: 10, color: C2.verde, fontWeight: 700 } }, "✓")),
-          /*#__PURE__*/React.createElement("div", {
-            onClick: function() { if (!same) togglePick(f.k); },
-            style: {
-              padding: "7px 10px", fontSize: 11, cursor: same ? "default" : "pointer",
-              background: same ? (fi%2===0 ? "#f8f8f6" : "#fff") : (!pickA ? "#e8f5e9" : (fi%2===0 ? "#f8f8f6" : "#fff")),
-              borderLeft: !pickA && !same ? "3px solid "+C2.verde : "3px solid transparent",
-              color: C2.grigio800, wordBreak: "break-word",
-              transition: "background 0.15s"
-            }
-          }, dispB, !same && !pickA && /*#__PURE__*/React.createElement("span", { style: { marginLeft: 6, fontSize: 10, color: C2.verde, fontWeight: 700 } }, "✓"))
+          /*#__PURE__*/React.createElement("div", { style: { background: bgBase, padding: "7px 10px", fontSize: 11, fontWeight: 600, color: C2.grigio600, display: "flex", alignItems: "center" } }, f.l),
+          /*#__PURE__*/React.createElement("div", { style: { padding: "7px 10px", fontSize: 11, background: !same && (dispA||"").length > (dispB||"").length ? "#e8f5e9" : bgBase, color: C2.grigio800, wordBreak: "break-word" } }, dispA),
+          /*#__PURE__*/React.createElement("div", { style: { padding: "7px 10px", fontSize: 11, background: !same && (dispB||"").length > (dispA||"").length ? "#e8f5e9" : bgBase, color: C2.grigio800, wordBreak: "break-word" } }, dispB)
         );
       }),
-      // Merge info
-      /*#__PURE__*/React.createElement("div", { style: { marginTop: 12, padding: "8px 12px", background: "#e3f2fd", borderRadius: 6, fontSize: 11, color: "#1565c0", lineHeight: 1.5 } },
-        "📋 Storico chiamate: ", (a.calls||[]).length, " + ", (b.calls||[]).length, " = ", (a.calls||[]).length + (b.calls||[]).length, " chiamate unite",
+      // History summary
+      /*#__PURE__*/React.createElement("div", { style: { marginTop: 12, padding: "10px 12px", background: "#e3f2fd", borderRadius: 6, fontSize: 11, color: "#1565c0", lineHeight: 1.6 } },
+        "📋 Chiamate: A ha ", callsA, " — B ha ", callsB,
         /*#__PURE__*/React.createElement("br", null),
-        "📌 Azioni: ", (a.azioni||[]).length, " + ", (b.azioni||[]).length, " = ", (a.azioni||[]).length + (b.azioni||[]).length, " azioni unite"
+        "📌 Azioni: A ha ", azioniA, " — B ha ", azioniB,
+        /*#__PURE__*/React.createElement("br", null),
+        "ℹ️ Scegliendo un prospect, lo storico dell'altro verrà automaticamente migrato."
       ),
-      // Buttons
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 14, justifyContent: "space-between" } },
+      // Action buttons
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", justifyContent: "space-between" } },
         /*#__PURE__*/React.createElement("button", {
-          onClick: function() { setMergeGroup(null); },
+          onClick: function() { setCompareGroup(null); },
           style: { fontSize: 12, padding: "8px 16px", border: "1px solid "+C2.grigio200, borderRadius: 6, background: "#fff", cursor: "pointer", color: C2.grigio600, fontWeight: 600 }
         }, "← Indietro"),
-        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8 } },
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
           /*#__PURE__*/React.createElement("button", {
-            onClick: function() { onMarkNotDup(a.id, b.id); setMergeGroup(null); if(window.tnbToast) window.tnbToast("Marcati come diversi"); },
+            onClick: function() { onMarkNotDup(a.id, b.id); setCompareGroup(null); if(window.tnbToast) window.tnbToast("Marcati come diversi — non appariranno più"); },
             style: { fontSize: 12, padding: "8px 16px", border: "1px solid #ffe082", borderRadius: 6, background: "#fff8e1", cursor: "pointer", color: "#e65100", fontWeight: 600 }
-          }, "🚫 Sono diversi"),
+          }, "🤝 Tieni entrambi"),
           /*#__PURE__*/React.createElement("button", {
-            onClick: doMerge,
+            onClick: function() { doKeep(a, b); },
             style: { fontSize: 12, padding: "8px 16px", border: "none", borderRadius: 6, background: C2.verde, cursor: "pointer", color: "#fff", fontWeight: 700 }
-          }, "✅ Unisci in A")
+          }, "✅ Tieni A"),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function() { doKeep(b, a); },
+            style: { fontSize: 12, padding: "8px 16px", border: "none", borderRadius: 6, background: C2.blu, cursor: "pointer", color: "#fff", fontWeight: 700 }
+          }, "✅ Tieni B")
         )
       )
     );
@@ -6464,9 +6440,9 @@ function DoppioniFinder({ prospect, onOpen, onMerge, onMarkNotDup, ignoredPairs 
         r.items.length === 2 && /*#__PURE__*/React.createElement("div", {
           style: { padding: "6px 12px", background: "#fff3e0", borderTop: "1px solid #ffe082", display: "flex", justifyContent: "center" }
         }, /*#__PURE__*/React.createElement("button", {
-          onClick: function() { startMerge(r.items[0].p, r.items[1].p); },
+          onClick: function() { setCompareGroup({a: r.items[0].p, b: r.items[1].p}); },
           style: { fontSize: 12, padding: "6px 18px", border: "none", borderRadius: 6, background: "#e65100", color: "#fff", cursor: "pointer", fontWeight: 700 }
-        }, "⚡ Confronta e unisci"))
+        }, "⚡ Confronta e gestisci"))
       );
     })
   );
