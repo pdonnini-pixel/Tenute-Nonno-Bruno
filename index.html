@@ -7026,7 +7026,7 @@ function Pipeline({
             }, "\ud83d\udcde"),
             /*#__PURE__*/React.createElement("button", {
               title: "Invia email",
-              onClick: function() { if (!p.email) { if (window.tnbToast) window.tnbToast("Inserisci email prima di inviare"); return; } setQuickMailId(p.id); setQuickMailTpl("primo_contatto"); setQuickMailPreview(false); },
+              onClick: function() { if (!p.email) { if (window.tnbToast) window.tnbToast("⚠ Inserisci email in anagrafica prima di inviare", "err"); return; } setQuickMailId(p.id); setQuickMailTpl("primo_contatto"); setQuickMailPreview(false); },
               style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: "2px 4px" }
             }, "\u2709\ufe0f"),
             /*#__PURE__*/React.createElement("button", {
@@ -20344,6 +20344,10 @@ function MailingSystem({ dati, setDati, logAction }) {
   };
   var eliminaCustomAttach = function(idx) {
     window.tnbConfirm("Eliminare questo allegato personalizzato?", function() {
+      var att = (dati.mailAttachments || [])[idx];
+      if (att && att.storagePath) {
+        window.tnbStorage.deleteDocumento(att.storagePath).catch(function(){});
+      }
       setDati(function(d) {
         var ma = (d.mailAttachments || []).filter(function(_, i) { return i !== idx; });
         return Object.assign({}, d, { mailAttachments: ma });
@@ -20575,9 +20579,10 @@ function MailingSystem({ dati, setDati, logAction }) {
   // MAILING-UPGRADE v2: Attachment editor modal
   var renderAttachEditor = function() {
     if (!showAttachEditor) return null;
+    var CE = React.createElement;
     return CE("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center"},
       onClick:function(e){if(e.target===e.currentTarget)setShowAttachEditor(false);}},
-      CE("div",{style:{background:"#fff",borderRadius:16,padding:28,width:480,boxShadow:"0 20px 60px rgba(0,0,0,.2)"}},
+      CE("div",{style:{background:"#fff",borderRadius:16,padding:28,width:520,boxShadow:"0 20px 60px rgba(0,0,0,.2)"}},
         CE("div",{style:{fontSize:16,fontWeight:800,color:C.grigio800,marginBottom:16}},"📎 Aggiungi allegato personalizzato"),
         CE("div",{style:{marginBottom:14}},
           CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600,display:"block",marginBottom:4}},"NOME ALLEGATO"),
@@ -20591,21 +20596,100 @@ function MailingSystem({ dati, setDati, logAction }) {
             placeholder:"es. 12 pagine — novità stagione",
             style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"8px 10px",fontSize:13,outline:"none"}})
         ),
-        CE("div",{style:{marginBottom:14}},
+        CE("div",{style:{marginBottom:6,fontSize:11,fontWeight:700,color:C.grigio600}},"SCEGLI MODALITÀ"),
+        CE("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}},
+          CE("div",{
+            onClick:function(){setEditAttach(function(a){return Object.assign({},a,{mode:"url",file:null});});},
+            style:{padding:"12px 14px",borderRadius:10,cursor:"pointer",textAlign:"center",
+              border:"1.5px solid "+((!editAttach.mode||editAttach.mode==="url")?C.oliva:C.grigio200),
+              background:(!editAttach.mode||editAttach.mode==="url")?C.oliva+"0d":"#fff"}
+          },
+            CE("div",{style:{fontSize:20,marginBottom:4}},"🔗"),
+            CE("div",{style:{fontSize:12,fontWeight:700,color:C.grigio800}},"Incolla URL"),
+            CE("div",{style:{fontSize:10,color:C.grigio500}},"Google Drive, Dropbox, ecc.")
+          ),
+          CE("div",{
+            onClick:function(){setEditAttach(function(a){return Object.assign({},a,{mode:"upload",url:""});});},
+            style:{padding:"12px 14px",borderRadius:10,cursor:"pointer",textAlign:"center",
+              border:"1.5px solid "+(editAttach.mode==="upload"?C.oliva:C.grigio200),
+              background:editAttach.mode==="upload"?C.oliva+"0d":"#fff"}
+          },
+            CE("div",{style:{fontSize:20,marginBottom:4}},"📤"),
+            CE("div",{style:{fontSize:12,fontWeight:700,color:C.grigio800}},"Carica file"),
+            CE("div",{style:{fontSize:10,color:C.grigio500}},"PDF dal tuo computer (max 10 MB)")
+          )
+        ),
+        (!editAttach.mode||editAttach.mode==="url") && CE("div",{style:{marginBottom:14}},
           CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600,display:"block",marginBottom:4}},"URL PDF"),
-          CE("input",{value:editAttach.url,onChange:function(e){setEditAttach(function(a){return Object.assign({},a,{url:e.target.value});});},
-            placeholder:"https://drive.google.com/... oppure link diretto al PDF",
+          CE("input",{value:editAttach.url||"",onChange:function(e){setEditAttach(function(a){return Object.assign({},a,{url:e.target.value});});},
+            placeholder:"https://drive.google.com/... oppure link diretto",
             style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"8px 10px",fontSize:13,outline:"none"}})
         ),
-        CE("div",{style:{padding:"10px 12px",background:C.grigio50,borderRadius:8,fontSize:11,color:C.grigio500,marginBottom:16,lineHeight:1.6}},
-          "Puoi usare link da Google Drive, Dropbox, o qualsiasi URL diretto a un PDF. Non serve Canva."
+        editAttach.mode==="upload" && CE("div",{style:{marginBottom:14}},
+          CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600,display:"block",marginBottom:4}},"FILE PDF"),
+          CE("div",{style:{border:"2px dashed "+C.grigio300,borderRadius:10,padding:"20px 16px",textAlign:"center",cursor:"pointer",
+            background:editAttach.file?C.oliva+"0d":C.grigio50},
+            onClick:function(){
+              var inp=document.createElement("input");inp.type="file";inp.accept=".pdf,.doc,.docx,.png,.jpg,.jpeg";
+              inp.onchange=function(e){
+                var f=e.target.files[0];
+                if(f){
+                  if(f.size>10*1024*1024){window.tnbToast("⚠ File troppo grande (max 10 MB)","err");return;}
+                  setEditAttach(function(a){return Object.assign({},a,{file:f});});
+                }
+              };
+              inp.click();
+            }},
+            editAttach.file
+              ? CE("div",null,
+                  CE("div",{style:{fontSize:14,fontWeight:700,color:C.oliva}},"✅ "+editAttach.file.name),
+                  CE("div",{style:{fontSize:11,color:C.grigio500,marginTop:4}},(editAttach.file.size/1024).toFixed(0)+" KB — clicca per cambiare")
+                )
+              : CE("div",null,
+                  CE("div",{style:{fontSize:24}},"📄"),
+                  CE("div",{style:{fontSize:12,color:C.grigio500,marginTop:4}},"Clicca per selezionare un file"),
+                  CE("div",{style:{fontSize:10,color:C.grigio400,marginTop:2}},"PDF, DOC, DOCX, PNG, JPG — max 10 MB")
+                )
+          )
         ),
-        CE("div",{style:{display:"flex",gap:10,justifyContent:"flex-end"}},
-          CE("button",{onClick:function(){setShowAttachEditor(false);},
+        editAttach.uploading && CE("div",{style:{padding:"10px 0",textAlign:"center"}},
+          CE("div",{style:{fontSize:13,color:C.oliva,fontWeight:600}},"⏳ Caricamento in corso...")
+        ),
+        CE("div",{style:{display:"flex",gap:10,justifyContent:"flex-end",marginTop:10}},
+          CE("button",{onClick:function(){setShowAttachEditor(false);setEditAttach({label:"",desc:"",url:""});},
             style:{padding:"8px 20px",borderRadius:8,border:"1.5px solid "+C.grigio200,background:"#fff",cursor:"pointer",fontSize:13,color:C.grigio600}},"Annulla"),
-          CE("button",{onClick:salvaCustomAttach, disabled:!editAttach.label||!editAttach.url,
+          CE("button",{
+            onClick:function(){
+              if(editAttach.mode==="upload" && editAttach.file){
+                setEditAttach(function(a){return Object.assign({},a,{uploading:true});});
+                var fileRef=editAttach.file;
+                var labelRef=editAttach.label;
+                var descRef=editAttach.desc;
+                window.tnbStorage.uploadDocumento("mailing_"+Date.now(), fileRef, "mailing").then(function(result){
+                  return window.tnbStorage.getSignedUrl(result.path, 86400*30).then(function(signedUrl){
+                    setDati(function(d){
+                      var ma=(d.mailAttachments||[]).concat([{
+                        label:labelRef, desc:descRef, url:signedUrl,
+                        storagePath:result.path, nomeOriginale:result.nomeOriginale,
+                        size:result.size, uploadedAt:result.uploadedAt
+                      }]);
+                      return Object.assign({},d,{mailAttachments:ma});
+                    });
+                    setShowAttachEditor(false);setEditAttach({label:"",desc:"",url:""});
+                    window.tnbToast("✅ File caricato e allegato aggiunto");
+                  });
+                }).catch(function(err){
+                  setEditAttach(function(a){return Object.assign({},a,{uploading:false});});
+                  window.tnbToast("⚠ Errore upload: "+(err&&err.message?err.message:err),"err");
+                });
+              } else {
+                salvaCustomAttach();
+              }
+            },
+            disabled:!editAttach.label||(editAttach.mode==="upload"?!editAttach.file:!editAttach.url)||editAttach.uploading,
             style:{padding:"8px 20px",borderRadius:8,border:"none",background:C.oliva,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,
-              opacity:(!editAttach.label||!editAttach.url)?0.5:1}},"📎 Aggiungi")
+              opacity:(!editAttach.label||(editAttach.mode==="upload"?!editAttach.file:!editAttach.url)||editAttach.uploading)?0.5:1}
+          }, editAttach.uploading?"⏳ Caricamento...":"📎 Aggiungi")
         )
       )
     );
@@ -20729,7 +20813,7 @@ function MailingSystem({ dati, setDati, logAction }) {
               customAttachments.length>0 && CE("div",{style:{marginTop:6,fontSize:10,color:C.grigio500}},
                 customAttachments.map(function(a,i){
                   return CE("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0"}},
-                    CE("span",null,"\uD83D\uDCCE "+a.label),
+                    CE("span",null,(a.storagePath?"\uD83D\uDCE4 ":"\uD83D\uDD17 ")+a.label+(a.nomeOriginale?" ("+a.nomeOriginale+")":"")),
                     CE("span",{onClick:function(){eliminaCustomAttach(i);},style:{cursor:"pointer",color:C.rosso,fontSize:10}},"\u2716 rimuovi")
                   );
                 })
