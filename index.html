@@ -20230,10 +20230,9 @@ var MARKETING_CATEGORIE = [
   { v: "altro", l: "📎 Altro", colore: "#607d8b" }
 ];
 
-// MARKETING-FIX1: Genera URL pubblico Supabase (senza signed token)
+// MARKETING-FIX2: Link corto via proxy Netlify — /materiali/* → Supabase Storage
 function getPublicUrl(storagePath) {
-  var supabaseUrl = window.tnbSupabaseUrl || "https://njwtfmiviijszzxschll.supabase.co";
-  return supabaseUrl + "/storage/v1/object/public/tnb-firme/" + storagePath;
+  return "/materiali/" + storagePath.replace(/^marketing\//, "");
 }
 
 function MarketingPage({ dati, setDati, logAction }) {
@@ -20243,13 +20242,13 @@ function MarketingPage({ dati, setDati, logAction }) {
   var _s2 = useState(""); var filtro = _s2[0]; var setFiltro = _s2[1];
   var _s3 = useState(""); var search = _s3[0]; var setSearch = _s3[1];
 
-  // MARKETING-FIX1: Migra materiali con signed URL a URL pubblici
+  // MARKETING-FIX1+2: Migra materiali con signed URL o URL pubblici lunghi al formato corto /materiali/...
   useEffect(function() {
     var mats = dati.marketing || [];
-    var needsMigration = mats.some(function(m) { return m.url && m.url.indexOf("/object/sign/") !== -1; });
+    var needsMigration = mats.some(function(m) { return m.url && (m.url.indexOf("/object/sign/") !== -1 || m.url.indexOf("/object/public/") !== -1); });
     if (needsMigration && mats.length > 0) {
       var migrated = mats.map(function(m) {
-        if (m.storagePath && m.url && m.url.indexOf("/object/sign/") !== -1) {
+        if (m.storagePath && m.url && (m.url.indexOf("/object/sign/") !== -1 || m.url.indexOf("/object/public/") !== -1)) {
           return Object.assign({}, m, { url: getPublicUrl(m.storagePath) });
         }
         return m;
@@ -20836,7 +20835,7 @@ function MailingSystem({ dati, setDati, logAction }) {
       var corpoConAllegati = corpo;
       if (allegatiSel.length > 0) {
         var links = marketingMateriali.filter(function(a) { return allegatiSel.includes(a.id); }).map(function(a) {
-          return "📎 " + a.label + ": " + a.url;
+          return "📎 " + a.label + ": " + (a.url.indexOf("http") === 0 ? a.url : "https://gestionaletnb.netlify.app" + a.url);
         });
         if (links.length > 0) {
           corpoConAllegati = corpo + "\n\n——— Materiali allegati ———\n" + links.join("\n");
@@ -20888,7 +20887,7 @@ function MailingSystem({ dati, setDati, logAction }) {
       var corpoConAllegati = item.corpo;
       if (allegatiSel.length > 0) {
         var links = marketingMateriali.filter(function(a) { return allegatiSel.includes(a.id); }).map(function(a) {
-          return "📎 " + a.label + ": " + a.url;
+          return "📎 " + a.label + ": " + (a.url.indexOf("http") === 0 ? a.url : "https://gestionaletnb.netlify.app" + a.url);
         });
         if (links.length > 0) {
           corpoConAllegati = item.corpo + "\n\n——— Materiali allegati ———\n" + links.join("\n");
