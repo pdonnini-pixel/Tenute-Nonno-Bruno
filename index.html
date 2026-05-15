@@ -6735,7 +6735,7 @@ function Pipeline({
   const quickMailSend = (p) => {
     if (!p || !p.email) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email.trim())) {
-      window.alert('⚠ Email non valida: "' + p.email + '"\nCorreggi in anagrafica.');
+      window.tnbToast("⚠ Email non valida: " + p.email + " — correggi in anagrafica.", "err");
       return;
     }
     var tpl = MAIL_TEMPLATES[quickMailTpl];
@@ -6743,12 +6743,13 @@ function Pipeline({
     var dest = { referente: p.referente || pNome(p), nomeDisplay: pNome(p), email: p.email };
     var ogg = tpl.oggetto(dest);
     var corpo = tpl.corpo(dest);
-    if (!window.confirm("📨 Aprire Gmail per inviare a " + p.email + "?\nOggetto: " + ogg)) return;
-    window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(p.email) + "&su=" + encodeURIComponent(ogg) + "&body=" + encodeURIComponent(corpo), "_blank");
-    if (logAction) logAction("Mail " + quickMailTpl, "pipeline", pNome(p));
-    var azTipoMail = quickMailTpl === "primo_contatto" ? "mail_presentazione" : quickMailTpl === "followup_offerta" ? "mail_followup" : quickMailTpl === "campionatura" ? "campionatura" : "mail_presentazione";
-    addAzione(p.id, azTipoMail, "Inviata via Gmail — " + (tpl.label || quickMailTpl));
-    if (window.tnbToast) window.tnbToast("✉️ Email inviata a " + p.email);
+    window.tnbConfirm("Inviare a " + pNome(p) + " <" + p.email + ">?\nOggetto: " + ogg, function() {
+      window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(p.email) + "&su=" + encodeURIComponent(ogg) + "&body=" + encodeURIComponent(corpo), "_blank");
+      if (logAction) logAction("Mail " + quickMailTpl, "pipeline", pNome(p));
+      var azTipoMail = quickMailTpl === "primo_contatto" ? "mail_presentazione" : quickMailTpl === "followup_offerta" ? "mail_followup" : quickMailTpl === "campionatura" ? "campionatura" : "mail_presentazione";
+      addAzione(p.id, azTipoMail, "Inviata via Gmail — " + (tpl.label || quickMailTpl));
+      window.tnbToast("✅ Gmail aperto per " + p.email);
+    }, { title: "📨 Email rapida", okLabel: "Apri Gmail", danger: false });
     setQuickMailId(null);
     setQuickMailPreview(false);
   };
@@ -20272,52 +20273,83 @@ function MailingSystem({ dati, setDati, logAction }) {
   var _useState15 = useState("");              var filtroCitta = _useState15[0]; var setFiltroCitta = _useState15[1];
   var _useState16 = useState(false);           var filtroSenzaMail = _useState16[0]; var setFiltroSenzaMail = _useState16[1];
   var _useState17 = useState(false);           var filtroSenzaRisposta = _useState17[0]; var setFiltroSenzaRisposta = _useState17[1];
-  // MAILING-UPGRADE: CC/BCC support
+  // MAILING-UPGRADE v2: CC/BCC
   var _useState18 = useState("");              var ccField = _useState18[0];       var setCcField = _useState18[1];
   var _useState19 = useState("");              var bccField = _useState19[0];      var setBccField = _useState19[1];
-  // MAILING-UPGRADE: send confirmation dialog
-  var _useState20 = useState(false);           var showConfirm = _useState20[0];   var setShowConfirm = _useState20[1];
-  var _useState21 = useState(null);            var pendingSend = _useState21[0];   var setPendingSend = _useState21[1];
-  // MAILING-UPGRADE: custom templates
-  var _useState22 = useState(false);           var showTemplateEditor = _useState22[0]; var setShowTemplateEditor = _useState22[1];
-  var _useState23 = useState({oggetto:"",corpo:"",label:"",colore:"#607d8b"}); var editingTemplate = _useState23[0]; var setEditingTemplate = _useState23[1];
-  var _useState24 = useState("");              var editingTemplateKey = _useState24[0]; var setEditingTemplateKey = _useState24[1];
+  // MAILING-UPGRADE v2: custom templates
+  var _useState20 = useState(false);           var showTplEditor = _useState20[0]; var setShowTplEditor = _useState20[1];
+  var _useState21 = useState({oggetto:"",corpo:"",label:"",colore:"#607d8b"}); var editTpl = _useState21[0]; var setEditTpl = _useState21[1];
+  var _useState22 = useState("");              var editTplKey = _useState22[0]; var setEditTplKey = _useState22[1];
+  // MAILING-UPGRADE v2: custom attachments
+  var _useState23 = useState(false);           var showAttachEditor = _useState23[0]; var setShowAttachEditor = _useState23[1];
+  var _useState24 = useState({label:"",desc:"",url:""}); var editAttach = _useState24[0]; var setEditAttach = _useState24[1];
 
-  // MAILING-UPGRADE: user-customizable templates (stored in dati.mailTemplates)
+  // MAILING-UPGRADE v2: user-customizable templates (stored in dati.mailTemplates)
+  // Closure-safe: cattura ct localmente per ogni iterazione (fix C5).
   var customTemplates = dati.mailTemplates || {};
   var allTemplates = Object.assign({}, MAIL_TEMPLATES);
   Object.keys(customTemplates).forEach(function(k) {
+    var ct = customTemplates[k];
     allTemplates["custom_" + k] = {
-      label: customTemplates[k].label || "Custom",
-      colore: customTemplates[k].colore || "#607d8b",
+      label: ct.label || "Custom",
+      colore: ct.colore || "#607d8b",
       target: ["clienti","prospect"],
-      oggetto: function(dest) { return (customTemplates[k].oggetto || "").replace(/\{nome\}/g, dest.referente || dest.nomeDisplay || "").replace(/\{azienda\}/g, _tnbNome()); },
-      corpo: function(dest) { return (customTemplates[k].corpo || "").replace(/\{nome\}/g, dest.referente || dest.nomeDisplay || "").replace(/\{azienda\}/g, _tnbNome()).replace(/\{firma\}/g, _tnbFirma()); }
+      isCustom: true,
+      _rawOggetto: ct.oggetto || "",
+      _rawCorpo: ct.corpo || "",
+      oggetto: function(dest) {
+        return (ct.oggetto || "").replace(/\{nome\}/g, dest.referente || dest.nomeDisplay || "").replace(/\{azienda\}/g, _tnbNome());
+      },
+      corpo: function(dest) {
+        return (ct.corpo || "").replace(/\{nome\}/g, dest.referente || dest.nomeDisplay || "").replace(/\{azienda\}/g, _tnbNome()).replace(/\{firma\}/g, _tnbFirma());
+      }
     };
   });
 
-  var salvaCustomTemplate = function() {
-    var key = editingTemplateKey || ("tpl_" + Date.now());
+  var salvaCustomTpl = function() {
+    var key = editTplKey || ("tpl_" + Date.now());
     setDati(function(d) {
       var mt = Object.assign({}, d.mailTemplates || {});
-      mt[key] = { label: editingTemplate.label, colore: editingTemplate.colore, oggetto: editingTemplate.oggetto, corpo: editingTemplate.corpo };
+      mt[key] = { label: editTpl.label, colore: editTpl.colore, oggetto: editTpl.oggetto, corpo: editTpl.corpo };
       return Object.assign({}, d, { mailTemplates: mt });
     });
-    setShowTemplateEditor(false);
-    setEditingTemplateKey("");
-    setEditingTemplate({oggetto:"",corpo:"",label:"",colore:"#607d8b"});
-    if (window.tnbToast) window.tnbToast("✅ Template salvato");
+    setShowTplEditor(false); setEditTplKey(""); setEditTpl({oggetto:"",corpo:"",label:"",colore:"#607d8b"});
+    window.tnbToast("✅ Template salvato");
   };
 
-  var eliminaCustomTemplate = function(key) {
-    var rawKey = key.replace("custom_", "");
+  var eliminaCustomTpl = function(k) {
+    window.tnbConfirm("Eliminare il template personalizzato?", function() {
+      var rawKey = k.replace("custom_", "");
+      setDati(function(d) {
+        var mt = Object.assign({}, d.mailTemplates || {}); delete mt[rawKey];
+        return Object.assign({}, d, { mailTemplates: mt });
+      });
+      if (templateKey === k) setTemplateKey("primo_contatto");
+      window.tnbToast("🗑 Template eliminato");
+    }, { title: "Elimina template", okLabel: "Elimina", danger: true });
+  };
+
+  // MAILING-UPGRADE v2: custom attachments (stored in dati.mailAttachments)
+  var customAttachments = dati.mailAttachments || [];
+  var allAllegati = ALLEGATI_CANVA.concat(customAttachments.map(function(a, i) {
+    return { id: "custom_att_" + i, label: "📎 " + a.label, desc: a.desc || "", tag: Object.keys(MAIL_TEMPLATES), target: ["clienti","prospect"], pdfUrl: a.url, viewUrl: a.url, isCustom: true };
+  }));
+  var salvaCustomAttach = function() {
     setDati(function(d) {
-      var mt = Object.assign({}, d.mailTemplates || {});
-      delete mt[rawKey];
-      return Object.assign({}, d, { mailTemplates: mt });
+      var ma = (d.mailAttachments || []).concat([{ label: editAttach.label, desc: editAttach.desc, url: editAttach.url }]);
+      return Object.assign({}, d, { mailAttachments: ma });
     });
-    if (templateKey === key) setTemplateKey("primo_contatto");
-    if (window.tnbToast) window.tnbToast("🗑 Template eliminato");
+    setShowAttachEditor(false); setEditAttach({label:"",desc:"",url:""});
+    window.tnbToast("✅ Allegato aggiunto");
+  };
+  var eliminaCustomAttach = function(idx) {
+    window.tnbConfirm("Eliminare questo allegato personalizzato?", function() {
+      setDati(function(d) {
+        var ma = (d.mailAttachments || []).filter(function(_, i) { return i !== idx; });
+        return Object.assign({}, d, { mailAttachments: ma });
+      });
+      window.tnbToast("🗑 Allegato eliminato");
+    }, { title: "Elimina allegato", okLabel: "Elimina", danger: true });
   };
 
   var template = allTemplates[templateKey] || MAIL_TEMPLATES.primo_contatto;
@@ -20413,51 +20445,40 @@ function MailingSystem({ dati, setDati, logAction }) {
     if (!destAttivo) return;
     setOggetto(template.oggetto(destAttivo, ordine));
     setCorpo(template.corpo(destAttivo, ordine));
-    setAllegatiSel(ALLEGATI_CANVA.filter(function(a){ return a.tag.includes(templateKey); }).map(function(a){ return a.id; }));
+    setAllegatiSel(allAllegati.filter(function(a){ return a.tag.includes(templateKey); }).map(function(a){ return a.id; }));
   };
 
   var apriGmail = function() {
-    if (!destAttivo) { window.alert("⚠ Seleziona prima un destinatario"); return; }
+    if (!destAttivo) { window.tnbToast("⚠ Seleziona prima un destinatario", "err"); return; }
     if (!destAttivo.email) {
-      window.alert('⚠ Email mancante in anagrafica per "' + (destAttivo.nomeDisplay || "—") + '".\n\nAggiungi un indirizzo email al ' + (tipoSogg === "clienti" ? "cliente" : "prospect") + " prima di inviare.");
+      window.tnbToast("⚠ Email mancante per \"" + (destAttivo.nomeDisplay || "—") + "\". Aggiungi email in anagrafica.", "err");
       return;
     }
     if (!isEmailValid(destAttivo.email)) {
-      window.alert('⚠ Formato email non valido: "' + destAttivo.email + '"\n\nCorreggi l\'indirizzo in anagrafica prima di inviare.');
+      window.tnbToast("⚠ Formato email non valido: " + destAttivo.email + " — correggi in anagrafica.", "err");
       return;
     }
-    // CC/BCC validation
     var ccList = ccField.split(",").map(function(e){return e.trim();}).filter(Boolean);
     var bccList = bccField.split(",").map(function(e){return e.trim();}).filter(Boolean);
-    var invalidCC = ccList.filter(function(e){return !isEmailValid(e);});
-    var invalidBCC = bccList.filter(function(e){return !isEmailValid(e);});
-    if (invalidCC.length > 0 || invalidBCC.length > 0) {
-      window.alert("⚠ Email CC/BCC non valide:\n" + invalidCC.concat(invalidBCC).join(", "));
+    var invalidEmails = ccList.filter(function(e){return !isEmailValid(e);}).concat(bccList.filter(function(e){return !isEmailValid(e);}));
+    if (invalidEmails.length > 0) {
+      window.tnbToast("⚠ Email CC/BCC non valide: " + invalidEmails.join(", "), "err");
       return;
     }
-    // Show confirmation dialog instead of sending immediately
-    setPendingSend({ tipo: "singolo", dest: destAttivo, ogg: oggetto, corpo: corpo, cc: ccList, bcc: bccList });
-    setShowConfirm(true);
-  };
-
-  var confermaInvio = function() {
-    if (!pendingSend) return;
-    var s = pendingSend;
-    var gmailUrl = "https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(s.dest.email) +
-      "&su=" + encodeURIComponent(s.ogg) + "&body=" + encodeURIComponent(s.corpo);
-    if (s.cc && s.cc.length > 0) gmailUrl += "&cc=" + encodeURIComponent(s.cc.join(","));
-    if (s.bcc && s.bcc.length > 0) gmailUrl += "&bcc=" + encodeURIComponent(s.bcc.join(","));
-    window.open(gmailUrl, "_blank");
-    if (logAction) logAction("Email: " + templateKey, "mailing", (s.dest.nomeDisplay || "") + " — " + s.ogg);
-    salvaLog(s.dest, templateKey, s.ogg);
-    setShowConfirm(false);
-    setPendingSend(null);
-    if (window.tnbToast) window.tnbToast("✅ Gmail aperto — conferma l'invio nella tab Gmail");
-  };
-
-  var annullaInvio = function() {
-    setShowConfirm(false);
-    setPendingSend(null);
+    var dettaglio = "A: " + (destAttivo.nomeDisplay||"") + " <" + destAttivo.email + ">" +
+      (ccList.length ? "\nCC: " + ccList.join(", ") : "") +
+      (bccList.length ? "\nBCC: " + bccList.join(", ") : "") +
+      "\nOggetto: " + oggetto;
+    window.tnbConfirm(dettaglio, function() {
+      var gmailUrl = "https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(destAttivo.email) +
+        "&su=" + encodeURIComponent(oggetto) + "&body=" + encodeURIComponent(corpo);
+      if (ccList.length) gmailUrl += "&cc=" + encodeURIComponent(ccList.join(","));
+      if (bccList.length) gmailUrl += "&bcc=" + encodeURIComponent(bccList.join(","));
+      window.open(gmailUrl, "_blank");
+      if (logAction) logAction("Email: " + templateKey, "mailing", (destAttivo.nomeDisplay || "") + " — " + oggetto);
+      salvaLog(destAttivo, templateKey, oggetto);
+      window.tnbToast("✅ Gmail aperto — conferma l'invio nella tab Gmail");
+    }, { title: "📨 Conferma invio email", okLabel: "Apri Gmail", danger: false });
   };
 
   var copia = function() {
@@ -20485,112 +20506,114 @@ function MailingSystem({ dati, setDati, logAction }) {
     var item = codaInvii[indiceCorrente];
     if (!item) return;
     if (!isEmailValid(item.email)) {
-      window.alert('⚠ Email non valida per "' + item.nomeDisplay + '": ' + item.email + "\nSaltata.");
-      setCodaInvii(function(q){ return q.map(function(x,i){ return i===indiceCorrente ? Object.assign({},x,{inviata:true, errore:true}) : x; }); });
+      window.tnbToast("⚠ Email non valida per \"" + item.nomeDisplay + "\": " + item.email + " — saltata.", "err");
+      setCodaInvii(function(q){ return q.map(function(x,i){ return i===indiceCorrente ? Object.assign({},x,{inviata:true}) : x; }); });
       if (indiceCorrente < codaInvii.length-1) setIndiceCorrente(function(i){ return i+1; });
       return;
     }
-    // Confirmation for mass send
-    setPendingSend({ tipo: "massivo", item: item, idx: indiceCorrente });
-    setShowConfirm(true);
-  };
-
-  var confermaInvioMassivo = function() {
-    if (!pendingSend || pendingSend.tipo !== "massivo") return;
-    var item = pendingSend.item;
-    window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(item.email) +
-      "&su=" + encodeURIComponent(item.oggetto) + "&body=" + encodeURIComponent(item.corpo), "_blank");
-    var dest = tipoSogg==="clienti" ? dati.clienti.find(function(c){return c.id===item.id;}) : (dati.prospect||[]).find(function(p){return p.id===item.id;});
-    if (dest) salvaLog(dest, templateKey, item.oggetto);
-    setCodaInvii(function(q){ return q.map(function(x,i){ return i===pendingSend.idx ? Object.assign({},x,{inviata:true}) : x; }); });
-    if (pendingSend.idx < codaInvii.length-1) setIndiceCorrente(function(i){ return i+1; });
-    setShowConfirm(false);
-    setPendingSend(null);
+    window.tnbConfirm("Inviare a " + item.nomeDisplay + " <" + item.email + ">?\nOggetto: " + item.oggetto, function() {
+      window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(item.email) +
+        "&su=" + encodeURIComponent(item.oggetto) + "&body=" + encodeURIComponent(item.corpo), "_blank");
+      var dest = tipoSogg==="clienti" ? dati.clienti.find(function(c){return c.id===item.id;}) : (dati.prospect||[]).find(function(p){return p.id===item.id;});
+      if (dest) salvaLog(dest, templateKey, item.oggetto);
+      setCodaInvii(function(q){ return q.map(function(x,i){ return i===indiceCorrente ? Object.assign({},x,{inviata:true}) : x; }); });
+      if (indiceCorrente < codaInvii.length-1) setIndiceCorrente(function(i){ return i+1; });
+      window.tnbToast("✅ Gmail aperto per " + item.nomeDisplay);
+    }, { title: "📨 Conferma invio", okLabel: "Apri Gmail", danger: false });
   };
 
   var CE = React.createElement;
 
-  var renderTemplateEditor = function() {
-    if (!showTemplateEditor) return null;
+  var renderTplEditor = function() {
+    if (!showTplEditor) return null;
     return CE("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center"},
-      onClick:function(e){if(e.target===e.currentTarget)setShowTemplateEditor(false);}},
+      onClick:function(e){if(e.target===e.currentTarget)setShowTplEditor(false);}},
       CE("div",{style:{background:"#fff",borderRadius:16,padding:28,width:560,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.2)"}},
         CE("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}},
-          CE("div",{style:{fontSize:16,fontWeight:800,color:C.grigio800}}, editingTemplateKey ? "✏️ Modifica template" : "➕ Nuovo template"),
-          CE("button",{onClick:function(){setShowTemplateEditor(false);},style:{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.grigio500}},"✕")
+          CE("div",{style:{fontSize:16,fontWeight:800,color:C.grigio800}}, editTplKey ? "✏️ Modifica template" : "➕ Nuovo template"),
+          CE("button",{onClick:function(){setShowTplEditor(false);},style:{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.grigio500}},"✕")
         ),
         CE("div",{style:{display:"grid",gridTemplateColumns:"1fr auto",gap:12,marginBottom:14}},
           CE("div",null,
             CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600,display:"block",marginBottom:4}},"NOME TEMPLATE"),
-            CE("input",{value:editingTemplate.label,onChange:function(e){setEditingTemplate(function(t){return Object.assign({},t,{label:e.target.value});});},
+            CE("input",{value:editTpl.label,onChange:function(e){setEditTpl(function(t){return Object.assign({},t,{label:e.target.value});});},
               placeholder:"es. Promozione estiva",
               style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"8px 10px",fontSize:13,outline:"none"}})
           ),
           CE("div",null,
             CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600,display:"block",marginBottom:4}},"COLORE"),
-            CE("input",{type:"color",value:editingTemplate.colore,onChange:function(e){setEditingTemplate(function(t){return Object.assign({},t,{colore:e.target.value});});},
+            CE("input",{type:"color",value:editTpl.colore,onChange:function(e){setEditTpl(function(t){return Object.assign({},t,{colore:e.target.value});});},
               style:{width:40,height:36,border:"none",cursor:"pointer",borderRadius:6}})
           )
         ),
         CE("div",{style:{marginBottom:14}},
           CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600,display:"block",marginBottom:4}},"OGGETTO"),
-          CE("input",{value:editingTemplate.oggetto,onChange:function(e){setEditingTemplate(function(t){return Object.assign({},t,{oggetto:e.target.value});});},
-            placeholder:"Usa {nome} per il nome destinatario, {azienda} per la tua azienda",
+          CE("input",{value:editTpl.oggetto,onChange:function(e){setEditTpl(function(t){return Object.assign({},t,{oggetto:e.target.value});});},
+            placeholder:"Usa {nome} per destinatario, {azienda} per la tua azienda",
             style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"8px 10px",fontSize:13,outline:"none"}})
         ),
         CE("div",{style:{marginBottom:14}},
           CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600,display:"block",marginBottom:4}},"CORPO"),
-          CE("textarea",{value:editingTemplate.corpo,onChange:function(e){setEditingTemplate(function(t){return Object.assign({},t,{corpo:e.target.value});});},rows:12,
-            placeholder:"Usa {nome}, {azienda} e {firma} come segnaposti.\n\nEsempio:\nGentile {nome},\n\nsiamo lieti di presentare...\n\n{firma}",
+          CE("textarea",{value:editTpl.corpo,onChange:function(e){setEditTpl(function(t){return Object.assign({},t,{corpo:e.target.value});});},rows:12,
+            placeholder:"Segnaposti: {nome} = referente, {azienda} = tua azienda, {firma} = firma completa\n\nEsempio:\nGentile {nome},\n\nsiamo lieti di...\n\n{firma}",
             style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"10px 12px",fontSize:12.5,lineHeight:1.7,resize:"vertical",outline:"none",fontFamily:"'DM Sans',sans-serif"}})
         ),
         CE("div",{style:{padding:"10px 12px",background:C.grigio50,borderRadius:8,fontSize:11,color:C.grigio500,marginBottom:16,lineHeight:1.6}},
-          "Segnaposti disponibili: ",CE("strong",null,"{nome}")," = referente, ",CE("strong",null,"{azienda}")," = tua ragione sociale, ",CE("strong",null,"{firma}")," = firma completa"
+          "Segnaposti: ",CE("strong",null,"{nome}")," = referente, ",CE("strong",null,"{azienda}")," = ragione sociale, ",CE("strong",null,"{firma}")," = firma completa"
         ),
         CE("div",{style:{display:"flex",gap:10,justifyContent:"flex-end"}},
-          CE("button",{onClick:function(){setShowTemplateEditor(false);},
+          CE("button",{onClick:function(){setShowTplEditor(false);},
             style:{padding:"8px 20px",borderRadius:8,border:"1.5px solid "+C.grigio200,background:"#fff",cursor:"pointer",fontSize:13,color:C.grigio600}},"Annulla"),
-          CE("button",{onClick:salvaCustomTemplate,
-            disabled:!editingTemplate.label || !editingTemplate.corpo,
+          CE("button",{onClick:salvaCustomTpl, disabled:!editTpl.label||!editTpl.corpo,
             style:{padding:"8px 20px",borderRadius:8,border:"none",background:C.oliva,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,
-              opacity:(!editingTemplate.label||!editingTemplate.corpo)?0.5:1}},"💾 Salva template")
+              opacity:(!editTpl.label||!editTpl.corpo)?0.5:1}},"💾 Salva template")
         )
       )
     );
   };
 
-  var renderConfirmDialog = function() {
-    if (!showConfirm || !pendingSend) return null;
-    var isM = pendingSend.tipo === "massivo";
-    var destName = isM ? pendingSend.item.nomeDisplay : pendingSend.dest.nomeDisplay;
-    var destEmail = isM ? pendingSend.item.email : pendingSend.dest.email;
-    var subj = isM ? pendingSend.item.oggetto : pendingSend.ogg;
-    return CE("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center"}},
-      CE("div",{style:{background:"#fff",borderRadius:16,padding:28,width:440,boxShadow:"0 20px 60px rgba(0,0,0,.2)"}},
-        CE("div",{style:{fontSize:16,fontWeight:800,color:C.grigio800,marginBottom:16}},"📨 Conferma invio email"),
-        CE("div",{style:{padding:"12px 14px",background:C.grigio50,borderRadius:8,marginBottom:16,fontSize:12,lineHeight:1.7}},
-          CE("div",null,CE("strong",null,"A: "),destName," <",destEmail,">"),
-          !isM && pendingSend.cc && pendingSend.cc.length>0 && CE("div",null,CE("strong",null,"CC: "),pendingSend.cc.join(", ")),
-          !isM && pendingSend.bcc && pendingSend.bcc.length>0 && CE("div",null,CE("strong",null,"BCC: "),pendingSend.bcc.join(", ")),
-          CE("div",null,CE("strong",null,"Oggetto: "),subj)
+  // MAILING-UPGRADE v2: Attachment editor modal
+  var renderAttachEditor = function() {
+    if (!showAttachEditor) return null;
+    return CE("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center"},
+      onClick:function(e){if(e.target===e.currentTarget)setShowAttachEditor(false);}},
+      CE("div",{style:{background:"#fff",borderRadius:16,padding:28,width:480,boxShadow:"0 20px 60px rgba(0,0,0,.2)"}},
+        CE("div",{style:{fontSize:16,fontWeight:800,color:C.grigio800,marginBottom:16}},"📎 Aggiungi allegato personalizzato"),
+        CE("div",{style:{marginBottom:14}},
+          CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600,display:"block",marginBottom:4}},"NOME ALLEGATO"),
+          CE("input",{value:editAttach.label,onChange:function(e){setEditAttach(function(a){return Object.assign({},a,{label:e.target.value});});},
+            placeholder:"es. Catalogo Primavera 2026",
+            style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"8px 10px",fontSize:13,outline:"none"}})
         ),
-        CE("div",{style:{fontSize:12,color:C.grigio600,marginBottom:20,lineHeight:1.5}},
-          "Si aprirà Gmail in una nuova tab con l'email precompilata. ",
-          CE("strong",null,"Dovrai cliccare \"Invia\" in Gmail")," per confermare l'invio effettivo."
+        CE("div",{style:{marginBottom:14}},
+          CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600,display:"block",marginBottom:4}},"DESCRIZIONE (opzionale)"),
+          CE("input",{value:editAttach.desc,onChange:function(e){setEditAttach(function(a){return Object.assign({},a,{desc:e.target.value});});},
+            placeholder:"es. 12 pagine — novità stagione",
+            style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"8px 10px",fontSize:13,outline:"none"}})
+        ),
+        CE("div",{style:{marginBottom:14}},
+          CE("label",{style:{fontSize:11,fontWeight:700,color:C.grigio600,display:"block",marginBottom:4}},"URL PDF"),
+          CE("input",{value:editAttach.url,onChange:function(e){setEditAttach(function(a){return Object.assign({},a,{url:e.target.value});});},
+            placeholder:"https://drive.google.com/... oppure link diretto al PDF",
+            style:{width:"100%",border:"1.5px solid "+C.grigio200,borderRadius:6,padding:"8px 10px",fontSize:13,outline:"none"}})
+        ),
+        CE("div",{style:{padding:"10px 12px",background:C.grigio50,borderRadius:8,fontSize:11,color:C.grigio500,marginBottom:16,lineHeight:1.6}},
+          "Puoi usare link da Google Drive, Dropbox, o qualsiasi URL diretto a un PDF. Non serve Canva."
         ),
         CE("div",{style:{display:"flex",gap:10,justifyContent:"flex-end"}},
-          CE("button",{onClick:annullaInvio,
+          CE("button",{onClick:function(){setShowAttachEditor(false);},
             style:{padding:"8px 20px",borderRadius:8,border:"1.5px solid "+C.grigio200,background:"#fff",cursor:"pointer",fontSize:13,color:C.grigio600}},"Annulla"),
-          CE("button",{onClick: isM ? confermaInvioMassivo : confermaInvio,
-            style:{padding:"8px 20px",borderRadius:8,border:"none",background:C.blu,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700}},"📨 Apri Gmail")
+          CE("button",{onClick:salvaCustomAttach, disabled:!editAttach.label||!editAttach.url,
+            style:{padding:"8px 20px",borderRadius:8,border:"none",background:C.oliva,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,
+              opacity:(!editAttach.label||!editAttach.url)?0.5:1}},"📎 Aggiungi")
         )
       )
     );
   };
 
   return CE("div", null,
-    renderTemplateEditor(),
-    renderConfirmDialog(),
+    renderTplEditor(),
+    renderAttachEditor(),
     CE(SH, {
       title: "\uD83D\uDCE7 Mailing",
       action: CE("div", {style:{display:"flex",gap:8}},
@@ -20614,25 +20637,25 @@ function MailingSystem({ dati, setDati, logAction }) {
             var k=kt[0]; var t=kt[1];
             return CE("button",{
               key:k,
-              onClick:function(){ setTemplateKey(k); setOggetto(""); setCorpo(""); setAllegatiSel(ALLEGATI_CANVA.filter(function(a){return a.tag.includes(k);}).map(function(a){return a.id;})); },
+              onClick:function(){ setTemplateKey(k); setOggetto(""); setCorpo(""); setAllegatiSel(allAllegati.filter(function(a){return a.tag.includes(k);}).map(function(a){return a.id;})); },
               style:{width:"100%",textAlign:"left",padding:"9px 12px",borderRadius:8,marginBottom:5,cursor:"pointer",fontSize:12,
                 border:"1.5px solid "+(templateKey===k?t.colore:C.grigio200),
                 background:templateKey===k?t.colore+"11":"transparent",
                 fontWeight:templateKey===k?700:400,color:templateKey===k?t.colore:C.grigio600,
                 display:"flex",alignItems:"center"}
-            }, t.label, k.startsWith("custom_") && CE("span",{style:{marginLeft:"auto",display:"flex",gap:4}},
+            }, t.label, k.startsWith("custom_") ? CE("span",{style:{marginLeft:"auto",display:"inline-flex",gap:4}},
               CE("span",{onClick:function(ev){
                 ev.stopPropagation();
                 var rawKey = k.replace("custom_","");
                 var ct = customTemplates[rawKey];
-                if (ct) { setEditingTemplateKey(rawKey); setEditingTemplate({label:ct.label,colore:ct.colore||"#607d8b",oggetto:ct.oggetto,corpo:ct.corpo}); setShowTemplateEditor(true); }
-              },style:{cursor:"pointer",fontSize:10}},"✏"),
-              CE("span",{onClick:function(ev){ ev.stopPropagation(); if(window.confirm("Eliminare questo template?")) eliminaCustomTemplate(k); },style:{cursor:"pointer",fontSize:10}},"✖")
-            ));
+                if(ct){setEditTplKey(rawKey);setEditTpl({label:ct.label,colore:ct.colore||"#607d8b",oggetto:ct.oggetto,corpo:ct.corpo});setShowTplEditor(true);}
+              },style:{cursor:"pointer",fontSize:10}},"✏️"),
+              CE("span",{onClick:function(ev){ev.stopPropagation();eliminaCustomTpl(k);},style:{cursor:"pointer",fontSize:10}},"✖")
+            ) : null);
           })
           ,CE("div",{style:{borderTop:"1px solid "+C.grigio200,marginTop:8,paddingTop:8}},
             CE("button",{
-              onClick:function(){ setShowTemplateEditor(true); setEditingTemplateKey(""); setEditingTemplate({oggetto:"",corpo:"",label:"",colore:"#607d8b"}); },
+              onClick:function(){ setShowTplEditor(true); setEditTplKey(""); setEditTpl({oggetto:"",corpo:"",label:"",colore:"#607d8b"}); },
               style:{width:"100%",textAlign:"center",padding:"8px 12px",borderRadius:8,border:"1.5px dashed "+C.grigio300,
                 background:"transparent",cursor:"pointer",fontSize:12,color:C.grigio500,fontWeight:600}
             }, "+ Crea template personalizzato")
@@ -20671,10 +20694,9 @@ function MailingSystem({ dati, setDati, logAction }) {
         )}),
         CE(Btn,{ch:"\u26A1 Genera testo",onClick:genera,dis:!destAttivo || ((templateKey==="proposta_ordine"||templateKey==="conferma_ordine") && !ordineId),style:{width:"100%",justifyContent:"center"}}),
         corpo && CE(React.Fragment, null,
-          CE(Btn,{ch:copied?"✅ Copiato!":"\uD83D\uDCCB Copia testo",v:"sec",onClick:copia,style:{width:"100%",justifyContent:"center"}}),
           CE("div",{style:{border:"1px solid "+C.grigio200,borderRadius:8,padding:"10px 12px"}},
             CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:8,letterSpacing:.5}},"\uD83D\uDCCE ALLEGATI"),
-            ALLEGATI_CANVA.map(function(a){
+            allAllegati.map(function(a){
               var sel=allegatiSel.includes(a.id);
               return CE("div",{key:a.id,
                 onClick:function(){setAllegatiSel(function(s){return s.includes(a.id)?s.filter(function(x){return x!==a.id;}):s.concat([a.id]);});},
@@ -20689,21 +20711,31 @@ function MailingSystem({ dati, setDati, logAction }) {
             }),
             allegatiSel.length>0 && CE("div",{style:{marginTop:8,paddingTop:8,borderTop:"1px solid "+C.grigio200}},
               CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:4}},"\u2193 Scarica PDF prima di allegare:"),
-              ALLEGATI_CANVA.filter(function(a){return allegatiSel.includes(a.id);}).map(function(a){
+              allAllegati.filter(function(a){return allegatiSel.includes(a.id);}).map(function(a){
                 return CE("a",{key:a.id,href:a.pdfUrl,target:"_blank",
                   style:{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:5,marginBottom:4,
                     background:"#e3f2fd",color:"#1565c0",textDecoration:"none",fontSize:11,fontWeight:700}
                 },"\u2193 PDF: "+a.label);
               })
+            ),
+            allegatiSel.length>0 && CE("div",{style:{fontSize:10,color:C.grigio500,textAlign:"center",lineHeight:1.5,padding:"4px 0",marginTop:6}},
+              "\u2139\uFE0F Scarica i PDF sopra, poi allegali in Gmail dopo l'apertura"),
+            CE("div",{style:{marginTop:8}},
+              CE("button",{
+                onClick:function(){ setShowAttachEditor(true); setEditAttach({label:"",desc:"",url:""}); },
+                style:{width:"100%",textAlign:"center",padding:"7px 12px",borderRadius:6,border:"1.5px dashed "+C.grigio300,
+                  background:"transparent",cursor:"pointer",fontSize:11,color:C.grigio500,fontWeight:600}
+              }, "+ Aggiungi allegato personalizzato"),
+              customAttachments.length>0 && CE("div",{style:{marginTop:6,fontSize:10,color:C.grigio500}},
+                customAttachments.map(function(a,i){
+                  return CE("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0"}},
+                    CE("span",null,"\uD83D\uDCCE "+a.label),
+                    CE("span",{onClick:function(){eliminaCustomAttach(i);},style:{cursor:"pointer",color:C.rosso,fontSize:10}},"\u2716 rimuovi")
+                  );
+                })
+              )
             )
           ),
-          destAttivo && destAttivo.email && !isEmailValid(destAttivo.email) && CE("div",{style:{
-            padding:"8px 12px",background:"#fff3e0",borderRadius:8,marginBottom:8,fontSize:12,color:"#e65100",fontWeight:600
-          }},"\u26A0 Formato email non valido: "+destAttivo.email),
-          CE(Btn,{ch:"\uD83D\uDCE8 Apri Gmail",onClick:apriGmail,dis:!destAttivo||!destAttivo.email||!isEmailValid(destAttivo.email||""),
-            style:{width:"100%",justifyContent:"center",background:C.blu,color:"#fff",border:"none"}}),
-          allegatiSel.length>0 && CE("div",{style:{fontSize:10,color:C.grigio500,textAlign:"center",lineHeight:1.5,padding:"4px 0"}},
-            "\u2139\uFE0F Scarica i PDF sopra, poi allegali in Gmail dopo l'apertura"),
           !destAttivo || !destAttivo.email
             ? CE("div",{style:{fontSize:11,color:C.rosso,textAlign:"center"}},"Email non presente in anagrafica")
             : null
@@ -20711,6 +20743,17 @@ function MailingSystem({ dati, setDati, logAction }) {
       ),
       modalita==="singolo" && CE(Card, {ch: CE(React.Fragment, null,
         CE("div",{style:{fontSize:11,fontWeight:700,color:C.grigio600,marginBottom:12,letterSpacing:.5}},"ANTEPRIMA EMAIL"),
+        corpo && CE("div",{style:{display:"flex",gap:8,marginBottom:14,padding:"10px 14px",background:C.oliva+"0d",borderRadius:10,border:"1.5px solid "+C.oliva+"33",alignItems:"center"}},
+          CE("button",{onClick:apriGmail,disabled:!destAttivo||!destAttivo.email||!isEmailValid(destAttivo.email||""),
+            style:{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:700,
+              background:C.blu,color:"#fff",opacity:(!destAttivo||!destAttivo.email||!isEmailValid(destAttivo.email||""))?0.4:1}
+          },"\uD83D\uDCE8 Apri Gmail"),
+          CE("button",{onClick:copia,
+            style:{padding:"8px 16px",borderRadius:8,border:"1.5px solid "+C.grigio200,background:"#fff",cursor:"pointer",fontSize:12,fontWeight:600,color:C.grigio700}
+          },copied?"\u2705 Copiato":"\uD83D\uDCCB Copia testo"),
+          destAttivo && destAttivo.email && !isEmailValid(destAttivo.email) && CE("span",{style:{fontSize:12,color:"#e65100",fontWeight:600}},"\u26A0 Email non valida"),
+          CE("span",{style:{marginLeft:"auto",fontSize:11,color:C.grigio500}},destAttivo?destAttivo.email||"nessuna email":"")
+        ),
         !corpo && CE("div",{style:{color:C.grigio400,fontStyle:"italic",fontSize:13,padding:32,textAlign:"center"}},
           "Seleziona destinatario e tipo, poi clicca \"Genera testo\""
         ),
@@ -22627,7 +22670,7 @@ const GUIDA_CONTENUTI = {
   mailing: {
     titolo: "Mailing",
     icona: "📧",
-    corpo: "Il modulo Mailing gestisce comunicazioni email verso clienti e prospect, con template personalizzabili, CC/BCC, validazione email e conferma invio.\n\nCOME FUNZIONA\nDue modalità: Singolo (1 destinatario con anteprima completa, CC/BCC, allegati Canva) e Massivo (invio in coda a lista filtrata). Ogni invio apre Gmail in una nuova tab con email precompilata — devi cliccare 'Invia' in Gmail per confermare. Prima dell'apertura Gmail, una finestra di conferma mostra destinatario, oggetto, CC e BCC.\n\nCOME SI USA\n1. Singolo: scegli template → tipo destinatario → seleziona contatto → 'Genera testo' → modifica se vuoi → aggiungi CC/BCC → 'Apri Gmail'.\n2. Massivo: scegli destinatari/template → filtra per tipo, stato, città → seleziona → 'Genera coda' → invia uno alla volta con conferma.\n3. Template personalizzati: clicca '+ Crea template personalizzato' nel sidebar. Usa segnaposti {nome}, {azienda}, {firma} per personalizzazione automatica.\n4. Allegati: seleziona i PDF Canva da allegare, scaricali prima, poi allegali manualmente in Gmail.\n\nSUGGERIMENTI\n• Controlla sempre l'anteprima prima di inviare — il testo è completamente modificabile.\n• Usa i filtri Pipeline nel massivo prospect per targeting preciso (es. 'senza email inviata' per primo contatto).\n• Crea template personalizzati per campagne ricorrenti — eviti di riscrivere ogni volta.\n• I campi CC/BCC accettano più indirizzi separati da virgola.\n• Ogni invio viene tracciato: clienti nel log email, prospect nella timeline azioni."
+    corpo: "Il modulo Mailing gestisce comunicazioni email verso clienti e prospect con template personalizzabili, CC/BCC, validazione email e conferma invio.\n\nCOME FUNZIONA\nDue modalita: Singolo (1 destinatario con anteprima, CC/BCC, allegati) e Massivo (invio in coda a lista filtrata). Ogni invio apre Gmail con email precompilata — devi cliccare Invia in Gmail per confermare. Prima dell apertura Gmail, una conferma grafica mostra destinatario, oggetto, CC e BCC.\n\nCOME SI USA\n1. Singolo: scegli template > tipo destinatario > seleziona contatto > Genera testo > modifica se vuoi > aggiungi CC/BCC > Apri Gmail (barra blu in alto nell anteprima).\n2. Massivo: scegli destinatari e template > filtra per tipo, stato, citta > seleziona > Genera coda > invia uno alla volta con conferma.\n3. Template personalizzati: clicca + Crea template personalizzato nel sidebar. Usa segnaposti {nome}, {azienda}, {firma} per personalizzazione automatica. I template si salvano e persistono.\n4. Allegati: oltre ai 4 PDF Canva precaricati, puoi aggiungere allegati personalizzati con URL da Google Drive, Dropbox o qualsiasi link diretto. Scarica i PDF, poi allegali manualmente in Gmail.\n\nSUGGERIMENTI\n- Controlla sempre l anteprima prima di inviare.\n- Usa i filtri Pipeline nel massivo per targeting preciso.\n- Crea template personalizzati per campagne ricorrenti.\n- I campi CC/BCC accettano piu indirizzi separati da virgola.\n- Ogni invio viene tracciato: clienti nel log email, prospect nella timeline azioni."
   },
   alerts: {
     titolo: "Alert & Notifiche",
