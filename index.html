@@ -816,7 +816,7 @@ window.tnbStorage = {
   // prefix = "ddt" | "fattura" | "firma" (legacy uploadFirma usa path piatto)
   uploadDocumento: async function(ordineId, file, prefix) {
     if (!file) throw new Error("Nessun file selezionato");
-    if (file.size > 10 * 1024 * 1024) throw new Error("File troppo grande (max 10 MB)");
+    if (file.size > 20 * 1024 * 1024) throw new Error("File troppo grande (max 20 MB)");
     const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
     const ts = Date.now();
     const safePrefix = (prefix || 'doc').replace(/[^a-z0-9_-]/gi, '');
@@ -20230,12 +20230,33 @@ var MARKETING_CATEGORIE = [
   { v: "altro", l: "📎 Altro", colore: "#607d8b" }
 ];
 
+// MARKETING-FIX1: Genera URL pubblico Supabase (senza signed token)
+function getPublicUrl(storagePath) {
+  var supabaseUrl = window.tnbSupabaseUrl || "https://njwtfmiviijszzxschll.supabase.co";
+  return supabaseUrl + "/storage/v1/object/public/tnb-firme/" + storagePath;
+}
+
 function MarketingPage({ dati, setDati, logAction }) {
   var _s0 = useState(false); var showUpload = _s0[0]; var setShowUpload = _s0[1];
   var _s1 = useState({ label: "", desc: "", categoria: "scheda_tecnica", file: null, uploading: false });
   var form = _s1[0]; var setForm = _s1[1];
   var _s2 = useState(""); var filtro = _s2[0]; var setFiltro = _s2[1];
   var _s3 = useState(""); var search = _s3[0]; var setSearch = _s3[1];
+
+  // MARKETING-FIX1: Migra materiali con signed URL a URL pubblici
+  useEffect(function() {
+    var mats = dati.marketing || [];
+    var needsMigration = mats.some(function(m) { return m.url && m.url.indexOf("/object/sign/") !== -1; });
+    if (needsMigration && mats.length > 0) {
+      var migrated = mats.map(function(m) {
+        if (m.storagePath && m.url && m.url.indexOf("/object/sign/") !== -1) {
+          return Object.assign({}, m, { url: getPublicUrl(m.storagePath) });
+        }
+        return m;
+      });
+      setDati(function(d) { return Object.assign({}, d, { marketing: migrated }); });
+    }
+  }, []);
 
   var materiali = dati.marketing || [];
   var filtered = materiali.filter(function(m) {
@@ -20257,27 +20278,26 @@ function MarketingPage({ dati, setDati, logAction }) {
     var descRef = form.desc;
     var catRef = form.categoria;
     window.tnbStorage.uploadDocumento("mkt_" + Date.now(), fileRef, "marketing").then(function(result) {
-      return window.tnbStorage.getSignedUrl(result.path, 86400 * 365).then(function(signedUrl) {
-        setDati(function(d) {
-          var mk = (d.marketing || []).concat([{
-            id: "mkt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
-            label: labelRef,
-            desc: descRef,
-            categoria: catRef,
-            storagePath: result.path,
-            url: signedUrl,
-            nomeOriginale: result.nomeOriginale,
-            size: result.size,
-            mime: result.mime,
-            uploadedAt: new Date().toISOString()
-          }]);
-          return Object.assign({}, d, { marketing: mk });
-        });
-        setShowUpload(false);
-        setForm({ label: "", desc: "", categoria: "scheda_tecnica", file: null, uploading: false });
-        window.tnbToast("✅ Materiale caricato");
-        if (logAction) logAction("Upload marketing: " + labelRef, "marketing", catRef);
+      var publicUrl = getPublicUrl(result.path);
+      setDati(function(d) {
+        var mk = (d.marketing || []).concat([{
+          id: "mkt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+          label: labelRef,
+          desc: descRef,
+          categoria: catRef,
+          storagePath: result.path,
+          url: publicUrl,
+          nomeOriginale: result.nomeOriginale,
+          size: result.size,
+          mime: result.mime,
+          uploadedAt: new Date().toISOString()
+        }]);
+        return Object.assign({}, d, { marketing: mk });
       });
+      setShowUpload(false);
+      setForm({ label: "", desc: "", categoria: "scheda_tecnica", file: null, uploading: false });
+      window.tnbToast("✅ Materiale caricato");
+      if (logAction) logAction("Upload marketing: " + labelRef, "marketing", catRef);
     }).catch(function(err) {
       setForm(function(f) { return Object.assign({}, f, { uploading: false }); });
       window.tnbToast("⚠ Errore upload: " + (err && err.message ? err.message : err), "err");
@@ -20295,20 +20315,6 @@ function MarketingPage({ dati, setDati, logAction }) {
       window.tnbToast("🗑 Materiale eliminato");
       if (logAction) logAction("Eliminato marketing: " + item.label, "marketing", "");
     }, { title: "Elimina materiale", okLabel: "Elimina", danger: true });
-  };
-
-  var refreshUrl = function(item) {
-    if (!item.storagePath) { window.tnbToast("⚠ Nessun file su Storage", "err"); return; }
-    window.tnbStorage.getSignedUrl(item.storagePath, 86400 * 365).then(function(newUrl) {
-      setDati(function(d) {
-        return Object.assign({}, d, { marketing: (d.marketing || []).map(function(m) {
-          return m.id !== item.id ? m : Object.assign({}, m, { url: newUrl });
-        }) });
-      });
-      window.tnbToast("✅ Link aggiornato");
-    }).catch(function(err) {
-      window.tnbToast("⚠ Errore: " + (err && err.message ? err.message : err), "err");
-    });
   };
 
   var CE = React.createElement;
@@ -20367,7 +20373,6 @@ function MarketingPage({ dati, setDati, logAction }) {
               CE("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 } },
                 CE("span", { style: { fontSize: 10, fontWeight: 700, color: "#fff", background: cat.colore, padding: "2px 8px", borderRadius: 4 } }, cat.l),
                 CE("div", { style: { display: "flex", gap: 6 } },
-                  CE("span", { onClick: function() { refreshUrl(item); }, style: { cursor: "pointer", fontSize: 12 }, title: "Rigenera link" }, "🔄"),
                   CE("span", { onClick: function() { elimina(item); }, style: { cursor: "pointer", fontSize: 12 }, title: "Elimina" }, "🗑")
                 )
               ),
@@ -20425,29 +20430,46 @@ function MarketingPage({ dati, setDati, logAction }) {
         CE("div", { style: { marginBottom: 14 } },
           CE("label", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, display: "block", marginBottom: 4 } }, "FILE *"),
           CE("div", {
-            style: { border: "2px dashed " + C.grigio300, borderRadius: 10, padding: "24px 16px", textAlign: "center", cursor: "pointer",
-              background: form.file ? C.oliva + "0d" : C.grigio50 },
+            onDragOver: function(e) { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderColor = C.oliva; e.currentTarget.style.background = C.oliva + "15"; },
+            onDragLeave: function(e) { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderColor = C.grigio300; e.currentTarget.style.background = C.grigio50; },
+            onDrop: function(e) {
+              e.preventDefault(); e.stopPropagation();
+              e.currentTarget.style.borderColor = C.grigio300; e.currentTarget.style.background = C.grigio50;
+              var f = e.dataTransfer.files[0];
+              if (f) {
+                var ok = /\.(pdf|doc|docx|png|jpg|jpeg|pptx|xlsx)$/i.test(f.name);
+                if (!ok) { window.tnbToast("⚠ Formato non supportato. Usa PDF, DOC, DOCX, PNG, JPG, PPTX, XLSX", "err"); return; }
+                if (f.size > 20 * 1024 * 1024) { window.tnbToast("⚠ File troppo grande (max 20 MB)", "err"); return; }
+                setForm(function(a) { return Object.assign({}, a, { file: f }); });
+              }
+            },
             onClick: function() {
-              var inp = document.createElement("input"); inp.type = "file"; inp.accept = ".pdf,.doc,.docx,.pptx,.png,.jpg,.jpeg,.xlsx";
+              var inp = document.createElement("input"); inp.type = "file";
+              inp.accept = ".pdf,.doc,.docx,.png,.jpg,.jpeg,.pptx,.xlsx";
               inp.onchange = function(e) {
                 var f = e.target.files[0];
                 if (f) {
-                  if (f.size > 10 * 1024 * 1024) { window.tnbToast("⚠ File troppo grande (max 10 MB)", "err"); return; }
+                  if (f.size > 20 * 1024 * 1024) { window.tnbToast("⚠ File troppo grande (max 20 MB)", "err"); return; }
                   setForm(function(a) { return Object.assign({}, a, { file: f }); });
                 }
               };
               inp.click();
+            },
+            style: {
+              border: "2px dashed " + C.grigio300, borderRadius: 12, padding: "28px 16px",
+              textAlign: "center", cursor: "pointer", background: C.grigio50,
+              transition: "border-color 0.2s, background 0.2s"
             }
           },
             form.file
               ? CE("div", null,
-                  CE("div", { style: { fontSize: 14, fontWeight: 700, color: C.oliva } }, "✅ " + form.file.name),
-                  CE("div", { style: { fontSize: 11, color: C.grigio500, marginTop: 4 } }, (form.file.size / 1024).toFixed(0) + " KB — clicca per cambiare")
+                  CE("div", { style: { fontSize: 16, fontWeight: 700, color: C.oliva } }, "✅ " + form.file.name),
+                  CE("div", { style: { fontSize: 11, color: C.grigio500, marginTop: 4 } }, (form.file.size / 1024).toFixed(0) + " KB — clicca o trascina per cambiare")
                 )
               : CE("div", null,
-                  CE("div", { style: { fontSize: 28 } }, "📄"),
-                  CE("div", { style: { fontSize: 12, color: C.grigio500, marginTop: 4 } }, "Clicca per selezionare un file"),
-                  CE("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } }, "PDF, PPTX, DOCX, PNG, JPG, XLSX — max 10 MB")
+                  CE("div", { style: { fontSize: 32 } }, "📄"),
+                  CE("div", { style: { fontSize: 13, color: C.grigio600, marginTop: 6, fontWeight: 600 } }, "Trascina qui il file oppure clicca per selezionare"),
+                  CE("div", { style: { fontSize: 11, color: C.grigio400, marginTop: 4 } }, "PDF, DOC, DOCX, PNG, JPG, PPTX, XLSX — max 20 MB")
                 )
           )
         ),
