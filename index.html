@@ -20248,6 +20248,114 @@ const MAIL_TEMPLATES = {
 };
 
 
+// MAILING-FIX4: SearchSelect — autocomplete con filtro live per liste grandi
+function SearchSelect(props) {
+  var label = props.label;
+  var value = props.value;
+  var onChange = props.onChange;
+  var options = props.options; // [{v:"id", l:"label"}, ...]
+  var placeholder = props.placeholder || "Cerca...";
+
+  var _s0 = useState(""); var query = _s0[0]; var setQuery = _s0[1];
+  var _s1 = useState(false); var open = _s1[0]; var setOpen = _s1[1];
+  var _s2 = useState(-1); var highlighted = _s2[0]; var setHighlighted = _s2[1];
+  var containerRef = React.useRef(null);
+
+  var selected = options.find(function(o){ return o.v === value; });
+
+  var filtered = query.length > 0
+    ? options.filter(function(o){ return o.l.toLowerCase().indexOf(query.toLowerCase()) !== -1; })
+    : options;
+  var maxShow = 50;
+  var shown = filtered.slice(0, maxShow);
+
+  // Chiudi dropdown al click fuori
+  useEffect(function(){
+    var handler = function(e){
+      if (containerRef.current && !containerRef.current.contains(e.target)) { setOpen(false); }
+    };
+    document.addEventListener("mousedown", handler);
+    return function(){ document.removeEventListener("mousedown", handler); };
+  }, []);
+
+  var handleSelect = function(opt) {
+    onChange(opt.v);
+    setQuery("");
+    setOpen(false);
+    setHighlighted(-1);
+  };
+
+  var handleKeyDown = function(e) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlighted(function(h){ return Math.min(h + 1, shown.length - 1); });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlighted(function(h){ return Math.max(h - 1, 0); });
+    } else if (e.key === "Enter" && highlighted >= 0 && shown[highlighted]) {
+      e.preventDefault();
+      handleSelect(shown[highlighted]);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  var CE = React.createElement;
+  return CE("div", { ref: containerRef, style: { position: "relative" } },
+    label && CE("label", { style: { fontSize: 11, fontWeight: 600, color: C.grigio600, letterSpacing: 0.5, display: "block", marginBottom: 3 } }, label),
+    CE("div", { style: { position: "relative" } },
+      CE("input", {
+        type: "text",
+        value: open ? query : (selected ? selected.l : ""),
+        placeholder: selected && !open ? selected.l : placeholder,
+        onFocus: function() { setOpen(true); setQuery(""); setHighlighted(-1); },
+        onChange: function(e) { setQuery(e.target.value); setHighlighted(-1); if (!open) setOpen(true); },
+        onKeyDown: handleKeyDown,
+        style: {
+          width: "100%", border: "1.5px solid " + (open ? C.oliva : C.grigio200), borderRadius: 6,
+          padding: "8px 32px 8px 10px", fontSize: 13, color: C.grigio800, outline: "none",
+          background: C.bianco, transition: "border-color 0.15s"
+        }
+      }),
+      CE("span", { style: { position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: C.grigio400, pointerEvents: "none" } }, open ? "▲" : "▼"),
+      selected && !open && CE("button", {
+        onClick: function(e) { e.stopPropagation(); onChange(""); setQuery(""); },
+        style: { position: "absolute", right: 28, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.grigio400, padding: "2px" }
+      }, "✕")
+    ),
+    open && CE("div", {
+      style: {
+        position: "absolute", top: "100%", left: 0, right: 0, zIndex: 999,
+        background: "#fff", border: "1.5px solid " + C.grigio200, borderTop: "none",
+        borderRadius: "0 0 8px 8px", maxHeight: 240, overflowY: "auto",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.12)"
+      }
+    },
+      shown.length === 0 && CE("div", { style: { padding: "12px 14px", fontSize: 12, color: C.grigio400, fontStyle: "italic" } },
+        query ? "Nessun risultato per \"" + query + "\"" : "Nessun elemento"
+      ),
+      shown.map(function(opt, i) {
+        var isHL = i === highlighted;
+        var isSel = opt.v === value;
+        return CE("div", {
+          key: opt.v,
+          onMouseEnter: function() { setHighlighted(i); },
+          onClick: function() { handleSelect(opt); },
+          style: {
+            padding: "8px 14px", fontSize: 12, cursor: "pointer",
+            background: isHL ? C.oliva + "15" : (isSel ? C.oliva + "0a" : "#fff"),
+            color: isSel ? C.oliva : C.grigio800, fontWeight: isSel ? 700 : 400,
+            borderBottom: i < shown.length - 1 ? "1px solid " + C.grigio100 : "none"
+          }
+        }, opt.l, isSel && CE("span", { style: { marginLeft: 6, fontSize: 10 } }, "✓"));
+      }),
+      filtered.length > maxShow && CE("div", { style: { padding: "6px 14px", fontSize: 10, color: C.grigio400, borderTop: "1px solid " + C.grigio100 } },
+        "+" + (filtered.length - maxShow) + " risultati — affina la ricerca"
+      )
+    )
+  );
+}
+
 function MailingSystem({ dati, setDati, logAction }) {
   var _useState0 = useState("primo_contatto"); var templateKey = _useState0[0]; var setTemplateKey = _useState0[1];
   var _useState1 = useState("clienti");         var tipoSogg = _useState1[0];   var setTipoSogg = _useState1[1];
@@ -20727,7 +20835,7 @@ function MailingSystem({ dati, setDati, logAction }) {
                 background:templateKey===k?t.colore+"11":"transparent",
                 fontWeight:templateKey===k?700:400,color:templateKey===k?t.colore:C.grigio600,
                 display:"flex",alignItems:"center"}
-            }, t.label, k.startsWith("custom_") ? CE("span",{style:{marginLeft:"auto",display:"inline-flex",gap:4}},
+            }, t.label, (k==="proposta_ordine"||k==="conferma_ordine") ? CE("span",{style:{fontSize:9,color:C.grigio400,marginLeft:4}},"📋") : null, k.startsWith("custom_") ? CE("span",{style:{marginLeft:"auto",display:"inline-flex",gap:4}},
               CE("span",{onClick:function(ev){
                 ev.stopPropagation();
                 var rawKey = k.replace("custom_","");
@@ -20757,12 +20865,12 @@ function MailingSystem({ dati, setDati, logAction }) {
             })
           ),
           tipoSogg==="clienti"
-            ? CE(Sel,{label:"Cliente",v:clienteId,
-                on:function(v){setClienteId(v);setOrdineId("");setOggetto("");setCorpo("");},
-                opts:dati.clienti.map(function(c){return{v:c.id,l:c.insegna||c.ragioneSociale};})})
-            : CE(Sel,{label:"Prospect (con email)",v:prospectId,
-                on:function(v){setProspectId(v);setOggetto("");setCorpo("");},
-                opts:(dati.prospect||[]).filter(function(p){return !!p.email;}).map(function(p){
+            ? CE(SearchSelect,{label:"Cliente",value:clienteId,placeholder:"Cerca cliente per nome...",
+                onChange:function(v){setClienteId(v);setOrdineId("");setOggetto("");setCorpo("");},
+                options:dati.clienti.map(function(c){return{v:c.id,l:c.insegna||c.ragioneSociale||""};})})
+            : CE(SearchSelect,{label:"Prospect (con email)",value:prospectId,placeholder:"Cerca prospect per nome...",
+                onChange:function(v){setProspectId(v);setOggetto("");setCorpo("");},
+                options:(dati.prospect||[]).filter(function(p){return !!p.email;}).map(function(p){
                   var nome=p.tipo==="Privato"?((p.nome||"")+" "+(p.cognome||"")).trim():p.ragioneSociale||"";
                   return{v:p.id,l:nome+(STATO_FUNNEL[p.stato]?" \u00b7 "+STATO_FUNNEL[p.stato].l:"")};
                 })}),
@@ -20770,10 +20878,20 @@ function MailingSystem({ dati, setDati, logAction }) {
             CE("div",null,CE("strong",null,"Email: "),destAttivo.email||CE("span",{style:{color:C.rosso}},"\u26A0 Non disponibile")),
             CE("div",null,CE("strong",null,"Referente: "),destAttivo.referente||destAttivo.nomeDisplay||"\u2014")
           ),
-          (templateKey==="proposta_ordine"||templateKey==="conferma_ordine") && clienteId && CE("div",{style:{marginTop:10}},
-            CE(Sel,{label:"Ordine collegato",v:ordineId,on:setOrdineId,
-              opts:ordiniCliente.map(function(o){return{v:o.id,l:o.numero+" — "+fmtD(o.data)};})}),
-            !ordineId && CE("div",{style:{fontSize:11,color:C.rosso,marginTop:4}},"⚠ Seleziona un ordine per questo template")
+          (templateKey==="proposta_ordine"||templateKey==="conferma_ordine") && CE("div",{style:{marginTop:10}},
+            CE("div",{style:{padding:"8px 10px",background:"#fff8e1",borderRadius:6,marginBottom:8,fontSize:11,color:"#f57f17",lineHeight:1.5}},
+              "ℹ️ Questo template inserisce automaticamente le righe, i totali e il numero dell'ordine nel testo dell'email. Seleziona l'ordine da collegare."
+            ),
+            clienteId
+              ? CE(React.Fragment, null,
+                  ordiniCliente.length > 0
+                    ? CE(SearchSelect,{label:"Ordine collegato",value:ordineId,placeholder:"Cerca ordine per numero...",
+                        onChange:setOrdineId,
+                        options:ordiniCliente.map(function(o){return{v:o.id,l:o.numero+" — "+fmtD(o.data)};})})
+                    : CE("div",{style:{fontSize:11,color:C.grigio500,fontStyle:"italic"}},"Nessun ordine per questo cliente"),
+                  !ordineId && ordiniCliente.length > 0 && CE("div",{style:{fontSize:11,color:C.rosso,marginTop:4}},"⚠ Seleziona un ordine")
+                )
+              : CE("div",{style:{fontSize:11,color:C.grigio500,fontStyle:"italic"}},"Seleziona prima un cliente")
           )
         )}),
         CE(Btn,{ch:"\u26A1 Genera testo",onClick:genera,dis:!destAttivo || ((templateKey==="proposta_ordine"||templateKey==="conferma_ordine") && !ordineId),style:{width:"100%",justifyContent:"center"}}),
@@ -22754,7 +22872,7 @@ const GUIDA_CONTENUTI = {
   mailing: {
     titolo: "Mailing",
     icona: "📧",
-    corpo: "Il modulo Mailing gestisce comunicazioni email verso clienti e prospect con template personalizzabili, CC/BCC, validazione email e conferma invio.\n\nCOME FUNZIONA\nDue modalita: Singolo (1 destinatario con anteprima, CC/BCC, allegati) e Massivo (invio in coda a lista filtrata). Ogni invio apre Gmail con email precompilata — devi cliccare Invia in Gmail per confermare. Prima dell apertura Gmail, una conferma grafica mostra destinatario, oggetto, CC e BCC.\n\nCOME SI USA\n1. Singolo: scegli template > tipo destinatario > seleziona contatto > Genera testo > modifica se vuoi > aggiungi CC/BCC > Apri Gmail (barra blu in alto nell anteprima).\n2. Massivo: scegli destinatari e template > filtra per tipo, stato, citta > seleziona > Genera coda > invia uno alla volta con conferma.\n3. Template personalizzati: clicca + Crea template personalizzato nel sidebar. Usa segnaposti {nome}, {azienda}, {firma} per personalizzazione automatica. I template si salvano e persistono.\n4. Allegati: oltre ai 4 PDF Canva precaricati, puoi aggiungere allegati personalizzati con URL da Google Drive, Dropbox o qualsiasi link diretto. Scarica i PDF, poi allegali manualmente in Gmail.\n\nSUGGERIMENTI\n- Controlla sempre l anteprima prima di inviare.\n- Usa i filtri Pipeline nel massivo per targeting preciso.\n- Crea template personalizzati per campagne ricorrenti.\n- I campi CC/BCC accettano piu indirizzi separati da virgola.\n- Ogni invio viene tracciato: clienti nel log email, prospect nella timeline azioni."
+    corpo: "Il modulo Mailing gestisce comunicazioni email verso clienti e prospect con template personalizzabili, CC/BCC, validazione email e conferma invio.\n\nCOME FUNZIONA\nDue modalita: Singolo (1 destinatario con anteprima, CC/BCC, allegati) e Massivo (invio in coda a lista filtrata). Ogni invio apre Gmail con email precompilata — devi cliccare Invia in Gmail per confermare. Prima dell apertura Gmail, una conferma grafica mostra destinatario, oggetto, CC e BCC.\n\nCOME SI USA\n1. Singolo: scegli template > tipo destinatario > seleziona contatto > Genera testo > modifica se vuoi > aggiungi CC/BCC > Apri Gmail (barra blu in alto nell anteprima). I template Proposta ordine e Conferma ordine richiedono un ordine collegato — inseriscono automaticamente righe, totali e numero ordine nel testo.\n2. Massivo: scegli destinatari e template > filtra per tipo, stato, citta > seleziona > Genera coda > invia uno alla volta con conferma.\n3. Template personalizzati: clicca + Crea template personalizzato nel sidebar. Usa segnaposti {nome}, {azienda}, {firma} per personalizzazione automatica. I template si salvano e persistono.\n4. Allegati: oltre ai 4 PDF Canva precaricati, puoi aggiungere allegati personalizzati con URL da Google Drive, Dropbox o qualsiasi link diretto. Scarica i PDF, poi allegali manualmente in Gmail.\n\nSUGGERIMENTI\n- Controlla sempre l anteprima prima di inviare.\n- Usa i filtri Pipeline nel massivo per targeting preciso.\n- Crea template personalizzati per campagne ricorrenti.\n- I campi CC/BCC accettano piu indirizzi separati da virgola.\n- Ogni invio viene tracciato: clienti nel log email, prospect nella timeline azioni."
   },
   alerts: {
     titolo: "Alert & Notifiche",
