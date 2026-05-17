@@ -20677,19 +20677,37 @@ const HELP_CONTENT = {
       { t: "Gestione", d: "Clicca '→' per andare direttamente alla sezione coinvolta." }
     ]
   },
-  "mailing": {
-    titolo: "Mailing",
-    desc: "Email commerciali a clienti e prospect. Non invia in automatico — apre Gmail precompilato.",
+  "marketing": {
+    titolo: "Marketing e Comunicazione",
+    desc: "Carica e gestisci materiali marketing (PDF, brochure, cataloghi, presentazioni). I materiali caricati qui diventano allegati selezionabili nel Mailing.",
     tips: [
-      "Il testo generato è sempre modificabile prima di inviare",
-      "I prospect devono avere l'email inserita per apparire nella lista",
-      "Scarica i PDF PRIMA di aprire Gmail, poi allega in Gmail"
+      "Trascina i file direttamente nell'area di upload oppure clicca per selezionare",
+      "I formati supportati sono PDF, DOC, DOCX, PNG, JPG, PPTX, XLSX (max 20 MB)",
+      "I link ai materiali sono permanenti e non scadono",
+      "Usa le categorie per organizzare: Scheda tecnica, Brochure, Presentazione, Catalogo, Altro"
     ],
     sezioni: [
-      { t: "Singolo", d: "Scegli template → destinatario → Genera testo → scarica allegati → Apri Gmail → allega PDF → invia." },
-      { t: "Massivo", d: "Seleziona più destinatari, genera coda, invia uno per uno con 'Apri Gmail'." },
-      { t: "Allegati", d: "Per ogni template vengono suggeriti gli allegati adatti (Scheda Tecnica, Brochure, HoReCa). Puoi modificare la selezione." },
-      { t: "Template", d: "Primo contatto, Campionatura, Follow-up, Recall, Proposta ordine, Conferma ordine, Ringraziamento." }
+      { t: "Caricare un materiale", d: "Clicca '+ Carica materiale' oppure trascina un file nell'area tratteggiata. Inserisci nome, descrizione e categoria, poi conferma." },
+      { t: "Gestire i materiali", d: "Ogni card mostra il materiale con anteprima, copia link ed elimina. Usa la barra di ricerca e i filtri categoria per trovare quello che cerchi." },
+      { t: "Collegamento al Mailing", d: "Nel Mailing, i materiali caricati qui appaiono nella sezione 'Materiali da allegare'. Seleziona quelli da includere — i link vengono inseriti automaticamente nel corpo dell'email." }
+    ]
+  },
+  "mailing": {
+    titolo: "Mailing",
+    desc: "Email commerciali a clienti e prospect con template, allegati e conferma grafica. Non invia in automatico — apre Gmail precompilato.",
+    tips: [
+      "Cerca i destinatari per nome con l'autocomplete (non serve scorrere una lista)",
+      "Puoi creare template personalizzati con segnaposti {nome}, {azienda}, {firma}",
+      "I materiali dal modulo Marketing vengono proposti come allegati selezionabili",
+      "Prima di aprire Gmail vedi sempre una conferma grafica con riepilogo"
+    ],
+    sezioni: [
+      { t: "Singolo", d: "Scegli template, cerca il destinatario con l'autocomplete, genera il testo, seleziona i materiali da allegare, clicca Apri Gmail. I link ai materiali vengono inseriti nel corpo dell'email." },
+      { t: "Massivo", d: "Seleziona piu destinatari, genera la coda, invia uno per uno con Apri Gmail. Ogni invio viene confermato con modale grafica." },
+      { t: "Template personalizzati", d: "Crea template con nome, colore, oggetto e corpo. Usa i segnaposti: {nome} per il referente, {azienda} per Tenute NB, {firma} per la firma completa." },
+      { t: "Materiali e allegati", d: "I materiali caricati nel modulo Marketing appaiono come allegati selezionabili. Puoi anche aggiungere allegati personalizzati (URL o upload file)." },
+      { t: "CC e BCC", d: "Sopra l'oggetto trovi i campi CC e BCC per inviare copie dell'email. Le email vengono validate prima dell'invio." },
+      { t: "Ordine collegato", d: "I template Proposta ordine e Conferma ordine richiedono un ordine collegato. Seleziona prima il cliente, poi l'ordine — i dati vengono inseriti automaticamente nel testo." }
     ]
   },
   "contratti": {
@@ -20714,6 +20732,22 @@ const HELP_CONTENT = {
     sezioni: [
       { t: "Filtri", d: "Filtra per utente, modulo o periodo per trovare un'operazione specifica." },
       { t: "Lettura", d: "Ogni riga: quando, chi, cosa ha fatto e in quale sezione." }
+    ]
+  },
+  "ticket": {
+    titolo: "Ticket e Segnalazioni",
+    desc: "Segnala bug e richiedi nuove funzioni direttamente dal gestionale. Il team riceve la segnalazione con screenshot automatico e risponde tramite commenti.",
+    tips: [
+      "Il bottone rosa in basso a destra e sempre visibile su ogni pagina",
+      "Lo screenshot viene catturato automaticamente quando apri il modulo di segnalazione",
+      "Piu dettagli inserisci nella descrizione, piu velocemente il problema viene risolto",
+      "Controlla il badge rosa nel menu Ticket per vedere se hai ricevuto risposte"
+    ],
+    sezioni: [
+      { t: "Segnalare un bug", d: "Clicca il bottone rosa, scegli 'Segnala bug', inserisci titolo e descrizione dettagliata. Lo screenshot si cattura da solo. Scegli la priorita e clicca Invia." },
+      { t: "Richiedere una funzione", d: "Clicca il bottone rosa, scegli 'Richiedi funzione'. Descrivi: cosa vorresti fare, perche ti serve, come immagini che funzioni. Indica quanto e importante." },
+      { t: "Seguire i ticket", d: "Vai nel modulo Ticket per vedere i tuoi ticket. Ogni ticket mostra lo stato (Aperto, In corso, Risolto, Chiuso), lo screenshot, i commenti e le note di risoluzione." },
+      { t: "Comunicare", d: "Usa il bottone Commenta su ogni ticket per aggiungere informazioni o rispondere al team. I tuoi messaggi appaiono in azzurro, quelli del team in viola." }
     ]
   }
 };
