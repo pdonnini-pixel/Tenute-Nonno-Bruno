@@ -16648,6 +16648,7 @@ function BugReportWidget(props) {
   var _s4 = useState(false); var sending = _s4[0]; var setSending = _s4[1];
   var _s5 = useState(null); var screenshot = _s5[0]; var setScreenshot = _s5[1];
   var _s6 = useState(false); var capturing = _s6[0]; var setCapturing = _s6[1];
+  var _s7 = useState("bug"); var tipo = _s7[0]; var setTipo = _s7[1];
 
   var CE = React.createElement;
 
@@ -16662,6 +16663,7 @@ function BugReportWidget(props) {
     var salvaTicket = function(screenshotUrl) {
       var ticket = {
         id: ticketId,
+        tipo: tipo,
         modulo: currentModule,
         pagina: paginaLink,
         titolo: titolo.trim(),
@@ -16685,7 +16687,8 @@ function BugReportWidget(props) {
       setDescrizione("");
       setPriorita("medio");
       setScreenshot(null);
-      window.tnbToast("✅ Ticket #" + ticketId.slice(-6) + " creato — grazie!");
+      setTipo("bug");
+      window.tnbToast((tipo === "funzione" ? "💡" : "✅") + " Ticket #" + ticketId.slice(-6) + " creato — grazie!");
     };
 
     if (screenshot && window.tnbStorage && window.tnbStorage.uploadDocumento) {
@@ -16731,7 +16734,7 @@ function BugReportWidget(props) {
           }).catch(function() { setCapturing(false); });
         }
       },
-      title: "Segnala un problema",
+      title: "Segnala bug o richiedi funzione",
       style: {
         position: "fixed", bottom: 96, right: 24, zIndex: 10000,
         width: 56, height: 56, borderRadius: "50%",
@@ -16762,18 +16765,18 @@ function BugReportWidget(props) {
       }
     },
       CE("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, position: "sticky", top: 0, background: "#fff", zIndex: 1, paddingBottom: 12, borderBottom: "1px solid " + C.grigio100 } },
-        CE("div", { style: { fontSize: 18, fontWeight: 800, color: C.grigio800 } }, "🐛 Segnala un problema"),
+        CE("div", { style: { fontSize: 18, fontWeight: 800, color: C.grigio800 } }, tipo === "funzione" ? "💡 Richiedi funzione" : "🐛 Segnala bug"),
         CE("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
           CE("button", {
             onClick: handleSubmit,
             disabled: sending || !titolo.trim() || !descrizione.trim(),
             style: {
               padding: "8px 20px", borderRadius: 8, border: "none",
-              background: "linear-gradient(135deg, #e91e63, #c2185b)",
+              background: tipo === "funzione" ? "linear-gradient(135deg, #7b1fa2, #4a148c)" : "linear-gradient(135deg, #e91e63, #c2185b)",
               color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700,
               opacity: (sending || !titolo.trim() || !descrizione.trim()) ? 0.5 : 1
             }
-          }, sending ? "⏳..." : "📤 Invia"),
+          }, sending ? "⏳..." : (tipo === "funzione" ? "💡 Invia richiesta" : "📤 Invia")),
           CE("button", {
             onClick: function() { setOpen(false); },
             style: { background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.grigio400, padding: "4px" }
@@ -16786,12 +16789,38 @@ function BugReportWidget(props) {
           fontSize: 12, color: "#7b1fa2"
         }
       }, "📍 Stai segnalando un problema in: ", CE("strong", null, currentModule.toUpperCase())),
+      CE("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 } },
+        CE("div", {
+          onClick: function() { setTipo("bug"); },
+          style: {
+            padding: "14px 12px", borderRadius: 12, cursor: "pointer", textAlign: "center",
+            border: "2px solid " + (tipo === "bug" ? "#e91e63" : C.grigio200),
+            background: tipo === "bug" ? "#fce4ec" : "#fff"
+          }
+        },
+          CE("div", { style: { fontSize: 24 } }, "🐛"),
+          CE("div", { style: { fontSize: 13, fontWeight: 700, color: tipo === "bug" ? "#c2185b" : C.grigio600, marginTop: 4 } }, "Segnala bug"),
+          CE("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } }, "Qualcosa non funziona")
+        ),
+        CE("div", {
+          onClick: function() { setTipo("funzione"); },
+          style: {
+            padding: "14px 12px", borderRadius: 12, cursor: "pointer", textAlign: "center",
+            border: "2px solid " + (tipo === "funzione" ? "#7b1fa2" : C.grigio200),
+            background: tipo === "funzione" ? "#f3e5f5" : "#fff"
+          }
+        },
+          CE("div", { style: { fontSize: 24 } }, "💡"),
+          CE("div", { style: { fontSize: 13, fontWeight: 700, color: tipo === "funzione" ? "#7b1fa2" : C.grigio600, marginTop: 4 } }, "Richiedi funzione"),
+          CE("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } }, "Vorrei che il gestionale facesse...")
+        )
+      ),
       CE("div", { style: { marginBottom: 14 } },
         CE("label", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, display: "block", marginBottom: 4 } }, "TITOLO *"),
         CE("input", {
           value: titolo,
           onChange: function(e) { setTitolo(e.target.value); },
-          placeholder: "es. Il bottone Salva non funziona",
+          placeholder: tipo === "bug" ? "es. Il bottone Salva non funziona" : "es. Vorrei poter esportare in PDF",
           style: {
             width: "100%", border: "1.5px solid " + C.grigio200, borderRadius: 8,
             padding: "10px 12px", fontSize: 13, outline: "none"
@@ -16803,7 +16832,9 @@ function BugReportWidget(props) {
         CE("textarea", {
           value: descrizione,
           onChange: function(e) { setDescrizione(e.target.value); },
-          placeholder: "Descrivi cosa succede, cosa ti aspettavi, e i passi per riprodurre il problema...",
+          placeholder: tipo === "bug"
+            ? "Descrivi cosa succede, cosa ti aspettavi, e i passi per riprodurre il problema..."
+            : "Spiega:\n1. Cosa vorresti fare che ora non puoi\n2. Perché ti serve (in quale situazione)\n3. Come immagini che funzioni",
           rows: 5,
           style: {
             width: "100%", border: "1.5px solid " + C.grigio200, borderRadius: 8,
@@ -16812,7 +16843,7 @@ function BugReportWidget(props) {
           }
         })
       ),
-      CE("div", { style: { marginBottom: 20 } },
+      tipo === "bug" && CE("div", { style: { marginBottom: 20 } },
         CE("label", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, display: "block", marginBottom: 6 } }, "PRIORITÀ"),
         CE("div", { style: { display: "flex", gap: 8 } },
           prioritaOpts.map(function(p) {
@@ -16822,6 +16853,28 @@ function BugReportWidget(props) {
               onClick: function() { setPriorita(p.v); },
               style: {
                 flex: 1, padding: "8px 4px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                border: "2px solid " + (isSel ? p.c : C.grigio200),
+                background: isSel ? p.c + "15" : "#fff",
+                color: isSel ? p.c : C.grigio500
+              }
+            }, p.l);
+          })
+        )
+      ),
+      tipo === "funzione" && CE("div", { style: { marginBottom: 16 } },
+        CE("label", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, display: "block", marginBottom: 6 } }, "QUANTO È IMPORTANTE PER TE?"),
+        CE("div", { style: { display: "flex", gap: 8 } },
+          [
+            { v: "basso", l: "Sarebbe bello", c: "#4caf50" },
+            { v: "medio", l: "Mi serve spesso", c: "#ff9800" },
+            { v: "alto", l: "Urgente", c: "#f44336" }
+          ].map(function(p) {
+            var isSel = priorita === p.v;
+            return CE("button", {
+              key: p.v,
+              onClick: function() { setPriorita(p.v); },
+              style: {
+                flex: 1, padding: "10px 4px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600,
                 border: "2px solid " + (isSel ? p.c : C.grigio200),
                 background: isSel ? p.c + "15" : "#fff",
                 color: isSel ? p.c : C.grigio500
@@ -16859,6 +16912,8 @@ function TicketDashboard(props) {
   var currentUser = props.currentUser;
   var CE = React.createElement;
 
+  var isSuperadmin = currentUser && currentUser.role === "superadmin";
+
   var tickets = (dati.tickets || []).slice().sort(function(a, b) {
     var ordPriorita = { critico: 0, alto: 1, medio: 2, basso: 3 };
     if (a.stato === "aperto" && b.stato !== "aperto") return -1;
@@ -16867,15 +16922,23 @@ function TicketDashboard(props) {
     return 0;
   });
 
+  if (!isSuperadmin) {
+    tickets = tickets.filter(function(t) {
+      return t.autore === (currentUser && (currentUser.nome || currentUser.username));
+    });
+  }
+
   var _s0 = useState("tutti"); var filtroStato = _s0[0]; var setFiltroStato = _s0[1];
   var _s1 = useState(""); var filtroModulo = _s1[0]; var setFiltroModulo = _s1[1];
   var _s2 = useState(null); var editId = _s2[0]; var setEditId = _s2[1];
   var _s3 = useState(""); var noteFix = _s3[0]; var setNoteFix = _s3[1];
   var _s4 = useState(null); var commentingId = _s4[0]; var setCommentingId = _s4[1];
   var _s5 = useState(""); var commentText = _s5[0]; var setCommentText = _s5[1];
+  var _s6 = useState("tutti"); var filtroTipo = _s6[0]; var setFiltroTipo = _s6[1];
 
   var filtered = tickets.filter(function(t) {
     if (filtroStato !== "tutti" && t.stato !== filtroStato) return false;
+    if (filtroTipo !== "tutti" && (t.tipo || "bug") !== filtroTipo) return false;
     if (filtroModulo && t.modulo !== filtroModulo) return false;
     return true;
   });
@@ -16887,7 +16950,9 @@ function TicketDashboard(props) {
     aperti: tickets.filter(function(t) { return t.stato === "aperto"; }).length,
     inCorso: tickets.filter(function(t) { return t.stato === "in_corso"; }).length,
     risolti: tickets.filter(function(t) { return t.stato === "risolto"; }).length,
-    totali: tickets.length
+    totali: tickets.length,
+    bugAperti: tickets.filter(function(t) { return (t.tipo || "bug") === "bug" && t.stato === "aperto"; }).length,
+    funzioniAperte: tickets.filter(function(t) { return t.tipo === "funzione" && t.stato === "aperto"; }).length
   };
 
   var priCol = { critico: "#b71c1c", alto: "#f44336", medio: "#ff9800", basso: "#4caf50" };
@@ -16916,15 +16981,17 @@ function TicketDashboard(props) {
 
   return CE("div", { style: { padding: 24, maxWidth: 1100, margin: "0 auto" } },
     CE("div", { style: { marginBottom: 24 } },
-      CE("h2", { style: { fontSize: 22, fontWeight: 800, color: C.grigio800, margin: 0 } }, "🐛 Ticket & Segnalazioni"),
-      CE("p", { style: { fontSize: 13, color: C.grigio500, marginTop: 4 } }, "Gestisci le segnalazioni di bug e richieste del team")
+      CE("h2", { style: { fontSize: 22, fontWeight: 800, color: C.grigio800, margin: 0 } }, isSuperadmin ? "🐛 Ticket & Segnalazioni" : "🐛 I miei ticket"),
+      CE("p", { style: { fontSize: 13, color: C.grigio500, marginTop: 4 } }, isSuperadmin ? "Gestisci le segnalazioni di bug e richieste del team" : "Qui trovi le tue segnalazioni e le risposte del team")
     ),
-    CE("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 } },
+    CE("div", { style: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 20 } },
       [
         { l: "Aperti", n: stats.aperti, c: "#e91e63" },
         { l: "In corso", n: stats.inCorso, c: "#2196f3" },
         { l: "Risolti", n: stats.risolti, c: "#4caf50" },
-        { l: "Totali", n: stats.totali, c: C.grigio600 }
+        { l: "Totali", n: stats.totali, c: C.grigio600 },
+        { l: "🐛 Bug aperti", n: stats.bugAperti, c: "#e91e63" },
+        { l: "💡 Funzioni", n: stats.funzioniAperte, c: "#7b1fa2" }
       ].map(function(s) {
         return CE("div", { key: s.l, style: { background: "#fff", borderRadius: 12, padding: "16px 20px", border: "1px solid " + C.grigio100 } },
           CE("div", { style: { fontSize: 28, fontWeight: 800, color: s.c } }, s.n),
@@ -16932,7 +16999,7 @@ function TicketDashboard(props) {
         );
       })
     ),
-    CE("div", { style: { display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" } },
+    CE("div", { style: { display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" } },
       ["tutti", "aperto", "in_corso", "risolto", "chiuso"].map(function(s) {
         var isSel = filtroStato === s;
         return CE("button", {
@@ -16944,6 +17011,20 @@ function TicketDashboard(props) {
             color: isSel ? (staCol[s] || C.grigio600) : C.grigio500
           }
         }, s === "tutti" ? "Tutti" : (staLabel[s] || s));
+      }),
+      CE("span", { style: { width: 1, height: 20, background: C.grigio200, margin: "0 4px" } }),
+      ["tutti", "bug", "funzione"].map(function(tp) {
+        var isSel = filtroTipo === tp;
+        var col = tp === "bug" ? "#e91e63" : tp === "funzione" ? "#7b1fa2" : C.grigio600;
+        return CE("button", {
+          key: "tp_" + tp, onClick: function() { setFiltroTipo(tp); },
+          style: {
+            padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer",
+            border: "1.5px solid " + (isSel ? col : C.grigio200),
+            background: isSel ? col + "15" : "#fff",
+            color: isSel ? col : C.grigio500
+          }
+        }, tp === "tutti" ? "Tutti i tipi" : tp === "bug" ? "🐛 Bug" : "💡 Funzioni");
       }),
       moduli.length > 0 && CE("select", {
         value: filtroModulo,
@@ -16977,6 +17058,13 @@ function TicketDashboard(props) {
                 )
               ),
               CE("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
+                CE("span", {
+                  style: {
+                    fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6, marginRight: 4,
+                    color: t.tipo === "funzione" ? "#7b1fa2" : "#c2185b",
+                    background: t.tipo === "funzione" ? "#f3e5f5" : "#fce4ec"
+                  }
+                }, t.tipo === "funzione" ? "💡 FUNZIONE" : "🐛 BUG"),
                 CE("span", { style: { fontSize: 10, fontWeight: 700, color: priCol[t.priorita], background: (priCol[t.priorita] || "#999") + "15", padding: "3px 8px", borderRadius: 6 } },
                   t.priorita.toUpperCase()
                 ),
@@ -17505,7 +17593,22 @@ function App() {
       fontSize: 10,
       fontWeight: 700
     }
-  }, alerts)))), /*#__PURE__*/React.createElement("div", {
+  }, alerts), sideOpen && n.k === "ticket" && (function() {
+    var myUser = currentUser && (currentUser.nome || currentUser.username);
+    var myTickets = (dati.tickets || []).filter(function(t) { return t.autore === myUser; });
+    var conRisposta = myTickets.filter(function(t) {
+      return t.stato === "risolto" || (t.commenti && t.commenti.length > 0 && t.commenti[t.commenti.length - 1].autore !== myUser);
+    });
+    if (conRisposta.length === 0) return null;
+    return /*#__PURE__*/React.createElement("span", {
+      style: {
+        marginLeft: "auto", background: "#e91e63", color: "#fff",
+        borderRadius: "50%", width: 18, height: 18,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        fontSize: 10, fontWeight: 800
+      }
+    }, conRisposta.length);
+  })()))), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: sideOpen ? "12px 18px" : "12px 0",
       borderTop: `1px solid rgba(255,255,255,.1)`,
@@ -17993,8 +18096,8 @@ const USERS = [{
 }];
 const ROLE_ACCESS = {
   superadmin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "marketing", "mailing", "contratti", "impostazioni", "guida", "ticket"],
-  admin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "marketing", "mailing", "contratti", "guida"],
-  commerciale: ["oggi", "pipeline", "dashboard", "clienti", "ordini", "listino", "alerts", "marketing", "mailing", "contratti", "guida"],
+  admin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "marketing", "mailing", "contratti", "guida", "ticket"],
+  commerciale: ["oggi", "pipeline", "dashboard", "clienti", "ordini", "listino", "alerts", "marketing", "mailing", "contratti", "guida", "ticket"],
   tester: ["oggi","dashboard","pipeline","clienti","ordini","magazzino","produzione","fornitori","costi","listino","alerts","log","mailing","marketing","contratti","ticket"]
 };
 const ROLE_LABELS = {
