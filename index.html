@@ -16634,6 +16634,352 @@ function CostiMargini({
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// TICKET-SYSTEM: Widget bug report flottante
+function BugReportWidget(props) {
+  var currentModule = props.currentModule || "sconosciuto";
+  var currentUser = props.currentUser;
+  var dati = props.dati;
+  var setDati = props.setDati;
+
+  var _s0 = useState(false); var open = _s0[0]; var setOpen = _s0[1];
+  var _s1 = useState(""); var descrizione = _s1[0]; var setDescrizione = _s1[1];
+  var _s2 = useState("medio"); var priorita = _s2[0]; var setPriorita = _s2[1];
+  var _s3 = useState(""); var titolo = _s3[0]; var setTitolo = _s3[1];
+  var _s4 = useState(false); var sending = _s4[0]; var setSending = _s4[1];
+
+  var CE = React.createElement;
+
+  var handleSubmit = function() {
+    if (!titolo.trim()) { window.tnbToast("⚠ Inserisci un titolo", "err"); return; }
+    if (!descrizione.trim()) { window.tnbToast("⚠ Descrivi il problema", "err"); return; }
+    setSending(true);
+    var ticket = {
+      id: "tkt_" + Date.now(),
+      modulo: currentModule,
+      titolo: titolo.trim(),
+      descrizione: descrizione.trim(),
+      priorita: priorita,
+      stato: "aperto",
+      autore: currentUser ? (currentUser.nome || currentUser.username) : "Anonimo",
+      creatoIl: new Date().toISOString(),
+      risoltoIl: null,
+      noteFix: ""
+    };
+    setDati(function(d) {
+      var tickets = (d.tickets || []).concat([ticket]);
+      return Object.assign({}, d, { tickets: tickets });
+    });
+    setSending(false);
+    setOpen(false);
+    setTitolo("");
+    setDescrizione("");
+    setPriorita("medio");
+    window.tnbToast("✅ Ticket #" + ticket.id.slice(-6) + " creato — grazie!");
+  };
+
+  var prioritaOpts = [
+    { v: "basso", l: "🟢 Basso", c: "#4caf50" },
+    { v: "medio", l: "🟡 Medio", c: "#ff9800" },
+    { v: "alto", l: "🔴 Alto", c: "#f44336" },
+    { v: "critico", l: "🚨 Critico", c: "#b71c1c" }
+  ];
+
+  if (!open) {
+    return CE("div", {
+      onClick: function() { setOpen(true); },
+      title: "Segnala un problema",
+      style: {
+        position: "fixed", bottom: 24, right: 24, zIndex: 10000,
+        width: 56, height: 56, borderRadius: "50%",
+        background: "linear-gradient(135deg, #e91e63, #c2185b)",
+        color: "#fff", fontSize: 28, display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: "pointer", boxShadow: "0 4px 20px rgba(233,30,99,0.4)",
+        transition: "transform 0.2s"
+      },
+      onMouseEnter: function(e) { e.currentTarget.style.transform = "scale(1.1)"; },
+      onMouseLeave: function(e) { e.currentTarget.style.transform = "scale(1)"; }
+    }, "🐛");
+  }
+
+  return CE("div", {
+    style: {
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(0,0,0,.5)", zIndex: 10000,
+      display: "flex", alignItems: "center", justifyContent: "center"
+    },
+    onClick: function(e) { if (e.target === e.currentTarget) setOpen(false); }
+  },
+    CE("div", {
+      style: {
+        background: "#fff", borderRadius: 16, padding: 28, width: 500,
+        maxHeight: "80vh", overflowY: "auto",
+        boxShadow: "0 20px 60px rgba(0,0,0,.25)"
+      }
+    },
+      CE("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 } },
+        CE("div", { style: { fontSize: 18, fontWeight: 800, color: C.grigio800 } }, "🐛 Segnala un problema"),
+        CE("button", {
+          onClick: function() { setOpen(false); },
+          style: { background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.grigio400 }
+        }, "✕")
+      ),
+      CE("div", {
+        style: {
+          padding: "8px 12px", background: "#f3e5f5", borderRadius: 8, marginBottom: 16,
+          fontSize: 12, color: "#7b1fa2"
+        }
+      }, "📍 Stai segnalando un problema in: ", CE("strong", null, currentModule.toUpperCase())),
+      CE("div", { style: { marginBottom: 14 } },
+        CE("label", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, display: "block", marginBottom: 4 } }, "TITOLO *"),
+        CE("input", {
+          value: titolo,
+          onChange: function(e) { setTitolo(e.target.value); },
+          placeholder: "es. Il bottone Salva non funziona",
+          style: {
+            width: "100%", border: "1.5px solid " + C.grigio200, borderRadius: 8,
+            padding: "10px 12px", fontSize: 13, outline: "none"
+          }
+        })
+      ),
+      CE("div", { style: { marginBottom: 14 } },
+        CE("label", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, display: "block", marginBottom: 4 } }, "DESCRIZIONE *"),
+        CE("textarea", {
+          value: descrizione,
+          onChange: function(e) { setDescrizione(e.target.value); },
+          placeholder: "Descrivi cosa succede, cosa ti aspettavi, e i passi per riprodurre il problema...",
+          rows: 5,
+          style: {
+            width: "100%", border: "1.5px solid " + C.grigio200, borderRadius: 8,
+            padding: "10px 12px", fontSize: 13, outline: "none", resize: "vertical",
+            fontFamily: "inherit"
+          }
+        })
+      ),
+      CE("div", { style: { marginBottom: 20 } },
+        CE("label", { style: { fontSize: 11, fontWeight: 700, color: C.grigio600, display: "block", marginBottom: 6 } }, "PRIORITÀ"),
+        CE("div", { style: { display: "flex", gap: 8 } },
+          prioritaOpts.map(function(p) {
+            var isSel = priorita === p.v;
+            return CE("button", {
+              key: p.v,
+              onClick: function() { setPriorita(p.v); },
+              style: {
+                flex: 1, padding: "8px 4px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                border: "2px solid " + (isSel ? p.c : C.grigio200),
+                background: isSel ? p.c + "15" : "#fff",
+                color: isSel ? p.c : C.grigio500
+              }
+            }, p.l);
+          })
+        )
+      ),
+      CE("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end" } },
+        CE("button", {
+          onClick: function() { setOpen(false); },
+          style: {
+            padding: "10px 24px", borderRadius: 8, border: "1.5px solid " + C.grigio200,
+            background: "#fff", cursor: "pointer", fontSize: 13, color: C.grigio600
+          }
+        }, "Annulla"),
+        CE("button", {
+          onClick: handleSubmit,
+          disabled: sending,
+          style: {
+            padding: "10px 24px", borderRadius: 8, border: "none",
+            background: "linear-gradient(135deg, #e91e63, #c2185b)",
+            color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700,
+            opacity: sending ? 0.5 : 1
+          }
+        }, sending ? "⏳ Invio..." : "🐛 Invia segnalazione")
+      )
+    )
+  );
+}
+
+// TICKET-SYSTEM: Dashboard ticket per superadmin
+function TicketDashboard(props) {
+  var dati = props.dati;
+  var setDati = props.setDati;
+  var CE = React.createElement;
+
+  var tickets = (dati.tickets || []).slice().sort(function(a, b) {
+    var ordPriorita = { critico: 0, alto: 1, medio: 2, basso: 3 };
+    if (a.stato === "aperto" && b.stato !== "aperto") return -1;
+    if (a.stato !== "aperto" && b.stato === "aperto") return 1;
+    if (a.stato === b.stato) return (ordPriorita[a.priorita] || 2) - (ordPriorita[b.priorita] || 2);
+    return 0;
+  });
+
+  var _s0 = useState("tutti"); var filtroStato = _s0[0]; var setFiltroStato = _s0[1];
+  var _s1 = useState(""); var filtroModulo = _s1[0]; var setFiltroModulo = _s1[1];
+  var _s2 = useState(null); var editId = _s2[0]; var setEditId = _s2[1];
+  var _s3 = useState(""); var noteFix = _s3[0]; var setNoteFix = _s3[1];
+
+  var filtered = tickets.filter(function(t) {
+    if (filtroStato !== "tutti" && t.stato !== filtroStato) return false;
+    if (filtroModulo && t.modulo !== filtroModulo) return false;
+    return true;
+  });
+
+  var moduli = [];
+  tickets.forEach(function(t) { if (moduli.indexOf(t.modulo) === -1) moduli.push(t.modulo); });
+
+  var stats = {
+    aperti: tickets.filter(function(t) { return t.stato === "aperto"; }).length,
+    inCorso: tickets.filter(function(t) { return t.stato === "in_corso"; }).length,
+    risolti: tickets.filter(function(t) { return t.stato === "risolto"; }).length,
+    totali: tickets.length
+  };
+
+  var priCol = { critico: "#b71c1c", alto: "#f44336", medio: "#ff9800", basso: "#4caf50" };
+  var staCol = { aperto: "#e91e63", in_corso: "#2196f3", risolto: "#4caf50", chiuso: "#9e9e9e" };
+  var staLabel = { aperto: "🔴 Aperto", in_corso: "🔵 In corso", risolto: "✅ Risolto", chiuso: "⬜ Chiuso" };
+
+  var updateTicket = function(id, updates) {
+    setDati(function(d) {
+      var tks = (d.tickets || []).map(function(t) {
+        if (t.id === id) return Object.assign({}, t, updates);
+        return t;
+      });
+      return Object.assign({}, d, { tickets: tks });
+    });
+  };
+
+  var deleteTicket = function(id) {
+    window.tnbConfirm("Eliminare questo ticket definitivamente?", function() {
+      setDati(function(d) {
+        var tks = (d.tickets || []).filter(function(t) { return t.id !== id; });
+        return Object.assign({}, d, { tickets: tks });
+      });
+      window.tnbToast("🗑 Ticket eliminato");
+    }, { title: "Elimina ticket", okLabel: "Elimina", danger: true });
+  };
+
+  return CE("div", { style: { padding: 24, maxWidth: 1100, margin: "0 auto" } },
+    CE("div", { style: { marginBottom: 24 } },
+      CE("h2", { style: { fontSize: 22, fontWeight: 800, color: C.grigio800, margin: 0 } }, "🐛 Ticket & Segnalazioni"),
+      CE("p", { style: { fontSize: 13, color: C.grigio500, marginTop: 4 } }, "Gestisci le segnalazioni di bug e richieste del team")
+    ),
+    CE("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 } },
+      [
+        { l: "Aperti", n: stats.aperti, c: "#e91e63" },
+        { l: "In corso", n: stats.inCorso, c: "#2196f3" },
+        { l: "Risolti", n: stats.risolti, c: "#4caf50" },
+        { l: "Totali", n: stats.totali, c: C.grigio600 }
+      ].map(function(s) {
+        return CE("div", { key: s.l, style: { background: "#fff", borderRadius: 12, padding: "16px 20px", border: "1px solid " + C.grigio100 } },
+          CE("div", { style: { fontSize: 28, fontWeight: 800, color: s.c } }, s.n),
+          CE("div", { style: { fontSize: 11, fontWeight: 600, color: C.grigio500, marginTop: 2 } }, s.l)
+        );
+      })
+    ),
+    CE("div", { style: { display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" } },
+      ["tutti", "aperto", "in_corso", "risolto", "chiuso"].map(function(s) {
+        var isSel = filtroStato === s;
+        return CE("button", {
+          key: s, onClick: function() { setFiltroStato(s); },
+          style: {
+            padding: "6px 16px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer",
+            border: "1.5px solid " + (isSel ? (staCol[s] || C.grigio600) : C.grigio200),
+            background: isSel ? (staCol[s] || C.grigio600) + "15" : "#fff",
+            color: isSel ? (staCol[s] || C.grigio600) : C.grigio500
+          }
+        }, s === "tutti" ? "Tutti" : (staLabel[s] || s));
+      }),
+      moduli.length > 0 && CE("select", {
+        value: filtroModulo,
+        onChange: function(e) { setFiltroModulo(e.target.value); },
+        style: { marginLeft: "auto", padding: "6px 12px", borderRadius: 8, border: "1.5px solid " + C.grigio200, fontSize: 12 }
+      },
+        CE("option", { value: "" }, "Tutti i moduli"),
+        moduli.map(function(m) { return CE("option", { key: m, value: m }, m); })
+      )
+    ),
+    filtered.length === 0
+      ? CE("div", { style: { textAlign: "center", padding: 60, color: C.grigio400 } },
+          CE("div", { style: { fontSize: 48 } }, "🎉"),
+          CE("div", { style: { fontSize: 14, marginTop: 8 } }, stats.totali === 0 ? "Nessun ticket — tutto funziona!" : "Nessun ticket per questo filtro")
+        )
+      : filtered.map(function(t) {
+          var isEditing = editId === t.id;
+          return CE("div", {
+            key: t.id,
+            style: {
+              background: "#fff", borderRadius: 12, padding: 20, marginBottom: 10,
+              border: "1px solid " + C.grigio100,
+              borderLeft: "4px solid " + (priCol[t.priorita] || C.grigio300)
+            }
+          },
+            CE("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 } },
+              CE("div", null,
+                CE("div", { style: { fontSize: 15, fontWeight: 700, color: C.grigio800 } }, t.titolo),
+                CE("div", { style: { fontSize: 11, color: C.grigio400, marginTop: 2 } },
+                  "#" + t.id.slice(-6) + " · " + t.modulo.toUpperCase() + " · " + t.autore + " · " + new Date(t.creatoIl).toLocaleDateString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+                )
+              ),
+              CE("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
+                CE("span", { style: { fontSize: 10, fontWeight: 700, color: priCol[t.priorita], background: (priCol[t.priorita] || "#999") + "15", padding: "3px 8px", borderRadius: 6 } },
+                  t.priorita.toUpperCase()
+                ),
+                CE("span", { style: { fontSize: 10, fontWeight: 700, color: staCol[t.stato] || "#999", background: (staCol[t.stato] || "#999") + "15", padding: "3px 8px", borderRadius: 6 } },
+                  staLabel[t.stato] || t.stato
+                )
+              )
+            ),
+            CE("div", { style: { fontSize: 13, color: C.grigio600, lineHeight: 1.6, marginBottom: 12 } }, t.descrizione),
+            t.noteFix && CE("div", { style: { fontSize: 12, color: "#2e7d32", background: "#e8f5e9", padding: "8px 12px", borderRadius: 8, marginBottom: 10 } },
+              CE("strong", null, "🔧 Fix: "), t.noteFix
+            ),
+            isEditing && CE("div", { style: { marginBottom: 10 } },
+              CE("textarea", {
+                value: noteFix,
+                onChange: function(e) { setNoteFix(e.target.value); },
+                placeholder: "Descrivi cosa hai fatto per risolvere...",
+                rows: 3,
+                style: { width: "100%", border: "1.5px solid " + C.grigio200, borderRadius: 8, padding: "8px 12px", fontSize: 12, outline: "none", fontFamily: "inherit" }
+              }),
+              CE("div", { style: { display: "flex", gap: 8, marginTop: 6 } },
+                CE("button", {
+                  onClick: function() {
+                    updateTicket(t.id, { noteFix: noteFix, stato: "risolto", risoltoIl: new Date().toISOString() });
+                    setEditId(null); setNoteFix("");
+                    window.tnbToast("✅ Ticket risolto");
+                  },
+                  style: { padding: "6px 16px", borderRadius: 8, border: "none", background: "#4caf50", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }
+                }, "✅ Segna risolto"),
+                CE("button", {
+                  onClick: function() { setEditId(null); setNoteFix(""); },
+                  style: { padding: "6px 16px", borderRadius: 8, border: "1px solid " + C.grigio200, background: "#fff", fontSize: 12, cursor: "pointer", color: C.grigio500 }
+                }, "Annulla")
+              )
+            ),
+            CE("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+              t.stato === "aperto" && CE("button", {
+                onClick: function() { updateTicket(t.id, { stato: "in_corso" }); window.tnbToast("🔵 Ticket in lavorazione"); },
+                style: { padding: "5px 12px", borderRadius: 6, border: "1px solid #2196f3", background: "#e3f2fd", color: "#1565c0", fontSize: 11, fontWeight: 600, cursor: "pointer" }
+              }, "🔵 Prendi in carico"),
+              (t.stato === "aperto" || t.stato === "in_corso") && CE("button", {
+                onClick: function() { setEditId(t.id); setNoteFix(t.noteFix || ""); },
+                style: { padding: "5px 12px", borderRadius: 6, border: "1px solid #4caf50", background: "#e8f5e9", color: "#2e7d32", fontSize: 11, fontWeight: 600, cursor: "pointer" }
+              }, "🔧 Risolvi"),
+              t.stato === "risolto" && CE("button", {
+                onClick: function() { updateTicket(t.id, { stato: "chiuso" }); window.tnbToast("⬜ Ticket chiuso"); },
+                style: { padding: "5px 12px", borderRadius: 6, border: "1px solid " + C.grigio300, background: C.grigio50, color: C.grigio600, fontSize: 11, fontWeight: 600, cursor: "pointer" }
+              }, "⬜ Chiudi"),
+              t.stato === "risolto" && CE("button", {
+                onClick: function() { updateTicket(t.id, { stato: "aperto", noteFix: "", risoltoIl: null }); window.tnbToast("🔴 Ticket riaperto"); },
+                style: { padding: "5px 12px", borderRadius: 6, border: "1px solid #ff9800", background: "#fff3e0", color: "#e65100", fontSize: 11, fontWeight: 600, cursor: "pointer" }
+              }, "🔄 Riapri"),
+              CE("button", {
+                onClick: function() { deleteTicket(t.id); },
+                style: { padding: "5px 12px", borderRadius: 6, border: "1px solid " + C.grigio200, background: "#fff", color: C.grigio400, fontSize: 11, cursor: "pointer", marginLeft: "auto" }
+              }, "🗑")
+            )
+          );
+        })
+  );
+}
+
 function App() {
   const _hashMod = window.location.hash.replace("#","") || "";
   const [modulo, setModulo] = useState(_hashMod || "dashboard");
@@ -16883,6 +17229,10 @@ function App() {
     k: "guida",
     l: "📖 Guida",
     icon: /*#__PURE__*/React.createElement(I.alert, null)
+  }, {
+    k: "ticket",
+    l: "🐛 Ticket",
+    icon: /*#__PURE__*/React.createElement(I.ord, null)
   }];
   const access = ROLE_ACCESS[currentUser.role] || [];
   const NAV = ALL_NAV.filter(n => access.includes(n.k));
@@ -17213,7 +17563,16 @@ function App() {
     setDati: setDatiSave,
     currentUser: currentUser,
     logAction: logAction
-  }))))));
+  }), modulo === "ticket" && /*#__PURE__*/React.createElement(TicketDashboard, {
+    dati: dati,
+    setDati: setDatiSave
+  })))))
+  , /*#__PURE__*/React.createElement(BugReportWidget, {
+    currentModule: modulo,
+    currentUser: currentUser,
+    dati: dati,
+    setDati: setDatiSave
+  }));
 }
 
 // ─── ACTIVITY LOG ────────────────────────────────────────────────────────────
@@ -17455,7 +17814,7 @@ const USERS = [{
   id: "co",
   username: "irene",
   password: "irene2026",
-  role: "commerciale",
+  role: "tester",
   nome: "Irene Paggetti",
   avatar: "I",
   email: "irene.paggetti@tenutenonnobruno.it",
@@ -17463,24 +17822,28 @@ const USERS = [{
   ruoloExt: "Key Account Manager HoReCa & Retail"
 }];
 const ROLE_ACCESS = {
-  superadmin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "marketing", "mailing", "contratti", "impostazioni", "guida"],
+  superadmin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "marketing", "mailing", "contratti", "impostazioni", "guida", "ticket"],
   admin: ["oggi", "dashboard", "pipeline", "clienti", "ordini", "magazzino", "produzione", "fornitori", "costi", "listino", "alerts", "log", "marketing", "mailing", "contratti", "guida"],
-  commerciale: ["oggi", "pipeline", "dashboard", "clienti", "ordini", "listino", "alerts", "marketing", "mailing", "contratti", "guida"]
+  commerciale: ["oggi", "pipeline", "dashboard", "clienti", "ordini", "listino", "alerts", "marketing", "mailing", "contratti", "guida"],
+  tester: ["oggi","dashboard","pipeline","clienti","ordini","magazzino","produzione","fornitori","costi","listino","alerts","log","mailing","marketing","contratti","ticket"]
 };
 const ROLE_LABELS = {
   superadmin: "Super Admin",
   admin: "Admin",
-  commerciale: "Commerciale"
+  commerciale: "Commerciale",
+  tester: "Tester"
 };
 const ROLE_READONLY = {
   superadmin: [],
   admin: [],
-  commerciale: ["magazzino","produzione","fornitori","costi"]
+  commerciale: ["magazzino","produzione","fornitori","costi"],
+  tester: []
 };
 const ROLE_COLORS = {
   superadmin: C.olivaScuro,
   admin: C.blu,
-  commerciale: C.viola
+  commerciale: C.viola,
+  tester: "#e91e63"
 };
 function LoginScreen({
   onLogin
@@ -23154,12 +23517,33 @@ const GUIDA_CONTENUTI = {
     titolo: "Impostazioni",
     icona: "⚙️",
     corpo: "Configurazione globale del gestionale. Molte funzioni sono riservate al SuperAdmin.\n\nPARAMETRI CONFIGURABILI\n• Soglia ordine inattivo: dopo quanti giorni un ordine senza movimenti viene segnalato (default: 60).\n• Scadenza riserva pre-firma: giorni entro cui il cliente deve firmare prima che la riserva magazzino si annulli (default: 7).\n• Template promemoria consegna: testo email personalizzabile con placeholder {nomeCliente}, {numeroOrdine}, {qtaResidua}.\n\nDATI AZIENDA\nRagione sociale, indirizzo, P.IVA, telefono, email, PEC, referente. Questi dati vengono usati nei PDF degli ordini e nelle email.\n\nZONA PERICOLOSA (Solo SuperAdmin)\n• Cancella ordini: rimuove tutti gli ordini e le firme su Storage.\n• Reset completo D0: ripristina il dataset di esempio. Cancella anche tutti i log.\n• Reset Go-Live: pulizia dati di test mantenendo configurazione aziendale e impostazioni. Cancella log, firme, DDT, fatture, documenti da Storage.\n\nBACKUP\nEsporta tutti i dati in formato JSON con doppia conferma. Utile prima di operazioni rischiose.\n\nSUGGERIMENTI\n• Fai SEMPRE un backup prima di usare la zona pericolosa.\n• Configura il template email consegna con i dati della tua azienda.\n• Le operazioni nella zona pericolosa sono IRREVERSIBILI — doppia conferma richiesta."
+  },
+  ticket: {
+    titolo: "Ticket & Segnalazioni",
+    icona: "🐛",
+    corpo: "COME FUNZIONA\n\nIl sistema di ticket permette di segnalare problemi direttamente dal gestionale.\n\n" +
+      "SEGNALARE UN PROBLEMA\n\n" +
+      "1. Clicca il bottone 🐛 rosa in basso a destra (visibile su ogni pagina)\n" +
+      "2. Compila titolo, descrizione e priorità\n" +
+      "3. Il modulo viene rilevato automaticamente\n" +
+      "4. Clicca Invia — il ticket appare nella dashboard\n\n" +
+      "GESTIRE I TICKET (solo superadmin)\n\n" +
+      "Vai in 🐛 Ticket per vedere tutti i ticket. Puoi:\n" +
+      "- Prendere in carico (Aperto → In corso)\n" +
+      "- Risolvere con note di fix (In corso → Risolto)\n" +
+      "- Chiudere o riaprire ticket\n" +
+      "- Filtrare per stato e modulo\n\n" +
+      "PRIORITÀ\n\n" +
+      "🟢 Basso — problema estetico o minore\n" +
+      "🟡 Medio — funzionalità parzialmente compromessa\n" +
+      "🔴 Alto — funzionalità bloccata\n" +
+      "🚨 Critico — il gestionale non funziona"
   }
 };
 function GuidaPage() {
   const [sezione, setSezione] = useState("intro");
   const C2 = { grigio100:"#f5f5f5", grigio200:"#e0e0e0", grigio400:"#bdbdbd", grigio600:"#757575", grigio800:"#424242", bianco:"#fff", verde:"#2e7d32", blu:"#1565c0" };
-  const sezioni = ["intro","ruoli","oggi","dashboard","pipeline","clienti","ordini","magazzino","produzione","fornitori","costi","listino","marketing","mailing","alerts","contratti","report","log","impostazioni","doppioni"];
+  const sezioni = ["intro","ruoli","oggi","dashboard","pipeline","clienti","ordini","magazzino","produzione","fornitori","costi","listino","marketing","mailing","alerts","contratti","report","log","impostazioni","doppioni","ticket"];
   const renderCorpo = (testo) => {
     return testo.split("\n\n").map(function(para, pi) {
       if (para.startsWith("•") || para.includes("\n•")) {
