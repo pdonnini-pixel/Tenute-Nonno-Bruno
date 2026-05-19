@@ -6541,14 +6541,14 @@ function Pipeline({
   const [categoriaFilter, setCategoriaFilter] = useState("");
   const [quickFilter, setQuickFilter] = useState("");
   const [logCallId, setLogCallId] = useState(null);
-  const [logCallForm, setLogCallForm] = useState({ esito: "", nota: "", prossimaCall: "" });
+  const [logCallForm, setLogCallForm] = useState({ esito: "", nota: "", prossimaCall: "", dataCall: "" });
   const [quickMailId, setQuickMailId] = useState(null);
   const [quickMailTpl, setQuickMailTpl] = useState("primo_contatto");
   const [quickMailPreview, setQuickMailPreview] = useState(false);
   // UX2 — Wizard Prospect → Ordine
   const [ordineWizard, setOrdineWizard] = useState(null);
-  const addCall = (id, nota) => {
-    const newCall = { data: todayStr(), nota: nota || "" };
+  const addCall = (id, nota, dataOverride) => {
+    const newCall = { data: dataOverride || todayStr(), nota: nota || "" };
     setDati(d => ({
       ...d,
       prospect: d.prospect.map(p => p.id !== id ? p : {
@@ -6702,7 +6702,7 @@ function Pipeline({
   const CANALI_LABEL = {fiera:"Fiera",call_diretta:"Call",contatto_aziendale:"Aziendale",web:"Web",passaparola:"Passaparola",email:"Email",visita:"Visita",altro:"Altro"};
   // UX1 helpers
   const ROWS_PER_PAGE = 50;
-  const pNome = (p) => p.tipo === "Privato" ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato" : (p.ragioneSociale || "—");
+  const pNome = (p) => p.tipo === "Privato" ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato" : (p.insegna || p.ragioneSociale || "—");
   const pCitta = (p) => { var a = (p.indirizzo || ""); var parts = a.split(","); return parts.length > 1 ? parts[parts.length-1].trim() : a.trim(); };
   const pUltimoContatto = (p) => { var cc = (p.calls || []); if (!cc.length) return ""; var last = cc[cc.length-1]; return typeof last === "string" ? last : (last.data || ""); };
   const pProssimaAzione = (p) => (p.nextCall && p.nextCall.data) ? p.nextCall.data : "";
@@ -6718,7 +6718,7 @@ function Pipeline({
     if (!logCallId || !logCallForm.esito) return;
     var esito = ESITI_CALL.find(e => e.v === logCallForm.esito);
     var nota = (esito ? esito.l : "") + (logCallForm.nota ? " — " + logCallForm.nota : "");
-    addCall(logCallId, nota);
+    addCall(logCallId, nota, logCallForm.dataCall || "");
     // add azione
     var azTipo = logCallForm.esito === "campione" ? "campionatura" : "richiamare";
     addAzione(logCallId, azTipo, nota);
@@ -6730,7 +6730,7 @@ function Pipeline({
     }
     if (window.tnbToast) window.tnbToast("📞 Chiamata registrata");
     setLogCallId(null);
-    setLogCallForm({ esito: "", nota: "", prossimaCall: "" });
+    setLogCallForm({ esito: "", nota: "", prossimaCall: "", dataCall: "" });
   };
   const quickMailSend = (p) => {
     if (!p || !p.email) return;
@@ -6831,7 +6831,7 @@ function Pipeline({
     if (filter) {
       const q = filter.toLowerCase();
       const label = pNome(p).toLowerCase();
-      if (!(label.includes(q) || (p.indirizzo||"").toLowerCase().includes(q) || (p.email||"").toLowerCase().includes(q) || (p.referente||"").toLowerCase().includes(q) || (p.note||"").toLowerCase().includes(q))) return false;
+      if (!(label.includes(q) || (p.insegna||"").toLowerCase().includes(q) || (p.ragioneSociale||"").toLowerCase().includes(q) || (p.indirizzo||"").toLowerCase().includes(q) || (p.email||"").toLowerCase().includes(q) || (p.referente||"").toLowerCase().includes(q) || (p.note||"").toLowerCase().includes(q))) return false;
     }
     if (statoFilter && p.stato !== statoFilter) return false;
     if (categoriaFilter && p.tipo !== categoriaFilter) return false;
@@ -7001,7 +7001,7 @@ function Pipeline({
           onMouseEnter: function(e) { e.currentTarget.style.background = C.grigio50; },
           onMouseLeave: function(e) { e.currentTarget.style.background = "transparent"; }
         },
-          /*#__PURE__*/React.createElement("td", { style: { padding: "8px 6px", fontWeight: 600, color: C.grigio800, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, p.campioneInviato ? "📦 " + pNome(p) : pNome(p)),
+          /*#__PURE__*/React.createElement("td", { style: { padding: "8px 6px", fontWeight: 600, color: C.grigio800, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, p.campioneInviato ? "📦 " + pNome(p) : pNome(p), p.insegna && p.ragioneSociale && p.insegna !== p.ragioneSociale ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, fontStyle: "italic", fontWeight: 400 } }, p.ragioneSociale) : null),
           /*#__PURE__*/React.createElement("td", { style: { padding: "8px 6px", color: C.grigio600 } }, p.tipo || "\u2014"),
           /*#__PURE__*/React.createElement("td", { style: { padding: "8px 6px" } },
             /*#__PURE__*/React.createElement("span", { style: { background: (STATO_FUNNEL[p.stato] || {}).c || C.grigio400, color: "#fff", borderRadius: 10, padding: "2px 8px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" } }, (STATO_FUNNEL[p.stato] || {}).l || p.stato)
@@ -7395,6 +7395,11 @@ function Pipeline({
     onClose: function() { setLogCallId(null); },
     ch: /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.grigio500 } }, pNome(dati.prospect.find(function(x) { return x.id === logCallId; }) || {})),
+      /*#__PURE__*/React.createElement(Inp, {
+        label: "📅 Data chiamata (lascia vuoto per oggi)", type: "date",
+        v: logCallForm.dataCall || "",
+        on: function(v) { setLogCallForm(function(f) { return Object.assign({}, f, { dataCall: v }); }); }
+      }),
       /*#__PURE__*/React.createElement(Sel, {
         label: "Esito", v: logCallForm.esito,
         on: function(v) { setLogCallForm(function(f) { return Object.assign({}, f, { esito: v }); }); },
@@ -7494,7 +7499,10 @@ function Pipeline({
         label: "Ragione Sociale", req: true, full: true,
         v: form.ragioneSociale || "", on: v => setForm(f => ({...f, ragioneSociale: v}))
       })
-    ), form.tipo === "Privato" ? /*#__PURE__*/React.createElement(Inp, {
+    ), form.tipo !== "Privato" ? /*#__PURE__*/React.createElement(Inp, {
+      label: "Insegna", ph: "es. Terrazza 45, Bar del Corso...",
+      v: form.insegna || "", on: v => setForm(f => ({...f, insegna: v}))
+    }) : null, form.tipo === "Privato" ? /*#__PURE__*/React.createElement(Inp, {
       label: "Cognome", req: true, ph: "Rossi",
       v: form.cognome || "", on: v => setForm(f => ({...f, cognome: v}))
     }) : null, form.tipo !== "Privato" ? /*#__PURE__*/React.createElement(Inp, {
@@ -10079,6 +10087,8 @@ function Ordini({
     }
     const ordine = {
       ...form,
+      pregresso: !!form.pregresso,
+      stato: form.pregresso ? "consegnato" : (form.stato || "da_firmare"),
       statoLog: statoLogFinal,
       modalitaFattura: form.modalitaFattura || "unica",
       righe: (form.righe || []).map(r => {
@@ -10106,8 +10116,10 @@ function Ordini({
     // Per modifiche a ordini già firmati/consegnati/fatturati (no cambio stato): NESSUN check,
     // gli scarichi sono storici e modifiche righe non li rigenerano automaticamente.
     const richiedeCheckStock =
-      ordine.stato === "da_firmare" ||
-      (vecchioStato !== "firmato" && ordine.stato === "firmato");
+      !ordine.pregresso && (
+        ordine.stato === "da_firmare" ||
+        (vecchioStato !== "firmato" && ordine.stato === "firmato")
+      );
     if (richiedeCheckStock) {
       if (window.TNB_DEBUG_MAG) console.log(`[TNB_DEBUG_MAG] saveOrdine check. ordineId=${ordine.id} stato=${ordine.stato} vecchio=${vecchioStato} righe=`, ordine.righe);
       const check = verificaDisponibilitaOrdine(ordine, dati.magazzino);
@@ -10126,6 +10138,8 @@ function Ordini({
         ? [ordine, ...d.ordini]
         : d.ordini.map(o => o.id === ordine.id ? ordine : o);
       const d1 = { ...d, ordini: ordiniAggiornati };
+      // Ordini pregressi: nessuno scarico magazzino (storici)
+      if (ordine.pregresso) return d1;
       // Auto-scarico/annullo magazzino su cambio stato (firmato / annullato)
       return applicaTransizioneOrdineMagazzino(d1, ordine, vecchioStato);
     });
@@ -10443,7 +10457,9 @@ function Ordini({
               alignItems: "center",
               gap: 6
             }
-          }, o.numero || "—", o.firma && /*#__PURE__*/React.createElement("button", {
+          }, o.numero || "—", o.pregresso && /*#__PURE__*/React.createElement("span", {
+            style: { fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#fff3e0", color: "#e65100", marginRight: 4 }
+          }, "📦 PREGRESSO"), o.firma && /*#__PURE__*/React.createElement("button", {
             onClick: e => { e.stopPropagation(); window.tnbStorage.openFirma(o.firma); },
             title: "Vedi firma allegata",
             style: { background: "#e8f5e9", border: "1px solid #2e7d32", borderRadius: 4, padding: "1px 5px", fontSize: 10, cursor: "pointer", color: "#2e7d32", fontWeight: 600, lineHeight: 1 }
@@ -10935,7 +10951,18 @@ function Ordini({
         ...f,
         data: v
       }))
-    }), form.righe?.some(r => r.modalitaConsegna && r.modalitaConsegna !== "immediata") && /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2", padding: "12px", background: C.grigio50, borderRadius: 8, marginTop: 8, marginBottom: 8 } },
+    }), /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2", display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#fff3e0", borderRadius: 8, border: "1px solid #ffe0b2" } },
+      /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: !!form.pregresso,
+        onChange: function(e) { setForm(function(f) { return Object.assign({}, f, { pregresso: e.target.checked }); }); },
+        style: { width: 18, height: 18 }
+      }),
+      /*#__PURE__*/React.createElement("div", null,
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "#e65100" } }, "📦 Ordine pregresso"),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: "#bf360c" } }, "Salta il controllo giacenza e non scarica il magazzino. Usa per ordini storici.")
+      )
+    ), form.righe?.some(r => r.modalitaConsegna && r.modalitaConsegna !== "immediata") && /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2", padding: "12px", background: C.grigio50, borderRadius: 8, marginTop: 8, marginBottom: 8 } },
       /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, fontWeight: 600, color: C.grigio600, marginBottom: 6, display: "block" } }, "Modalità fatturazione (per consegne scaglionate)"),
       /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 16 } },
         /*#__PURE__*/React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" } },
@@ -19282,7 +19309,7 @@ function OggiAzioni({
     if (!p || !p.email) { if (window.tnbToast) window.tnbToast("⚠️ Nessuna email per questo prospect", "err"); return; }
     const tpl = MAIL_TEMPLATES["primo_contatto"];
     if (!tpl) return;
-    const pNomeBrief = p.tipo === "Privato" ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato" : (p.ragioneSociale || "—");
+    const pNomeBrief = p.tipo === "Privato" ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato" : (p.insegna || p.ragioneSociale || "—");
     const dest = { referente: p.referente || pNomeBrief, nomeDisplay: pNomeBrief, email: p.email };
     window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(p.email) + "&su=" + encodeURIComponent(tpl.oggetto(dest)) + "&body=" + encodeURIComponent(tpl.corpo(dest)), "_blank");
     if (window.tnbToast) window.tnbToast("✉️ Email inviata a " + p.email);
@@ -19351,8 +19378,8 @@ function OggiAzioni({
     const sem = semaforo(a.gg);
     const nome = a.tipo === "richiama" && a.prospect
       ? (a.prospect.tipo === "Privato"
-          ? ((a.prospect.nome||"") + " " + (a.prospect.cognome||"")).trim() || a.prospect.ragioneSociale || "Privato"
-          : a.prospect.ragioneSociale || "—")
+          ? ((a.prospect.nome||"") + " " + (a.prospect.cognome||"")).trim() || a.prospect.insegna || a.prospect.ragioneSociale || "Privato"
+          : a.prospect.insegna || a.prospect.ragioneSociale || "—")
       : (a.cliente?.insegna || a.cliente?.ragioneSociale || "—");
     return /*#__PURE__*/React.createElement("div", {
       key: i,
@@ -19408,7 +19435,7 @@ function OggiAzioni({
         fontSize: 12,
         color: C.grigio600
       }
-    }, (a.tipo === "followup" || a.tipo === "richiama") && (a.nota || (a.tipo==="richiama"?(a.prospect?.tipo==="Privato"?((a.prospect?.nome||"")+" "+(a.prospect?.cognome||"")).trim()||a.prospect?.ragioneSociale||"Privato":a.prospect?.ragioneSociale||"Prospect"):"Ricontattare")), a.tipo === "cv" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "firma" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "pagamento" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`)), /*#__PURE__*/React.createElement("div", {
+    }, (a.tipo === "followup" || a.tipo === "richiama") && (a.nota || (a.tipo==="richiama"?(a.prospect?.tipo==="Privato"?((a.prospect?.nome||"")+" "+(a.prospect?.cognome||"")).trim()||a.prospect?.insegna||a.prospect?.ragioneSociale||"Privato":a.prospect?.insegna||a.prospect?.ragioneSociale||"Prospect"):"Ricontattare")), a.tipo === "cv" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "firma" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`, a.tipo === "pagamento" && `Ordine ${a.ordine?.numero} — ${fmt(totOrdine(a.ordine || {}))}`), (a.tipo === "followup" || a.tipo === "richiama") && (function() { var tel = a.tipo === "richiama" ? (a.prospect && a.prospect.telefono) : (a.cliente && a.cliente.telefono); if (!tel) return null; return /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "#5d7a2e", marginTop: 2, fontWeight: 600, letterSpacing: "0.5px" } }, "📞 " + tel); })()), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11,
         color: C.grigio400,
@@ -19455,7 +19482,7 @@ function OggiAzioni({
     else if (tipo === "pagamento") { window._tnbNav = { tab: "da_pagare" }; if (window._nav) window._nav("ordini"); }
   };
   // UX3.1 \u2014 prospect name helper
-  const pNomeBrief = (p) => p.tipo === "Privato" ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato" : (p.ragioneSociale || "\u2014");
+  const pNomeBrief = (p) => p.tipo === "Privato" ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato" : (p.insegna || p.ragioneSociale || "\u2014");
   return /*#__PURE__*/React.createElement("div", null,
     /* UX3.1 \u2014 Greeting */
     /*#__PURE__*/React.createElement("div", { style: { padding: "18px 0 8px 0", marginBottom: 4 } },
@@ -19571,6 +19598,7 @@ function OggiAzioni({
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 22, flexShrink: 0 } }, "📲"),
       /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
         /*#__PURE__*/React.createElement("strong", { style: { fontSize: 13 } }, pNomeBrief(p)),
+        p.telefono ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "#5d7a2e", fontWeight: 600, marginLeft: 8 } }, "📞 " + p.telefono) : null,
         p.nextCall.nota ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.grigio600, marginTop: 2 } }, p.nextCall.nota) : null,
         (STATO_FUNNEL[p.stato]) ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, background: STATO_FUNNEL[p.stato].c, color: "#fff", borderRadius: 5, padding: "1px 6px", fontWeight: 700, marginTop: 3, display: "inline-block" } }, STATO_FUNNEL[p.stato].l) : null
       ),
@@ -20902,7 +20930,7 @@ var MARKETING_CATEGORIE = [
 
 // MARKETING-FIX2: Link corto via proxy Netlify — /materiali/* → Supabase Storage
 function getPublicUrl(storagePath) {
-  return "/materiali/" + storagePath.replace(/^marketing\//, "");
+  return "https://gestionaletnb.netlify.app/materiali/" + storagePath.replace(/^marketing\//, "");
 }
 
 function MarketingPage({ dati, setDati, logAction }) {
@@ -20915,10 +20943,10 @@ function MarketingPage({ dati, setDati, logAction }) {
   // MARKETING-FIX1+2: Migra materiali con signed URL o URL pubblici lunghi al formato corto /materiali/...
   useEffect(function() {
     var mats = dati.marketing || [];
-    var needsMigration = mats.some(function(m) { return m.url && (m.url.indexOf("/object/sign/") !== -1 || m.url.indexOf("/object/public/") !== -1); });
+    var needsMigration = mats.some(function(m) { return m.url && (m.url.indexOf("/object/sign/") !== -1 || m.url.indexOf("/object/public/") !== -1 || (m.url.indexOf("/materiali/") === 0 && m.url.indexOf("https://") === -1)); });
     if (needsMigration && mats.length > 0) {
       var migrated = mats.map(function(m) {
-        if (m.storagePath && m.url && (m.url.indexOf("/object/sign/") !== -1 || m.url.indexOf("/object/public/") !== -1)) {
+        if (m.storagePath && m.url && (m.url.indexOf("/object/sign/") !== -1 || m.url.indexOf("/object/public/") !== -1 || (m.url.indexOf("/materiali/") === 0 && m.url.indexOf("https://") === -1))) {
           return Object.assign({}, m, { url: getPublicUrl(m.storagePath) });
         }
         return m;
@@ -21390,7 +21418,7 @@ function MailingSystem({ dati, setDati, logAction }) {
   var destAttivo = tipoSogg === "clienti"
     ? (cliente ? Object.assign({}, cliente, {nomeDisplay: cliente.insegna || cliente.ragioneSociale}) : null)
     : (prospect ? Object.assign({}, prospect, {
-        nomeDisplay: prospect.tipo === "Privato" ? ((prospect.nome||"") + " " + (prospect.cognome||"")).trim() : prospect.ragioneSociale,
+        nomeDisplay: prospect.tipo === "Privato" ? ((prospect.nome||"") + " " + (prospect.cognome||"")).trim() : (prospect.insegna || prospect.ragioneSociale),
         referente: prospect.tipo === "Privato" ? ((prospect.nome||"") + " " + (prospect.cognome||"")).trim() : prospect.referente
       }) : null);
   var templateFiltrati = Object.entries(allTemplates).filter(function(kt){ return !kt[1].target || kt[1].target.includes(tipoSogg); });
