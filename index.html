@@ -16964,7 +16964,8 @@ function TicketDashboard(props) {
   var _s6 = useState("tutti"); var filtroTipo = _s6[0]; var setFiltroTipo = _s6[1];
 
   var filtered = tickets.filter(function(t) {
-    if (filtroStato !== "tutti" && t.stato !== filtroStato) return false;
+    if (filtroStato === "tutti") { if (t.stato === "chiuso") return false; }
+    else if (t.stato !== filtroStato) return false;
     if (filtroTipo !== "tutti" && (t.tipo || "bug") !== filtroTipo) return false;
     if (filtroModulo && t.modulo !== filtroModulo) return false;
     return true;
@@ -16977,7 +16978,8 @@ function TicketDashboard(props) {
     aperti: tickets.filter(function(t) { return t.stato === "aperto"; }).length,
     inCorso: tickets.filter(function(t) { return t.stato === "in_corso"; }).length,
     risolti: tickets.filter(function(t) { return t.stato === "risolto"; }).length,
-    totali: tickets.length,
+    totali: tickets.filter(function(t) { return t.stato !== "chiuso"; }).length,
+    chiusi: tickets.filter(function(t) { return t.stato === "chiuso"; }).length,
     bugAperti: tickets.filter(function(t) { return (t.tipo || "bug") === "bug" && t.stato === "aperto"; }).length,
     funzioniAperte: tickets.filter(function(t) { return t.tipo === "funzione" && t.stato === "aperto"; }).length
   };
@@ -17011,14 +17013,15 @@ function TicketDashboard(props) {
       CE("h2", { style: { fontSize: 22, fontWeight: 800, color: C.grigio800, margin: 0 } }, isSuperadmin ? "🐛 Ticket & Segnalazioni" : "🐛 I miei ticket"),
       CE("p", { style: { fontSize: 13, color: C.grigio500, marginTop: 4 } }, isSuperadmin ? "Gestisci le segnalazioni di bug e richieste del team" : "Qui trovi le tue segnalazioni e le risposte del team")
     ),
-    CE("div", { style: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 20 } },
+    CE("div", { style: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 12, marginBottom: 20 } },
       [
         { l: "Aperti", n: stats.aperti, c: "#e91e63" },
         { l: "In corso", n: stats.inCorso, c: "#2196f3" },
         { l: "Risolti", n: stats.risolti, c: "#4caf50" },
         { l: "Totali", n: stats.totali, c: C.grigio600 },
         { l: "🐛 Bug aperti", n: stats.bugAperti, c: "#e91e63" },
-        { l: "💡 Funzioni", n: stats.funzioniAperte, c: "#7b1fa2" }
+        { l: "💡 Funzioni", n: stats.funzioniAperte, c: "#7b1fa2" },
+        { l: "🗄 Chiusi", n: stats.chiusi, c: C.grigio400 }
       ].map(function(s) {
         return CE("div", { key: s.l, style: { background: "#fff", borderRadius: 12, padding: "16px 20px", border: "1px solid " + C.grigio100 } },
           CE("div", { style: { fontSize: 28, fontWeight: 800, color: s.c } }, s.n),
