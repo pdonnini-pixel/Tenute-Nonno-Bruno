@@ -11740,8 +11740,23 @@ function Ordini({
       ch: "🗑 Elimina ordine",
       v: "dan",
       onClick: () => deleteOrdine(form, { afterDelete: () => { setModal(null); setFormErrors({}); } })
+    }), form.id && form.stato !== "annullato" && (currentUser?.role === "admin" || currentUser?.role === "tester" || currentUser?.role === "superadmin") && /*#__PURE__*/React.createElement(Btn, {
+      ch: "🚫 Annulla Ordine",
+      v: "dan",
+      onClick: () => {
+        const cl = (dati.clienti || []).find(c => c.id === form.clienteId) || {};
+        const label = (cl.insegna || cl.ragioneSociale || "—") + " · " + (form.numero || form.id);
+        window.tnbConfirm(
+          "Annullare l'ordine " + label + "? L'ordine verrà marcato come “Annullato” (e firma/DDT/fatture allegati saranno rimossi). L'ordine resta in archivio.",
+          function() {
+            updateStatoForm("annullato", { trigger: "annulla_modal" });
+            setTimeout(() => { saveOrdine(); }, 50);
+          },
+          { title: "Conferma annullamento ordine", okLabel: "Annulla ordine", danger: true }
+        );
+      }
     }), /*#__PURE__*/React.createElement(Btn, {
-      ch: "Annulla",
+      ch: "Chiudi",
       v: "sec",
       onClick: () => { setModal(null); setFormErrors({}); }
     }), form.id && /*#__PURE__*/React.createElement(Btn, {
