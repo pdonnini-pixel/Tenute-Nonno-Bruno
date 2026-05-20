@@ -17133,10 +17133,28 @@ function TicketDashboard(props) {
             }
           },
             CE("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 } },
-              CE("div", null,
+              CE("div", { style: { flex: 1, minWidth: 0 } },
                 CE("div", { style: { fontSize: 15, fontWeight: 700, color: C.grigio800 } }, t.titolo),
                 CE("div", { style: { fontSize: 11, color: C.grigio400, marginTop: 2 } },
-                  "#" + t.id.slice(-6) + " · " + t.modulo.toUpperCase() + " · " + t.autore + " · " + new Date(t.creatoIl).toLocaleDateString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+                  "#" + t.id.slice(-6) + " · " + t.modulo.toUpperCase() + " · 👤 " + t.autore
+                ),
+                CE("div", { style: { fontSize: 12, color: "#888", marginTop: 4, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" } },
+                  CE("span", null,
+                    "📅 " + (t.creatoIl ? new Date(t.creatoIl).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—")
+                  ),
+                  t.risoltoIl ? CE("span", { style: { color: "#27ae60" } },
+                    "✅ Risolto: " + new Date(t.risoltoIl).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                  ) : null,
+                  (t.creatoIl && t.risoltoIl) ? CE("span", { style: { fontSize: 11, color: "#888", fontStyle: "italic" } },
+                    (function() {
+                      var ms = new Date(t.risoltoIl) - new Date(t.creatoIl);
+                      var ore = Math.floor(ms / 3600000);
+                      var min = Math.floor((ms % 3600000) / 60000);
+                      if (ore > 24) return "⏱ " + Math.floor(ore / 24) + "g " + (ore % 24) + "h";
+                      if (ore > 0) return "⏱ " + ore + "h " + min + "min";
+                      return "⏱ " + min + "min";
+                    })()
+                  ) : null
                 )
               ),
               CE("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
@@ -17176,82 +17194,66 @@ function TicketDashboard(props) {
                 }, t.pagina.split("#")[1] || t.pagina)
               )
             ),
-            t.noteFix && CE("div", { style: { fontSize: 12, color: "#2e7d32", background: "#e8f5e9", padding: "8px 12px", borderRadius: 8, marginBottom: 10 } },
-              CE("strong", null, "🔧 Fix: "), t.noteFix
-            ),
-            // Thread commenti
-            (t.commenti && t.commenti.length > 0) && CE("div", {
-              style: { marginBottom: 10, borderLeft: "3px solid " + C.grigio200, paddingLeft: 12 }
-            },
-              CE("div", { style: { fontSize: 11, fontWeight: 700, color: C.grigio500, marginBottom: 6 } }, "💬 CONVERSAZIONE"),
+            // Sezione Commenti (AI AutoFix in verde, utenti in grigio/blu)
+            (t.commenti && t.commenti.length > 0) ? CE("div", { style: { marginTop: 8, marginBottom: 12, borderTop: "1px solid #eee", paddingTop: 12 } },
+              CE("div", { style: { fontWeight: 600, fontSize: 13, marginBottom: 8, color: "#555" } }, "💬 Commenti (" + t.commenti.length + ")"),
               t.commenti.map(function(c, ci) {
-                var isMine = currentUser && c.autore === (currentUser.nome || currentUser.username);
-                return CE("div", {
-                  key: ci,
-                  style: {
-                    padding: "8px 12px", marginBottom: 6, borderRadius: 8,
-                    background: isMine ? "#e3f2fd" : "#f3e5f5",
-                    fontSize: 12, color: C.grigio800
-                  }
-                },
+                var isAI = c.autore === "AI AutoFix";
+                return CE("div", { key: ci, style: { background: isAI ? "#f0f9f0" : "#f8f8f8", borderRadius: 8, padding: "10px 12px", marginBottom: 8, borderLeft: isAI ? "3px solid #27ae60" : "3px solid #3498db" } },
                   CE("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 4 } },
-                    CE("strong", { style: { color: isMine ? "#1565c0" : "#7b1fa2" } }, c.autore),
-                    CE("span", { style: { fontSize: 10, color: C.grigio400 } },
-                      new Date(c.data).toLocaleDateString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+                    CE("span", { style: { fontWeight: 600, fontSize: 13, color: isAI ? "#27ae60" : "#333" } },
+                      (isAI ? "🤖 " : "👤 ") + c.autore
+                    ),
+                    CE("span", { style: { fontSize: 11, color: "#999" } },
+                      c.data ? new Date(c.data).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""
                     )
                   ),
-                  CE("div", null, c.testo)
+                  CE("div", { style: { fontSize: 13, color: "#444", lineHeight: "1.5", whiteSpace: "pre-wrap" } }, c.testo)
                 );
               })
-            ),
-            // Form commento
-            CE("div", { style: { marginBottom: 10 } },
-              commentingId === t.id
-                ? CE("div", { style: { display: "flex", gap: 8 } },
-                    CE("input", {
-                      value: commentText,
-                      onChange: function(e) { setCommentText(e.target.value); },
-                      placeholder: "Scrivi un messaggio...",
-                      onKeyDown: function(e) {
-                        if (e.key === "Enter" && commentText.trim()) {
-                          var comm = {
-                            autore: currentUser ? (currentUser.nome || currentUser.username) : "Anonimo",
-                            testo: commentText.trim(),
-                            data: new Date().toISOString()
-                          };
-                          updateTicket(t.id, { commenti: (t.commenti || []).concat([comm]) });
-                          setCommentText("");
-                          setCommentingId(null);
-                        }
-                      },
-                      style: {
-                        flex: 1, border: "1.5px solid " + C.grigio200, borderRadius: 8,
-                        padding: "8px 12px", fontSize: 12, outline: "none"
-                      }
-                    }),
-                    CE("button", {
-                      onClick: function() {
-                        if (!commentText.trim()) return;
-                        var comm = {
-                          autore: currentUser ? (currentUser.nome || currentUser.username) : "Anonimo",
-                          testo: commentText.trim(),
-                          data: new Date().toISOString()
-                        };
-                        updateTicket(t.id, { commenti: (t.commenti || []).concat([comm]) });
-                        setCommentText("");
-                        setCommentingId(null);
-                      },
-                      style: { padding: "8px 16px", borderRadius: 8, border: "none", background: "#7b1fa2", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }
-                    }, "💬 Invia"),
-                    CE("button", {
-                      onClick: function() { setCommentingId(null); setCommentText(""); },
-                      style: { padding: "8px 12px", borderRadius: 8, border: "1px solid " + C.grigio200, background: "#fff", fontSize: 12, cursor: "pointer", color: C.grigio400 }
-                    }, "✕")
-                  )
-                : CE("button", {
-                    onClick: function() { setCommentingId(t.id); setCommentText(""); },
-                    style: { padding: "5px 12px", borderRadius: 6, border: "1px solid #7b1fa2", background: "#f3e5f5", color: "#7b1fa2", fontSize: 11, fontWeight: 600, cursor: "pointer" }
-                  }, "💬 Commenta")
+            ) : null,
+            // Note Fix (se presenti)
+            t.noteFix ? CE("div", { style: { marginBottom: 12, background: "#fff8e1", borderRadius: 8, padding: "10px 12px", borderLeft: "3px solid #f39c12" } },
+              CE("div", { style: { fontWeight: 600, fontSize: 13, color: "#e67e22", marginBottom: 4 } }, "🔧 Note tecniche fix"),
+              CE("div", { style: { fontSize: 13, color: "#555", lineHeight: "1.5", whiteSpace: "pre-wrap" } }, t.noteFix)
+            ) : null,
+            // Form commento sempre visibile
+            CE("div", { style: { marginBottom: 10, display: "flex", gap: 8 } },
+              CE("input", {
+                type: "text",
+                placeholder: "Scrivi un commento...",
+                value: commentingId === t.id ? commentText : "",
+                onChange: function(e) { setCommentingId(t.id); setCommentText(e.target.value); },
+                onKeyDown: function(e) {
+                  if (e.key === "Enter" && commentText.trim() && commentingId === t.id) {
+                    var comm = {
+                      autore: currentUser ? (currentUser.nome || currentUser.username) : "Anonimo",
+                      testo: commentText.trim(),
+                      data: new Date().toISOString()
+                    };
+                    updateTicket(t.id, { commenti: (t.commenti || []).concat([comm]) });
+                    setCommentText("");
+                    setCommentingId(null);
+                    if (window.tnbToast) window.tnbToast("💬 Commento aggiunto");
+                  }
+                },
+                style: { flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd", fontSize: 13, outline: "none" }
+              }),
+              CE("button", {
+                onClick: function() {
+                  if (commentingId !== t.id || !commentText.trim()) return;
+                  var comm = {
+                    autore: currentUser ? (currentUser.nome || currentUser.username) : "Anonimo",
+                    testo: commentText.trim(),
+                    data: new Date().toISOString()
+                  };
+                  updateTicket(t.id, { commenti: (t.commenti || []).concat([comm]) });
+                  setCommentText("");
+                  setCommentingId(null);
+                  if (window.tnbToast) window.tnbToast("💬 Commento aggiunto");
+                },
+                style: { padding: "8px 16px", borderRadius: 8, background: "#3498db", color: "#fff", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600 }
+              }, "Invia")
             ),
             isEditing && CE("div", { style: { marginBottom: 10 } },
               CE("textarea", {
