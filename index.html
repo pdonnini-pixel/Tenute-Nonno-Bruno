@@ -17007,7 +17007,7 @@ function TicketDashboard(props) {
     });
   }
 
-  var _s0 = useState("tutti"); var filtroStato = _s0[0]; var setFiltroStato = _s0[1];
+  var _s0 = useState("aperto"); var filtroStato = _s0[0]; var setFiltroStato = _s0[1];
   var _s1 = useState(""); var filtroModulo = _s1[0]; var setFiltroModulo = _s1[1];
   var _s2 = useState(null); var editId = _s2[0]; var setEditId = _s2[1];
   var _s3 = useState(""); var noteFix = _s3[0]; var setNoteFix = _s3[1];
@@ -17030,7 +17030,7 @@ function TicketDashboard(props) {
     aperti: tickets.filter(function(t) { return t.stato === "aperto"; }).length,
     inCorso: tickets.filter(function(t) { return t.stato === "in_corso"; }).length,
     risolti: tickets.filter(function(t) { return t.stato === "risolto"; }).length,
-    totali: tickets.filter(function(t) { return t.stato !== "chiuso"; }).length,
+    totali: tickets.filter(function(t) { return t.stato === "aperto"; }).length,
     chiusi: tickets.filter(function(t) { return t.stato === "chiuso"; }).length,
     bugAperti: tickets.filter(function(t) { return (t.tipo || "bug") === "bug" && t.stato === "aperto"; }).length,
     funzioniAperte: tickets.filter(function(t) { return t.tipo === "funzione" && t.stato === "aperto"; }).length
@@ -17070,7 +17070,7 @@ function TicketDashboard(props) {
         { l: "Aperti", n: stats.aperti, c: "#e91e63" },
         { l: "In corso", n: stats.inCorso, c: "#2196f3" },
         { l: "Risolti", n: stats.risolti, c: "#4caf50" },
-        { l: "Totali", n: stats.totali, c: C.grigio600 },
+        { l: "📬 Aperti", n: stats.totali, c: C.grigio600 },
         { l: "🐛 Bug aperti", n: stats.bugAperti, c: "#e91e63" },
         { l: "💡 Funzioni", n: stats.funzioniAperte, c: "#7b1fa2" },
         { l: "🗄 Chiusi", n: stats.chiusi, c: C.grigio400 }
