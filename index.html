@@ -10008,17 +10008,39 @@ function Ordini({
       meta: next.meta
     }));
   };
-  const sendEmailComposed = () => {
+  const sendEmailComposed = async () => {
     if (!emailComposeModal) return;
     const { ordine, isCV, email, oggetto, corpo, cliente } = emailComposeModal;
     if (!email) {
       if (window.tnbToast) window.tnbToast("⚠ Nessuna email destinatario", "err");
       return;
     }
+
+    // Genera PDF e carica su Storage per ottenere link condivisibile
+    var pdfLink = "";
+    try {
+      var layout = ordine.layoutPDF || "B";
+      var fn = isCV
+        ? (layout === "A" ? generaPdfContoVenditaA : generaPdfContoVenditaB)
+        : (layout === "A" ? generaPdfVenditaA : generaPdfVenditaB);
+      var doc = await fn(ordine, cliente);
+      var blob = doc.output("blob");
+      var nomeFile = (isCV ? "CV" : "ORD") + "_" + (ordine.numero || ordine.id) + ".pdf";
+      var file = new File([blob], nomeFile, { type: "application/pdf" });
+      var result = await window.tnbStorage.uploadDocumento("ord_" + ordine.id, file, "ordini-pdf");
+      pdfLink = "https://gestionaletnb.netlify.app/ordini-pdf/" + result.path.replace(/^ordini-pdf\//, "");
+      if (window.tnbToast) window.tnbToast("📎 PDF caricato");
+    } catch (err) {
+      console.error("PDF upload error:", err);
+      if (window.tnbToast) window.tnbToast("⚠ PDF non allegato: " + (err.message || err), "err");
+    }
+
+    var corpoConPdf = pdfLink ? (corpo + "\n\n📎 Documento ordine in PDF:\n" + pdfLink) : corpo;
+
     window.open(
       "https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(email) +
       "&su=" + encodeURIComponent(oggetto) +
-      "&body=" + encodeURIComponent(corpo),
+      "&body=" + encodeURIComponent(corpoConPdf),
       "_blank"
     );
     if (logAction) logAction(isCV ? "Email CV inviata" : "Email ordine inviata", "ordini", (ordine.numero || ordine.id) + " -> " + email);
@@ -10026,10 +10048,10 @@ function Ordini({
       ...d,
       clienti: d.clienti.map(c => c.id !== cliente.id ? c : {
         ...c,
-        emailLog: [{ id: uid(), ts: new Date().toISOString(), tipo: isCV ? "cv" : "ordine", numero: ordine.numero, oggetto: oggetto, email: email, data: todayStr() }, ...(c.emailLog || [])]
+        emailLog: [{ id: uid(), ts: new Date().toISOString(), tipo: isCV ? "cv" : "ordine", numero: ordine.numero, oggetto: oggetto, email: email, data: todayStr(), pdfLink: pdfLink || null }, ...(c.emailLog || [])]
       })
     }));
-    if (window.tnbToast) window.tnbToast("📧 Gmail aperto con testo personalizzato");
+    if (window.tnbToast) window.tnbToast(pdfLink ? "📧 Gmail aperto con link PDF" : "📧 Gmail aperto (senza PDF)");
     setEmailComposeModal(null);
     if (pdfInvioModal) {
       try { if (pdfInvioModal.blobUrl) URL.revokeObjectURL(pdfInvioModal.blobUrl); } catch(_) {}
@@ -10093,10 +10115,16 @@ function Ordini({
       modalitaFattura: form.modalitaFattura || "unica",
       righe: (form.righe || []).map(r => {
         const mc = r.modalitaConsegna || "immediata";
+        const qtaNum = Number(r.qta) || 0;
+        const prezzoNum = Number(r.prezzoUnitario) || 0;
+        const omaggioNum = Number(r.omaggio) || 0;
         return {
           ...r,
+          qta: qtaNum,
+          prezzoUnitario: prezzoNum,
+          omaggio: omaggioNum,
           modalitaConsegna: mc,
-          qtaConsegnata: r.qtaConsegnata != null ? r.qtaConsegnata : (mc === "immediata" ? (r.qta || 0) : 0),
+          qtaConsegnata: r.qtaConsegnata != null ? r.qtaConsegnata : (mc === "immediata" ? qtaNum : 0),
           consegne: r.consegne || [],
           schedule: r.schedule || [],
           ricorrenza: r.ricorrenza || null,
@@ -10393,7 +10421,7 @@ function Ordini({
     const r = [...(f.righe || [])];
     r[i] = {
       ...r[i],
-      [k]: k === "qta" || k === "prezzoUnitario" || k === "omaggio" ? Number(v) : v
+      [k]: k === "qta" || k === "prezzoUnitario" || k === "omaggio" ? (v === "" || v === null ? "" : Number(v)) : v
     };
     // Auto-price from listino when format or qty changes
     if (k === "formato" || k === "qta") {
@@ -14646,24 +14674,31 @@ function Fornitori({
   };
   const saveOF = () => {
     if (!form.fornitoreId) return;
-    var righeForm = form.righe || [];
-    for (var i = 0; i < righeForm.length; i++) {
-      var r = righeForm[i];
-      if (Number(r.qta) <= 0 || Number(r.prezzoUnitario) < 0) {
-        window.alert('⚠ Quantità deve essere > 0 e prezzo >= 0 (riga ' + (i+1) + ')'); return;
+    // Sanitizza righe: campi vuoti → 0
+    var righeClean = (form.righe || []).map(function(r) {
+      return Object.assign({}, r, {
+        qta: Number(r.qta) || 0,
+        prezzoUnitario: Number(r.prezzoUnitario) || 0
+      });
+    });
+    for (var i = 0; i < righeClean.length; i++) {
+      var r = righeClean[i];
+      if (r.qta <= 0 || r.prezzoUnitario < 0) {
+        if (window.tnbToast) window.tnbToast("⚠ Quantità deve essere > 0 e prezzo >= 0 (riga " + (i+1) + ")", "err");
+        return;
       }
     }
     const of = {
       ...form,
-      righe: righeForm,
-      totale: righeForm.reduce((s, r) => s + (r.qta || 0) * (r.prezzoUnitario || 0), 0)
+      righe: righeClean,
+      totale: righeClean.reduce((s, r) => s + (r.qta || 0) * (r.prezzoUnitario || 0), 0)
     };
     setDati(d => ({
       ...d,
-      ordiniFornitore: of.id ? d.ordiniFornitore.map(o => o.id === of.id ? of : o) : [{
+      ordiniFornitore: of.id ? (d.ordiniFornitore || []).map(o => o.id === of.id ? of : o) : [{
         ...of,
         id: uid()
-      }, ...d.ordiniFornitore]
+      }, ...(d.ordiniFornitore || [])]
     }));
     setModal(null);
   };
@@ -14870,7 +14905,7 @@ function Fornitori({
   ), tab === "ord" && /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement(Tbl, {
       cols: ["Data", "Fornitore", "Voci", "Totale", "Consegna", "Stato", ""],
-      data: [...dati.ordiniFornitore].sort((a, b) => (b.data || "").localeCompare(a.data || "")),
+      data: [...(dati.ordiniFornitore || [])].sort((a, b) => (b.data || "").localeCompare(a.data || "")),
       renderRow: o => /*#__PURE__*/React.createElement(TR, {
         key: o.id,
         ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TD, {
@@ -15415,7 +15450,7 @@ function Fornitori({
         const rr = [...f.righe];
         rr[i] = {
           ...rr[i],
-          qta: Number(v)
+          qta: v === "" || v === null ? "" : Number(v)
         };
         return {
           ...f,
@@ -15430,7 +15465,7 @@ function Fornitori({
         const rr = [...f.righe];
         rr[i] = {
           ...rr[i],
-          prezzoUnitario: Number(v)
+          prezzoUnitario: v === "" || v === null ? "" : Number(v)
         };
         return {
           ...f,
@@ -23405,7 +23440,7 @@ Data: ___/___/______                      Data: ___/___/______
         const rr = [...f.righe];
         rr[i] = {
           ...rr[i],
-          qta: Number(v)
+          qta: v === "" || v === null ? "" : Number(v)
         };
         return {
           ...f,
@@ -23420,7 +23455,7 @@ Data: ___/___/______                      Data: ___/___/______
         const rr = [...f.righe];
         rr[i] = {
           ...rr[i],
-          prezzoUnitario: Number(v)
+          prezzoUnitario: v === "" || v === null ? "" : Number(v)
         };
         return {
           ...f,
