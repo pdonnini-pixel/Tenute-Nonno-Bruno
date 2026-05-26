@@ -11136,7 +11136,12 @@ function Ordini({
         /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "#e65100" } }, "📦 Ordine pregresso"),
         /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: "#bf360c" } }, "Salta il controllo giacenza e non scarica il magazzino. Usa per ordini storici.")
       )
-    ), /*#__PURE__*/React.createElement(Inp, {
+    ), form.pregresso && /*#__PURE__*/React.createElement(Inp, {
+      label: "Numero ordine (sovrascrivi per allinearlo all'Excel)",
+      v: form.numero || "",
+      ph: "Es. 0042/2023 oppure 23B",
+      on: v => setForm(f => ({ ...f, numero: v }))
+    }), /*#__PURE__*/React.createElement(Inp, {
       label: "Numero esterno (rif. Excel)",
       v: form.numeroEsterno || "",
       ph: "Es. 23B oppure ORD-2024-045",
