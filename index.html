@@ -10648,6 +10648,10 @@ function Ordini({
           /*#__PURE__*/React.createElement("div", {
             style: { fontSize: 10, color: C.grigio400, marginBottom: 4 }
           }, fmtD(o.data)),
+          o.numeroEsterno && /*#__PURE__*/React.createElement("div", {
+            style: { fontSize: 10, color: "#7a6c2e", marginBottom: 4, fontWeight: 600 },
+            title: "Numero esterno (riferimento Excel)"
+          }, "rif. " + o.numeroEsterno),
           /*#__PURE__*/React.createElement(TimelineStato, { stato: o.stato, statoLog: o.statoLog, compact: true })
         )
       }), /*#__PURE__*/React.createElement(TD, {
@@ -11132,7 +11136,12 @@ function Ordini({
         /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "#e65100" } }, "📦 Ordine pregresso"),
         /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: "#bf360c" } }, "Salta il controllo giacenza e non scarica il magazzino. Usa per ordini storici.")
       )
-    ), form.righe?.some(r => r.modalitaConsegna && r.modalitaConsegna !== "immediata") && /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2", padding: "12px", background: C.grigio50, borderRadius: 8, marginTop: 8, marginBottom: 8 } },
+    ), /*#__PURE__*/React.createElement(Inp, {
+      label: "Numero esterno (rif. Excel)",
+      v: form.numeroEsterno || "",
+      ph: "Es. 23B oppure ORD-2024-045",
+      on: v => setForm(f => ({ ...f, numeroEsterno: v }))
+    }), form.righe?.some(r => r.modalitaConsegna && r.modalitaConsegna !== "immediata") && /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2", padding: "12px", background: C.grigio50, borderRadius: 8, marginTop: 8, marginBottom: 8 } },
       /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, fontWeight: 600, color: C.grigio600, marginBottom: 6, display: "block" } }, "Modalità fatturazione (per consegne scaglionate)"),
       /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 16 } },
         /*#__PURE__*/React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" } },
