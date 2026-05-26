@@ -5051,12 +5051,19 @@ const COSTO_SPEDIZIONE = {
   locale:             { l: "Firenze e provincia (gratuita)", c: 0 },
   fuori:              { l: "Fuori provincia (+€15)",         c: 15 },
   fuori_regione:      { l: "Fuori regione (+€30)",           c: 30 },
-  fuori_regione_free: { l: "Fuori regione (gratuita)",       c: 0 }
+  fuori_regione_free: { l: "Fuori regione (gratuita)",       c: 0 },
+  personalizzato:     { l: "Personalizzato (importo custom)", c: 0 }
 };
-const costoSpedizione = ord =>
-  (ord && COSTO_SPEDIZIONE[ord.spedizione])
+const costoSpedizione = ord => {
+  if (!ord) return 0;
+  if (ord.spedizione === "personalizzato") {
+    const v = parseFloat(ord.spedizioneImporto);
+    return isNaN(v) || v < 0 ? 0 : v;
+  }
+  return COSTO_SPEDIZIONE[ord.spedizione]
     ? COSTO_SPEDIZIONE[ord.spedizione].c
     : 0;
+};
 // totFinale = imponibile + IVA + spedizione. totOrdine resta imponibile puro (CLV/storico).
 const totFinale = ord => {
   const imp = totOrdine(ord);
@@ -11191,6 +11198,18 @@ function Ordini({
       opts: Object.entries(COSTO_SPEDIZIONE).map(([k, v]) => ({
         v: k,
         l: v.l
+      }))
+    }), form.spedizione === "personalizzato" && /*#__PURE__*/React.createElement(Inp, {
+      label: "Importo spedizione €",
+      type: "number",
+      min: 0,
+      step: "0.01",
+      v: form.spedizioneImporto != null ? form.spedizioneImporto : "",
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
+      ph: "Es: 22.50",
+      on: v => setForm(f => ({
+        ...f,
+        spedizioneImporto: v === "" ? "" : v
       }))
     }), form.modalita === "conto_vendita" && /*#__PURE__*/React.createElement(Inp, {
       label: "Scadenza CV",
