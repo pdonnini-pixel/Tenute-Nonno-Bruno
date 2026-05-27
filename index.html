@@ -2566,14 +2566,35 @@ const movimentiSku = (movimentiGlobali, magId) =>
 
 // Risolve il magId per una riga ordine usando (formato, annata) → primo SKU che matcha.
 // Resto v49: le righe ordine non hanno prodottoId; questa è la sorgente di verità per il match.
+// SKU-FIX: normalizzazione tollerante (lowercase + spazi collassati) per evitare falsi
+// "SKU non trovato" causati da differenze banali ("500 Ml" vs "500 ml", "500  ml" doppio spazio,
+// annata come number 2025 vs stringa "2025", ecc.). Prima cerca match esatto (preserva
+// preferenza), poi fallback su match normalizzato.
+const _normSkuField = (s) => String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " ");
 const skuPerRiga = (magazzino, r) => {
-  const fmt = String(r && r.formato || "").trim();
-  const ann = String(r && r.annata || "").trim();
-  if (!fmt || !ann) return null;
-  return (magazzino || []).find(m =>
-    String(m.formato || "").trim() === fmt &&
-    String(m.annata || "").trim() === ann
-  ) || null;
+  const fmtRaw = String(r && r.formato || "").trim();
+  const annRaw = String(r && r.annata || "").trim();
+  if (!fmtRaw || !annRaw) return null;
+  const mags = magazzino || [];
+  // 1) Match esatto (compatibilità)
+  const exact = mags.find(m =>
+    String(m.formato || "").trim() === fmtRaw &&
+    String(m.annata || "").trim() === annRaw
+  );
+  if (exact) return exact;
+  // 2) Match normalizzato (case-insensitive, spazi collassati)
+  const fmtN = _normSkuField(fmtRaw);
+  const annN = _normSkuField(annRaw);
+  const loose = mags.find(m =>
+    _normSkuField(m.formato) === fmtN && _normSkuField(m.annata) === annN
+  );
+  if (loose) {
+    if (typeof window !== "undefined" && window.TNB_DEBUG_MAG) {
+      console.log(`[TNB_DEBUG_MAG] skuPerRiga loose-match: riga="${fmtRaw} · ${annRaw}" → mag="${loose.formato} · ${loose.annata}"`);
+    }
+    return loose;
+  }
+  return null;
 };
 
 // Verifica che il disponibile copra le richieste di tutte le righe di un ordine.
@@ -2595,6 +2616,12 @@ const verificaDisponibilitaOrdine = (ordine, magazzino) => {
     const sku = skuPerRiga(magazzino, r);
     if (DEBUG) console.log(`[TNB_DEBUG_MAG] riga ${idx}: formato="${r.formato}" annata="${r.annata}" qta=${r.qta} omaggio=${r.omaggio||0} → sku=${sku ? sku.id : "(none)"}`);
     if (!sku) {
+      // SKU-FIX: diagnostica sempre visibile in console quando lo SKU non si trova,
+      // così è facile capire perché ("500 ml" cercato — magazzino ha "500ml" o annata diversa).
+      try {
+        const candidati = (magazzino || []).map(m => `${m.formato || "?"}·${m.annata || "?"}`).join(" | ");
+        console.warn(`[TNB] SKU non trovato — cerco formato="${r.formato}" annata="${r.annata}". Candidati in magazzino: ${candidati || "(magazzino vuoto)"}`);
+      } catch (_) {}
       missing.push({
         tipo: "sku_mancante",
         nome: `${r.formato || "?"} · annata ${r.annata || "?"}`,
