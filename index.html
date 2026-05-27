@@ -2566,10 +2566,11 @@ const movimentiSku = (movimentiGlobali, magId) =>
 
 // Risolve il magId per una riga ordine usando (formato, annata) → primo SKU che matcha.
 // Resto v49: le righe ordine non hanno prodottoId; questa è la sorgente di verità per il match.
-// SKU-FIX: normalizzazione tollerante (lowercase + spazi collassati) per evitare falsi
-// "SKU non trovato" causati da differenze banali ("500 Ml" vs "500 ml", "500  ml" doppio spazio,
-// annata come number 2025 vs stringa "2025", ecc.). Prima cerca match esatto (preserva
-// preferenza), poi fallback su match normalizzato.
+// SKU-FIX: matching con 3 livelli di fallback per evitare falsi "SKU non trovato".
+// 1) Match esatto formato+annata (compatibilità storica)
+// 2) Match normalizzato (case-insensitive, spazi collassati) — gestisce "500 Ml" vs "500 ml"
+// 3) Match SOLO sul formato se la voce magazzino ha annata vuota — gestisce magazzini
+//    che tracciano il formato a livello globale senza distinzione di annata.
 const _normSkuField = (s) => String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " ");
 const skuPerRiga = (magazzino, r) => {
   const fmtRaw = String(r && r.formato || "").trim();
@@ -2593,6 +2594,18 @@ const skuPerRiga = (magazzino, r) => {
       console.log(`[TNB_DEBUG_MAG] skuPerRiga loose-match: riga="${fmtRaw} · ${annRaw}" → mag="${loose.formato} · ${loose.annata}"`);
     }
     return loose;
+  }
+  // 3) Match formato-only su voci magazzino senza annata specificata
+  //    (caso: magazzino traccia il formato globalmente, l'annata è altrove o non rilevante)
+  const formatoOnly = mags.find(m =>
+    _normSkuField(m.formato) === fmtN &&
+    _normSkuField(m.annata) === ""
+  );
+  if (formatoOnly) {
+    if (typeof console !== "undefined") {
+      console.log(`[TNB] skuPerRiga formato-only-match: riga="${fmtRaw} · ${annRaw}" → mag="${formatoOnly.formato}" (magazzino senza annata)`);
+    }
+    return formatoOnly;
   }
   return null;
 };
