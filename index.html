@@ -9273,8 +9273,11 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
     doc.setFont(FONT_BODY, "bold"); doc.setFontSize(9); doc.setTextColor(...TNB_C_DARK);
     doc.text("Spedizione", M + 3, boxY + 5);
     doc.setFont(FONT_BODY, "normal"); doc.setFontSize(8); doc.setTextColor(...TNB_C_GRAY);
-    doc.text("Indirizzo: " + (isCV && indPVStr ? indPVStr : ind), M + 3, boxY + 10, { maxWidth: colSxW - 6 });
-    doc.text("Tariffa: " + sped, M + 3, boxY + 14);
+    // Fix ticket tkt_1779879729913: wrapping address must push Tariffa down
+    const _indTxtB = "Indirizzo: " + (isCV && indPVStr ? indPVStr : ind);
+    const _indLnsB = doc.splitTextToSize(_indTxtB, colSxW - 6);
+    _indLnsB.forEach((_l, _i) => doc.text(_l, M + 3, boxY + 10 + _i * 3.6));
+    doc.text("Tariffa: " + sped, M + 3, boxY + 10 + _indLnsB.length * 3.6 + 0.4);
     // SX-2 Pagamento
     doc.setFillColor(248, 248, 245);
     doc.rect(M, boxY + 20, colSxW, 18, "F");
@@ -9334,7 +9337,13 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
       "Causale: " + (ordine.causaleBonifico || ("Ord. " + numero + " TNB")),
       "Saldo entro 5gg lavorativi dalla firma"
     ];
-    lineeSped.forEach((l, i) => doc.text(l, colSx + 3, boxY + 10 + i * 4.5, { maxWidth: colSxW - 6 }));
+    // Fix ticket tkt_1779879729913: stack lines dynamically so wrapped Indirizzo does not overlap Tariffa
+    let _yLnA = boxY + 10;
+    lineeSped.forEach((l) => {
+      const _ls = doc.splitTextToSize(l, colSxW - 6);
+      _ls.forEach((_x, _j) => doc.text(_x, colSx + 3, _yLnA + _j * 4));
+      _yLnA += _ls.length * 4 + 0.5;
+    });
     doc.setFillColor(...TNB_C_DARK);
     doc.rect(colDx, boxY, colDxW, 36, "F");
     doc.setFont(FONT_BODY, "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
