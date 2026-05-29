@@ -8219,7 +8219,6 @@ function Clienti({
       return c.id !== form.id && c.piva && form.piva && c.piva.trim() === (form.piva||"").trim();
     });
     if (emailDup) { window.tnbToast('⚠ Email già presente in: ' + (emailDup.insegna||emailDup.ragioneSociale), 'err'); return; }
-    if (pivaDup) { window.tnbToast('⚠ P.IVA già presente in: ' + (pivaDup.insegna||pivaDup.ragioneSociale), 'err'); return; }
     // Validazione PEC (v47): se compilata, deve essere email valida
     if (form.pec && form.pec.trim()) {
       const pecRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -8234,16 +8233,29 @@ function Clienti({
       formFinal = { ...form, codiceCliente: "TNB-" + anno + "-" + progressivo };
     }
     const isNew = !form.id;
-    setDati(d => ({
-      ...d,
-      clienti: formFinal.id ? d.clienti.map(c => c.id === formFinal.id ? formFinal : c) : [...d.clienti, {
-        ...formFinal,
-        id: uid()
-      }]
-    }));
-    if (logAction) logAction(isNew ? "Nuovo cliente" : "Modifica cliente", "clienti", `${formFinal.insegna || formFinal.ragioneSociale}`);
-    setModal(null);
-    window.tnbToast('✅ Cliente salvato' + (isNew && formFinal.codiceCliente ? ' (codice ' + formFinal.codiceCliente + ')' : ''));
+    const persisti = function() {
+      setDati(d => ({
+        ...d,
+        clienti: formFinal.id ? d.clienti.map(c => c.id === formFinal.id ? formFinal : c) : [...d.clienti, {
+          ...formFinal,
+          id: uid()
+        }]
+      }));
+      if (logAction) logAction(isNew ? "Nuovo cliente" : "Modifica cliente", "clienti", `${formFinal.insegna || formFinal.ragioneSociale}`);
+      setModal(null);
+      window.tnbToast('✅ Cliente salvato' + (isNew && formFinal.codiceCliente ? ' (codice ' + formFinal.codiceCliente + ')' : ''));
+    };
+    // FIX (auto) tkt_1780052314294: la stessa P.IVA può appartenere a più insegne/sedi
+    // della stessa azienda (es. due hotel). Non blocchiamo più: avvisiamo e chiediamo conferma.
+    if (pivaDup) {
+      window.tnbConfirm(
+        'La P.IVA ' + (form.piva || '').trim() + ' è già usata da “' + (pivaDup.insegna || pivaDup.ragioneSociale) + '”. Può essere corretto per sedi o insegne diverse della stessa azienda. Salvare comunque questo contatto?',
+        persisti,
+        { title: 'P.IVA già presente', okLabel: 'Salva comunque', danger: false }
+      );
+      return;
+    }
+    persisti();
   };
   const [sortBy, setSortBy] = useState("az");
   const [filterTipo, setFilterTipo] = useState("");
@@ -10507,6 +10519,50 @@ function Ordini({
     }));
     if (window.tnbToast) window.tnbToast("Stato → " + (STATO_ORDINE[nuovoStato]?.l || nuovoStato));
   };
+  // FIX (auto) tkt_1780044655058: annullamento diretto e persistente.
+  // Il pulsante "Annulla ordine" nel form usava updateStatoForm che modifica solo lo
+  // stato locale del form: per ordini che falliscono la validazione di saveOrdine
+  // (es. ordini €0 senza modalità di pagamento) l'annullamento non veniva mai salvato.
+  const annullaOrdineDiretto = (oid, opts) => {
+    opts = opts || {};
+    if (!oid) { updateStatoForm("annullato", { trigger: opts.trigger || "annulla_diretto" }); setModal(null); setFormErrors({}); return; }
+    setDati(d => {
+      const ord = (d.ordini || []).find(o => o.id === oid);
+      if (!ord) return d;
+      if (window.tnbStorage) {
+        if (ord.firma && ord.firma.path) window.tnbStorage.deleteFirma(ord.firma.path).catch(_ => {});
+        (Array.isArray(ord.ddt) ? ord.ddt : (ord.ddt ? [ord.ddt] : [])).forEach(dd => {
+          if (dd && dd.path) window.tnbStorage.deleteDocumento(dd.path).catch(_ => {});
+        });
+        (ord.fatture || []).forEach(fat => {
+          if (fat && fat.path) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
+        });
+      }
+      const vecchio = ord.stato;
+      const now = new Date().toISOString();
+      const ordineAnn = {
+        ...ord,
+        stato: "annullato",
+        statoLog: [...(ord.statoLog || []), {
+          stato: "annullato",
+          data: now,
+          utente: (currentUser && currentUser.username) || "irene",
+          auto: false,
+          trigger: opts.trigger || "annulla_diretto",
+          prev: vecchio
+        }],
+        firma: null,
+        ddt: [],
+        fatture: []
+      };
+      const d1 = { ...d, ordini: d.ordini.map(o => o.id === oid ? ordineAnn : o) };
+      return ord.pregresso ? d1 : applicaTransizioneOrdineMagazzino(d1, ordineAnn, vecchio);
+    });
+    if (logAction) logAction("Stato → Annullato", "ordini", (form && (form.numero || form.id)) || oid);
+    if (window.tnbToast) window.tnbToast("Ordine annullato");
+    setModal(null);
+    setFormErrors({});
+  };
   // ── v48-pre14: rimozione documenti con rollback automatico stato ordine ──
   // Logica: la firma autorizza "Firmato"; un DDT autorizza "Consegnato"; una fattura autorizza "Fatturato".
   // Rimuovere l'ULTIMO documento di quel tipo (e nessuna nota manuale fallback) fa retrocedere lo stato.
@@ -11489,7 +11545,7 @@ function Ordini({
           style: { marginLeft: "auto" },
           onClick: () => window.tnbConfirm(
             "Annullare definitivamente l'ordine? Se è presente una firma allegata verrà cancellata da Storage.",
-            () => updateStatoForm("annullato", { trigger: "btn_annulla" }),
+            () => annullaOrdineDiretto(form.id, { trigger: "btn_annulla" }),
             { title: "Conferma annullamento", okLabel: "Annulla ordine", danger: true }
           )
         })
