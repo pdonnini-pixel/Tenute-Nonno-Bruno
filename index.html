@@ -11973,8 +11973,48 @@ function Ordini({
         window.tnbConfirm(
           "Annullare l'ordine " + label + "? L'ordine verrà marcato come “Annullato” (e firma/DDT/fatture allegati saranno rimossi). L'ordine resta in archivio.",
           function() {
-            updateStatoForm("annullato", { trigger: "annulla_modal" });
-            setTimeout(() => { saveOrdine(); }, 50);
+            // FIX (auto): persistenza diretta dell'annullamento.
+            // Il vecchio flusso (updateStatoForm + setTimeout saveOrdine) usava una closure
+            // sul `form` precedente e veniva bloccato dalla validazione di saveOrdine
+            // (es. ordini €0 senza modalitaPagamento), quindi l'annullamento non veniva mai salvato.
+            const oid = form.id;
+            // Cleanup best-effort allegati su Storage
+            if (window.tnbStorage) {
+              if (form.firma && form.firma.path) window.tnbStorage.deleteFirma(form.firma.path).catch(_ => {});
+              (Array.isArray(form.ddt) ? form.ddt : (form.ddt ? [form.ddt] : [])).forEach(d => {
+                if (d && d.path) window.tnbStorage.deleteDocumento(d.path).catch(_ => {});
+              });
+              (form.fatture || []).forEach(fat => {
+                if (fat && fat.path) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
+              });
+            }
+            setDati(d => {
+              const ord = (d.ordini || []).find(o => o.id === oid);
+              if (!ord) return d;
+              const vecchio = ord.stato;
+              const now = new Date().toISOString();
+              const ordineAnn = {
+                ...ord,
+                stato: "annullato",
+                statoLog: [...(ord.statoLog || []), {
+                  stato: "annullato",
+                  data: now,
+                  utente: (currentUser && currentUser.username) || "irene",
+                  auto: false,
+                  trigger: "annulla_modal",
+                  prev: vecchio
+                }],
+                firma: null,
+                ddt: [],
+                fatture: []
+              };
+              const d1 = { ...d, ordini: d.ordini.map(o => o.id === oid ? ordineAnn : o) };
+              return ord.pregresso ? d1 : applicaTransizioneOrdineMagazzino(d1, ordineAnn, vecchio);
+            });
+            if (logAction) logAction("Stato → Annullato", "ordini", form.numero || form.id);
+            if (window.tnbToast) window.tnbToast("Ordine annullato");
+            setModal(null);
+            setFormErrors({});
           },
           { title: "Conferma annullamento ordine", okLabel: "Annulla ordine", danger: true }
         );
