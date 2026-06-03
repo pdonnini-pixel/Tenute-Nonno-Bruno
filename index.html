@@ -5256,6 +5256,10 @@ const STATO_FUNNEL = {
     l: "Da contattare",
     c: C.grigio400
   },
+  contattato: {
+    l: "Contattato",
+    c: C.cyan
+  },
   in_trattativa: {
     l: "In trattativa",
     c: C.blu
@@ -5277,7 +5281,7 @@ const STATO_FUNNEL = {
     c: C.viola
   }
 };
-const STATI_PROGRESSIONE = ["da_contattare","interessato","in_trattativa","acquisito"];
+const STATI_PROGRESSIONE = ["da_contattare","contattato","interessato","in_trattativa","acquisito"];
 const AZIONI_TIPO = {
   richiamare:         { l: "Richiamare",           emoji: "📞", c: "#f57c00" },
   mail_presentazione: { l: "Mail presentazione",   emoji: "📧", c: "#1565c0" },
@@ -6745,7 +6749,7 @@ function Pipeline({
     }));
     if (logAction) logAction("Eliminazione prospect", "pipeline", p?.ragioneSociale || id);
   };
-  const stati = ["da_contattare","in_trattativa","interessato","acquisito","non_interessato","in_sospeso"];
+  const stati = ["da_contattare","contattato","in_trattativa","interessato","acquisito","non_interessato","in_sospeso"];
   const CANALI_LABEL = {fiera:"Fiera",call_diretta:"Call",contatto_aziendale:"Aziendale",web:"Web",passaparola:"Passaparola",email:"Email",visita:"Visita",altro:"Altro"};
   // UX1 helpers
   const ROWS_PER_PAGE = 50;
@@ -7103,7 +7107,7 @@ function Pipeline({
   !vistaLista && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "repeat(6,1fr)",
+      gridTemplateColumns: "repeat(7,1fr)",
       gap: 10,
       minHeight: 400,
       overflowX: "auto"
