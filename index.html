@@ -2672,14 +2672,20 @@ const generaMovimentiOrdine = (ordine, magazzino) => {
   ordine.righe.forEach((r, i) => {
     const sku = skuPerRiga(magazzino, r);
     if (!sku) return;
-    const qtaTot = (Number(r.qta) || 0) + (Number(r.omaggio) || 0);
+    const qv = Number(r.qta) || 0, om = Number(r.omaggio) || 0;
+    const qtaTot = qv + om;
     if (qtaTot <= 0) return;
+    // Nota: distingue vendite, omaggi e campioni gratuiti.
+    let nota = `Auto: ordine ${ordine.numero || ordine.id}`;
+    if (r.campione || ordine.campione) nota += " (campione)";
+    else if (om > 0 && qv > 0) nota += ` (${qv} vendute + ${om} omaggio)`;
+    else if (om > 0 && qv === 0) nota += " (omaggio)";
     out.push({
       id: uid(),
       tipo: "scarico_ordine",
       qta: qtaTot,
       data: dataMov,
-      nota: `Auto: ordine ${ordine.numero || ordine.id}`,
+      nota: nota,
       ordineId: ordine.id,
       lottoId: null,
       auto: true,
@@ -5106,6 +5112,7 @@ const costoSpedizione = ord => {
 };
 // totFinale = imponibile + IVA + spedizione. totOrdine resta imponibile puro (CLV/storico).
 const totFinale = ord => {
+  if (ord && ord.campione) return 0; // campione gratuito: nessun importo
   const imp = totOrdine(ord);
   return imp + totIVA(imp) + costoSpedizione(ord);
 };
@@ -5249,6 +5256,10 @@ const STATO_PAG = {
   parziale: {
     l: "Parziale",
     c: C.blu
+  },
+  n_a: {
+    l: "—",
+    c: C.grigio400
   }
 };
 const STATO_FUNNEL = {
@@ -10272,9 +10283,9 @@ function Ordini({
     // ── Validazione campi obbligatori ──
     const errs = {};
     if (!form.clienteId) errs.clienteId = "Seleziona un cliente";
-    if (!form.modalita) errs.modalita = "Seleziona la modalità (Vendita o Conto Vendita)";
+    if (!form.campione && !form.modalita) errs.modalita = "Seleziona la modalità (Vendita o Conto Vendita)";
     if (!form.stato) errs.stato = "Seleziona lo stato ordine";
-    if (!form.modalitaPagamento) errs.modalitaPagamento = "Seleziona la modalità di pagamento";
+    if (!form.campione && !form.modalitaPagamento) errs.modalitaPagamento = "Seleziona la modalità di pagamento";
     // Validazione righe: prezzi/qta/omaggi non negativi
     const righeBadIdx = [];
     (form.righe || []).forEach((r, i) => {
@@ -10312,9 +10323,15 @@ function Ordini({
         }];
       }
     }
+    const isCamp = !!form.campione;
     const ordine = {
       ...form,
       pregresso: !!form.pregresso,
+      campione: isCamp,
+      // Campione: vendita, nessun importo né pagamento da tracciare
+      modalita: isCamp ? "vendita" : form.modalita,
+      modalitaPagamento: isCamp ? "" : form.modalitaPagamento,
+      statoPagamento: isCamp ? "n_a" : form.statoPagamento,
       stato: form.pregresso ? "consegnato" : (form.stato || "da_firmare"),
       statoLog: statoLogFinal,
       modalitaFattura: form.modalitaFattura || "unica",
@@ -10326,8 +10343,10 @@ function Ordini({
         return {
           ...r,
           qta: qtaNum,
-          prezzoUnitario: prezzoNum,
-          omaggio: omaggioNum,
+          // Campione: la qta scala il magazzino, ma prezzo e omaggio azzerati
+          prezzoUnitario: isCamp ? 0 : prezzoNum,
+          omaggio: isCamp ? 0 : omaggioNum,
+          campione: isCamp || !!r.campione,
           modalitaConsegna: mc,
           qtaConsegnata: r.qtaConsegnata != null ? r.qtaConsegnata : (mc === "immediata" ? qtaNum : 0),
           consegne: r.consegne || [],
@@ -10378,8 +10397,9 @@ function Ordini({
     });
     if (logAction) logAction(isNew ? "Nuovo ordine" : "Modifica ordine", "ordini", `${ordine.numero} — ${cl?.insegna || cl?.ragioneSociale} — ${ordine.modalita}`);
     setModal(null);
-    // UX5.2 — Prompt invio email conferma ordine (solo nuovi ordini)
-    if (isNew && cl) {
+    if (isCamp && window.tnbToast) window.tnbToast("🎁 Ordine campione salvato");
+    // UX5.2 — Prompt invio email conferma ordine (solo nuovi ordini, non campioni)
+    if (isNew && cl && !isCamp) {
       setTimeout(() => {
         window.tnbConfirm(
           "Inviare conferma ordine al cliente " + (cl.insegna || cl.ragioneSociale || "") + "?",
@@ -10699,10 +10719,11 @@ function Ordini({
   const ordiniAttivi = allOrdini.filter(o => o.stato !== "annullato");
   const views = {
     tutti: ordiniAttivi,
-    vendita: ordiniAttivi.filter(o => o.modalita === "vendita"),
+    vendita: ordiniAttivi.filter(o => o.modalita === "vendita" && !o.campione),
     cv: ordiniAttivi.filter(o => o.modalita === "conto_vendita"),
-    da_pagare: ordiniAttivi.filter(o => o.modalita === "vendita" && (o.statoPagamento === "da_pagare" || o.statoPagamento === "parziale")),
+    da_pagare: ordiniAttivi.filter(o => o.modalita === "vendita" && !o.campione && (o.statoPagamento === "da_pagare" || o.statoPagamento === "parziale")),
     da_liquidare: ordiniAttivi.filter(o => o.modalita === "conto_vendita" && o.statoPagamento !== "pagato"),
+    campione: ordiniAttivi.filter(o => o.campione),
     annullati: allOrdini.filter(o => o.stato === "annullato")
   };
   const lista = navTarget ? allOrdini.filter(o => o.id === navTarget) : (views[tab] || allOrdini);
@@ -10715,7 +10736,7 @@ function Ordini({
     if (r.modalitaConsegna === "schedule") return base + ' 📅';
     return base;
   };
-  const renderGruppoCliente = (gruppo) => { const cl = gruppo.cliente; const cid = cl?.id || '__nessuno__'; const isOpen = !!expandedClients[cid]; const ordini = gruppo.ordini; const totale = ordini.reduce((s,o) => s + totFinale(o), 0); const nDaPagare = ordini.filter(o => o.statoPagamento==='da_pagare'||o.statoPagamento==='parziale').length; const nDaFirmare = ordini.filter(o => o.stato==='da_firmare').length; const nCvScadute = ordini.filter(o => o.modalita==='conto_vendita'&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato').length; return React.createElement(React.Fragment, {key:cid}, React.createElement('tr',{onClick:()=>toggleClient(cid),style:{cursor:'pointer',background:isOpen?'#f0f4e8':((nDaPagare+nDaFirmare+nCvScadute>0)?'#fffbf0':'#fafaf8'),borderBottom:'1.5px solid #e8e6e0'}}, React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,color:'#2e3a1c'}},React.createElement('span',{style:{marginRight:8,fontSize:12}},isOpen?'▼':'▶'),cl?.insegna||cl?.ragioneSociale||'—'), React.createElement('td',{style:{padding:'10px 12px'}},React.createElement('span',{style:{background:'#e8f5e9',color:'#2e7d32',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11}},ordini.length+(ordini.length===1?' ordine':' ordini'))), React.createElement('td',{style:{padding:'10px 12px'}},nDaPagare>0&&React.createElement('span',{style:{background:'#fff3e0',color:'#e65100',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'💶 '+nDaPagare+' da pagare'),nDaFirmare>0&&React.createElement('span',{style:{background:'#e3f2fd',color:'#1565c0',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'✍️ '+nDaFirmare+' da firmare'),nCvScadute>0&&React.createElement('span',{style:{background:'#ffebee',color:'#c62828',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'⚠️ '+nCvScadute+' CV scadute')), React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,textAlign:'right'}},fmt(totale)), React.createElement('td',{style:{padding:'10px 12px',fontSize:11,color:'#888'},colSpan:4},ordini.map(o=>o.numero).join(' · '))), isOpen&&ordini.map(o=>{const isCV=o.modalita==='conto_vendita';const tot=totFinale(o);const scaduta=isCV&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato';const prodotti=(o.righe||[]).map(formatRigaConIcona).join(' · ')||'—';return React.createElement('tr',{key:o.id,style:{background:'#fafbf6',borderBottom:'1px solid #ececec'}},React.createElement('td',{colSpan:5,style:{padding:'10px 18px 10px 36px'}},React.createElement('div',{style:{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}},React.createElement('div',{style:{minWidth:140}},React.createElement('div',{style:{fontWeight:700,fontSize:12,color:'#2e3a1c'}},o.numero||'—'),React.createElement('div',{style:{fontSize:10,color:'#888',marginBottom:3}},fmtD(o.data)),React.createElement(TimelineStato,{stato:o.stato,statoLog:o.statoLog,compact:true})),React.createElement('span',{style:{fontSize:10,background:isCV?'#7d4799':'#7a8c52',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},isCV?'C.Vendita':'Vendita'),React.createElement('div',{style:{flex:1,minWidth:140,fontSize:11,color:'#5f5e5a'}},prodotti),React.createElement('div',{style:{fontWeight:700,fontSize:13,color:'#2e3a1c',minWidth:90,textAlign:'right'}},fmt(tot)),React.createElement('span',{style:{fontSize:10,background:o.statoPagamento==='pagato'?'#2e7d32':o.statoPagamento==='parziale'?'#f57c00':'#c62828',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},o.statoPagamento==='pagato'?'PAGATO':o.statoPagamento==='parziale'?'PARZIALE':'DA PAGARE'),scaduta&&React.createElement('span',{style:{fontSize:10,background:'#fff3e0',color:'#e65100',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},'⚠ Scaduta'),React.createElement('div',{style:{display:'flex',gap:6,alignItems:'center'}},o.firma&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openFirma(o.firma);},title:'Vedi firma allegata',style:{background:'#e8f5e9',border:'1px solid #2e7d32',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#2e7d32',fontWeight:600}},'📎'),(Array.isArray(o.ddt)?o.ddt:(o.ddt?[o.ddt]:[])).length>0&&React.createElement('button',{onClick:e=>{e.stopPropagation();const arr=Array.isArray(o.ddt)?o.ddt:[o.ddt];window.tnbStorage.openDocumento(arr[0]);},title:(Array.isArray(o.ddt)?o.ddt:[o.ddt]).length+' DDT allegat'+((Array.isArray(o.ddt)?o.ddt:[o.ddt]).length===1?'o':'i'),style:{background:'#e3f2fd',border:'1px solid #1565c0',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#1565c0',fontWeight:600}},'🚚'+((Array.isArray(o.ddt)?o.ddt:[o.ddt]).length>1?(Array.isArray(o.ddt)?o.ddt:[o.ddt]).length:'')),(o.fatture||[]).length>0&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openDocumento(o.fatture[0]);},title:(o.fatture||[]).length+' fattur'+((o.fatture||[]).length===1?'a':'e')+' allegat'+((o.fatture||[]).length===1?'a':'e'),style:{background:'#f3e5f5',border:'1px solid #6a1b9a',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#6a1b9a',fontWeight:600}},'📄'+((o.fatture||[]).length>1?(o.fatture||[]).length:'')),React.createElement('button',{onClick:e=>{e.stopPropagation();handleGeneraPDF(o);},title:'Stampa PDF',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 10px',fontSize:11,cursor:'pointer',color:'#5f5e5a',fontWeight:600}},'PDF'),React.createElement('button',{onClick:e=>{e.stopPropagation();setForm({...o});setModal('edit');},title:'Modifica ordine',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer'}},'✎'),isSuperAdmin&&React.createElement('button',{onClick:e=>{e.stopPropagation();deleteOrdine(o);},title:'Elimina ordine (Super Admin)',style:{background:'#fff',border:'1px solid #c0392b',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#c0392b',fontWeight:600}},'🗑'),React.createElement('select',{value:o.statoPagamento||'da_pagare',onChange:e=>{e.stopPropagation();setDati(d=>({...d,ordini:d.ordini.map(x=>x.id===o.id?{...x,statoPagamento:e.target.value}:x)}));},onClick:e=>e.stopPropagation(),style:{fontSize:11,padding:'4px 6px',border:'1px solid #d4d2cc',borderRadius:5,background:'#fff'}},React.createElement('option',{value:'da_pagare'},'Da pagare'),React.createElement('option',{value:'parziale'},'Parziale'),React.createElement('option',{value:'pagato'},'Pagato'))))));})); };
+  const renderGruppoCliente = (gruppo) => { const cl = gruppo.cliente; const cid = cl?.id || '__nessuno__'; const isOpen = !!expandedClients[cid]; const ordini = gruppo.ordini; const totale = ordini.reduce((s,o) => s + totFinale(o), 0); const nDaPagare = ordini.filter(o => o.statoPagamento==='da_pagare'||o.statoPagamento==='parziale').length; const nDaFirmare = ordini.filter(o => o.stato==='da_firmare').length; const nCvScadute = ordini.filter(o => o.modalita==='conto_vendita'&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato').length; return React.createElement(React.Fragment, {key:cid}, React.createElement('tr',{onClick:()=>toggleClient(cid),style:{cursor:'pointer',background:isOpen?'#f0f4e8':((nDaPagare+nDaFirmare+nCvScadute>0)?'#fffbf0':'#fafaf8'),borderBottom:'1.5px solid #e8e6e0'}}, React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,color:'#2e3a1c'}},React.createElement('span',{style:{marginRight:8,fontSize:12}},isOpen?'▼':'▶'),cl?.insegna||cl?.ragioneSociale||'—'), React.createElement('td',{style:{padding:'10px 12px'}},React.createElement('span',{style:{background:'#e8f5e9',color:'#2e7d32',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11}},ordini.length+(ordini.length===1?' ordine':' ordini'))), React.createElement('td',{style:{padding:'10px 12px'}},nDaPagare>0&&React.createElement('span',{style:{background:'#fff3e0',color:'#e65100',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'💶 '+nDaPagare+' da pagare'),nDaFirmare>0&&React.createElement('span',{style:{background:'#e3f2fd',color:'#1565c0',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'✍️ '+nDaFirmare+' da firmare'),nCvScadute>0&&React.createElement('span',{style:{background:'#ffebee',color:'#c62828',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'⚠️ '+nCvScadute+' CV scadute')), React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,textAlign:'right'}},fmt(totale)), React.createElement('td',{style:{padding:'10px 12px',fontSize:11,color:'#888'},colSpan:4},ordini.map(o=>o.numero).join(' · '))), isOpen&&ordini.map(o=>{const isCV=o.modalita==='conto_vendita';const tot=totFinale(o);const scaduta=isCV&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato';const prodotti=(o.righe||[]).map(formatRigaConIcona).join(' · ')||'—';return React.createElement('tr',{key:o.id,style:{background:'#fafbf6',borderBottom:'1px solid #ececec'}},React.createElement('td',{colSpan:5,style:{padding:'10px 18px 10px 36px'}},React.createElement('div',{style:{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}},React.createElement('div',{style:{minWidth:140}},React.createElement('div',{style:{fontWeight:700,fontSize:12,color:'#2e3a1c'}},o.numero||'—'),React.createElement('div',{style:{fontSize:10,color:'#888',marginBottom:3}},fmtD(o.data)),React.createElement(TimelineStato,{stato:o.stato,statoLog:o.statoLog,compact:true})),React.createElement('span',{style:{fontSize:10,background:isCV?'#7d4799':'#7a8c52',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},isCV?'C.Vendita':'Vendita'),React.createElement('div',{style:{flex:1,minWidth:140,fontSize:11,color:'#5f5e5a'}},prodotti),React.createElement('div',{style:{fontWeight:700,fontSize:13,color:'#2e3a1c',minWidth:90,textAlign:'right'}},o.campione?React.createElement('span',{style:{background:'#f3e8ff',color:'#7c3aed',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:600,whiteSpace:'nowrap'}},'🎁 Campione'):fmt(tot)),!o.campione&&React.createElement('span',{style:{fontSize:10,background:o.statoPagamento==='pagato'?'#2e7d32':o.statoPagamento==='parziale'?'#f57c00':'#c62828',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},o.statoPagamento==='pagato'?'PAGATO':o.statoPagamento==='parziale'?'PARZIALE':'DA PAGARE'),scaduta&&React.createElement('span',{style:{fontSize:10,background:'#fff3e0',color:'#e65100',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},'⚠ Scaduta'),React.createElement('div',{style:{display:'flex',gap:6,alignItems:'center'}},o.firma&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openFirma(o.firma);},title:'Vedi firma allegata',style:{background:'#e8f5e9',border:'1px solid #2e7d32',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#2e7d32',fontWeight:600}},'📎'),(Array.isArray(o.ddt)?o.ddt:(o.ddt?[o.ddt]:[])).length>0&&React.createElement('button',{onClick:e=>{e.stopPropagation();const arr=Array.isArray(o.ddt)?o.ddt:[o.ddt];window.tnbStorage.openDocumento(arr[0]);},title:(Array.isArray(o.ddt)?o.ddt:[o.ddt]).length+' DDT allegat'+((Array.isArray(o.ddt)?o.ddt:[o.ddt]).length===1?'o':'i'),style:{background:'#e3f2fd',border:'1px solid #1565c0',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#1565c0',fontWeight:600}},'🚚'+((Array.isArray(o.ddt)?o.ddt:[o.ddt]).length>1?(Array.isArray(o.ddt)?o.ddt:[o.ddt]).length:'')),(o.fatture||[]).length>0&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openDocumento(o.fatture[0]);},title:(o.fatture||[]).length+' fattur'+((o.fatture||[]).length===1?'a':'e')+' allegat'+((o.fatture||[]).length===1?'a':'e'),style:{background:'#f3e5f5',border:'1px solid #6a1b9a',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#6a1b9a',fontWeight:600}},'📄'+((o.fatture||[]).length>1?(o.fatture||[]).length:'')),React.createElement('button',{onClick:e=>{e.stopPropagation();handleGeneraPDF(o);},title:'Stampa PDF',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 10px',fontSize:11,cursor:'pointer',color:'#5f5e5a',fontWeight:600}},'PDF'),React.createElement('button',{onClick:e=>{e.stopPropagation();setForm({...o});setModal('edit');},title:'Modifica ordine',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer'}},'✎'),isSuperAdmin&&React.createElement('button',{onClick:e=>{e.stopPropagation();deleteOrdine(o);},title:'Elimina ordine (Super Admin)',style:{background:'#fff',border:'1px solid #c0392b',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#c0392b',fontWeight:600}},'🗑'),React.createElement('select',{value:o.statoPagamento||'da_pagare',onChange:e=>{e.stopPropagation();setDati(d=>({...d,ordini:d.ordini.map(x=>x.id===o.id?{...x,statoPagamento:e.target.value}:x)}));},onClick:e=>e.stopPropagation(),style:{fontSize:11,padding:'4px 6px',border:'1px solid #d4d2cc',borderRadius:5,background:'#fff'}},React.createElement('option',{value:'da_pagare'},'Da pagare'),React.createElement('option',{value:'parziale'},'Parziale'),React.createElement('option',{value:'pagato'},'Pagato'))))));})); };
 
   const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml", "Aceto 20 ml"];
   const ANNATE = ["2025", "2024"];
@@ -10790,7 +10811,9 @@ function Ordini({
           }
         }, (o.righe || []).map(formatRigaConIcona).join(" · "))
       }), /*#__PURE__*/React.createElement(TD, {
-        ch: /*#__PURE__*/React.createElement("strong", null, fmt(tot))
+        ch: o.campione
+          ? /*#__PURE__*/React.createElement("span", { style: { background: "#f3e8ff", color: "#7c3aed", padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" } }, "🎁 Campione")
+          : /*#__PURE__*/React.createElement("strong", null, fmt(tot))
       }), /*#__PURE__*/React.createElement(TD, {
         ch: /*#__PURE__*/React.createElement(Bdg, {
           v: o.statoPagamento || "da_pagare",
@@ -10896,7 +10919,7 @@ function Ordini({
         setModal("new");
       }
     })
-  }), /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginBottom:8,alignItems:"center",justifyContent:"space-between"}},/*#__PURE__*/React.createElement(Tab,{tabs:[{k:"tutti",l:"Tutti",n:ordiniAttivi.length},{k:"vendita",l:"Vendita"},{k:"cv",l:"Conto Vendita"},{k:"da_pagare",l:"⚠ Da pagare",n:views.da_pagare.length},{k:"da_liquidare",l:"💰 Da liquidare",n:views.da_liquidare.length},{k:"consegne",l:"📅 Consegne",n:consegnePianificate(ordiniAttivi).length},{k:"annullati",l:"🚫 Annullati",n:views.annullati.length}],active:navTarget?"__nav__":tab,onSelect:handleSetTab}),/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:4}},/*#__PURE__*/React.createElement(Btn,{ch:"👤 Per cliente",sz:"sm",style:{background:viewMode==="gruppo"?"#2e3a1c":"#e8e6e0",color:viewMode==="gruppo"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("gruppo")}),/*#__PURE__*/React.createElement(Btn,{ch:"☰ Lista",sz:"sm",style:{background:viewMode==="lista"?"#2e3a1c":"#e8e6e0",color:viewMode==="lista"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("lista")}))),tab === "consegne" && (() => {
+  }), /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginBottom:8,alignItems:"center",justifyContent:"space-between"}},/*#__PURE__*/React.createElement(Tab,{tabs:[{k:"tutti",l:"Tutti",n:ordiniAttivi.length},{k:"vendita",l:"Vendita"},{k:"cv",l:"Conto Vendita"},{k:"da_pagare",l:"⚠ Da pagare",n:views.da_pagare.length},{k:"da_liquidare",l:"💰 Da liquidare",n:views.da_liquidare.length},{k:"campione",l:"🎁 Campioni",n:views.campione.length},{k:"consegne",l:"📅 Consegne",n:consegnePianificate(ordiniAttivi).length},{k:"annullati",l:"🚫 Annullati",n:views.annullati.length}],active:navTarget?"__nav__":tab,onSelect:handleSetTab}),/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:4}},/*#__PURE__*/React.createElement(Btn,{ch:"👤 Per cliente",sz:"sm",style:{background:viewMode==="gruppo"?"#2e3a1c":"#e8e6e0",color:viewMode==="gruppo"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("gruppo")}),/*#__PURE__*/React.createElement(Btn,{ch:"☰ Lista",sz:"sm",style:{background:viewMode==="lista"?"#2e3a1c":"#e8e6e0",color:viewMode==="lista"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("lista")}))),tab === "consegne" && (() => {
     const oggi = todayStr();
     const tutte = consegnePianificate(allOrdini);
     const filtrate = tutte.filter(filtroConsegne(oggi, consegneFiltro)).sort((a, b) => (a.dataPrev || "").localeCompare(b.dataPrev || ""));
@@ -11200,7 +11223,7 @@ function Ordini({
       disabled: !!form._lockCliente || form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       label: "Cliente",
       error: formErrors.clienteId
-    }), /*#__PURE__*/React.createElement(Sel, {
+    }), !form.campione && /*#__PURE__*/React.createElement(Sel, {
       label: "Modalit\xE0",
       req: true,
       error: formErrors.modalita,
@@ -11255,7 +11278,17 @@ function Ordini({
       v: form.numeroEsterno || "",
       ph: "Es. 23B oppure ORD-2024-045",
       on: v => setForm(f => ({ ...f, numeroEsterno: v }))
-    }), form.righe?.some(r => r.modalitaConsegna && r.modalitaConsegna !== "immediata") && /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2", padding: "12px", background: C.grigio50, borderRadius: 8, marginTop: 8, marginBottom: 8 } },
+    }), /*#__PURE__*/React.createElement("label", {
+      style: { gridColumn: "span 2", display: "flex", alignItems: "center", gap: 8, cursor: (form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato") ? "not-allowed" : "pointer", marginTop: 4, padding: "8px 12px", background: form.campione ? "#f3e8ff" : "transparent", borderRadius: 8, border: form.campione ? "1px solid #d8b4fe" : "1px solid transparent" }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: !!form.campione,
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
+      onChange: () => setForm(f => ({ ...f, campione: !f.campione, modalita: !f.campione ? "vendita" : f.modalita })),
+      style: { width: 18, height: 18, cursor: "pointer" }
+    }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 14, fontWeight: 600, color: "#8e44ad" } }, "🎁 Campione gratuito"),
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, color: "#999" } }, "— prodotti inviati come campione, scalano il magazzino ma senza importo")
+    ), form.righe?.some(r => r.modalitaConsegna && r.modalitaConsegna !== "immediata") && /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2", padding: "12px", background: C.grigio50, borderRadius: 8, marginTop: 8, marginBottom: 8 } },
       /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, fontWeight: 600, color: C.grigio600, marginBottom: 6, display: "block" } }, "Modalità fatturazione (per consegne scaglionate)"),
       /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 16 } },
         /*#__PURE__*/React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" } },
@@ -11288,7 +11321,7 @@ function Ordini({
         v: k,
         l: v.l
       }))
-    }), /*#__PURE__*/React.createElement(Sel, {
+    }), !form.campione && /*#__PURE__*/React.createElement(Sel, {
       label: "Modalit\xE0 pagamento",
       req: true,
       error: formErrors.modalitaPagamento,
@@ -11299,7 +11332,7 @@ function Ordini({
         modalitaPagamento: v
       })),
       opts: ["bonifico", "contanti", "rimessa_diretta", "altro"]
-    }), /*#__PURE__*/React.createElement(Sel, {
+    }), !form.campione && /*#__PURE__*/React.createElement(Sel, {
       label: "Stato pagamento",
       v: form.statoPagamento || "",
       on: v => setForm(f => ({
@@ -11310,7 +11343,7 @@ function Ordini({
         v: k,
         l: v.l
       }))
-    }), /*#__PURE__*/React.createElement(Sel, {
+    }), !form.campione && /*#__PURE__*/React.createElement(Sel, {
       label: "Spedizione",
       v: form.spedizione || "locale",
       disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
@@ -11343,7 +11376,7 @@ function Ordini({
         ...f,
         scadenzaCV: v
       }))
-    }), /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
+    }), !form.campione && /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
       /*#__PURE__*/React.createElement(Inp, {
         label: "Condizioni di pagamento",
         v: form.condizioniPagamento || "",
@@ -11374,7 +11407,7 @@ function Ordini({
     })), (form.righe || []).length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "grid",
-        gridTemplateColumns: "2fr 1fr 80px 90px 80px 40px 36px",
+        gridTemplateColumns: form.campione ? "2fr 1fr 80px 40px 36px" : "2fr 1fr 80px 90px 80px 40px 36px",
         gap: 8,
         padding: "0 4px 6px 4px",
         borderBottom: `1px solid ${C.grigio200}`,
@@ -11384,15 +11417,15 @@ function Ordini({
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6 }, title: "Confezione del prodotto (es. 100 ml, 500 ml, 3 L latta)" }, "FORMATO"),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6 }, title: "Anno di produzione del lotto" }, "ANNATA"),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Numero pezzi totali ordinati (esclusi omaggi)" }, "QUANTITÀ"),
-      /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Prezzo unitario al netto IVA, in euro per pezzo" }, "PREZZO UN. €"),
-      /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Pezzi regalati gratuitamente al cliente, non fatturati" }, "OMAGGIO"),
+      !form.campione && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Prezzo unitario al netto IVA, in euro per pezzo" }, "PREZZO UN. €"),
+      !form.campione && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Pezzi regalati gratuitamente al cliente, non fatturati" }, "OMAGGIO"),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Modalità di consegna: immediata, ricorrente o schedule a date fisse" }, "CONSEGNA"),
       /*#__PURE__*/React.createElement("div", null, "")
     ), (form.righe || []).map((r, i) => /*#__PURE__*/React.createElement("div", {
       key: i,
       style: {
         display: "grid",
-        gridTemplateColumns: "2fr 1fr 80px 90px 80px 40px 36px",
+        gridTemplateColumns: form.campione ? "2fr 1fr 80px 40px 36px" : "2fr 1fr 80px 90px 80px 40px 36px",
         gap: 8,
         marginBottom: 8,
         alignItems: "end"
@@ -11415,7 +11448,7 @@ function Ordini({
       on: v => updRiga(i, "qta", v),
       disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       ph: "Q.t\xE0"
-    }), /*#__PURE__*/React.createElement(Inp, {
+    }), !form.campione && /*#__PURE__*/React.createElement(Inp, {
       type: "number",
       min: 0,
       step: 0.01,
@@ -11423,7 +11456,7 @@ function Ordini({
       on: v => updRiga(i, "prezzoUnitario", v),
       disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       ph: "\u20AC/pz"
-    }), /*#__PURE__*/React.createElement(Inp, {
+    }), !form.campione && /*#__PURE__*/React.createElement(Inp, {
       type: "number",
       min: 0,
       step: 1,
@@ -11450,7 +11483,19 @@ function Ordini({
         ...f,
         righe: f.righe.filter((_, j) => j !== i)
       }))
-    }))), (() => {
+    }))), form.campione ? /*#__PURE__*/React.createElement("div", {
+        style: {
+          textAlign: "right",
+          fontSize: 15,
+          fontWeight: 700,
+          color: "#7c3aed",
+          marginTop: 8,
+          padding: "12px 14px",
+          background: "#f3e8ff",
+          borderRadius: 8,
+          border: "1px solid #d8b4fe"
+        }
+      }, "🎁 Campione gratuito") : (() => {
       const imp = (form.righe || []).reduce((s, r) => s + (r.qta || 0) * (r.prezzoUnitario || 0), 0);
       const sped = costoSpedizione(form);
       const ivaCalc = totIVA(imp);
