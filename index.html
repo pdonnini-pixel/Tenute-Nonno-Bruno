@@ -1454,6 +1454,15 @@ const fmt = n => {
 };
 const fmtN = n => n != null ? Number(Math.round(n)).toLocaleString("it-IT") : "—";
 const fmtD = d => d ? new Date(d).toLocaleDateString("it-IT") : "—";
+// tkt_1781178737726: il referente puo' essere stringa (prospect) o oggetto {nome,cognome,ruolo,...} (clienti).
+// Se un referente stringa veniva modificato dal form clienti, lo spread {...stringa} generava un oggetto
+// corrotto {"0":"G","1":"i",...} che mandava in crash la ricerca pipeline. Normalizza sempre a stringa.
+const refDisplay = r => {
+  if (!r) return "";
+  if (typeof r === "string") return r;
+  if (typeof r === "object") return ((r.nome || "") + " " + (r.cognome || "")).trim() || r.ruolo || "";
+  return String(r);
+};
 const todayStr = () => new Date().toISOString().slice(0, 10);
 // v53-golive: helper per leggere dati.azienda con fallback ai default storici TNB.
 // Usato da PDF generators e template email. Se l'utente non ha ancora editato
@@ -2807,6 +2816,10 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
 
 const totOrdine = ord => (ord.righe || []).reduce((s, r) => s + (r.qta || 0) * (r.prezzoUnitario || 0), 0);
 const totIVA = t => Math.round(t * 0.04 * 100) / 100;
+// tkt_1781179078824: reverse charge (clienti UE, art. 7-ter DPR 633/72) — IVA esclusa dall'ordine.
+// ivaOrdine(ord) o ivaOrdine(ord, imponibileGiaCalcolato): 0 se l'ordine ha reverseCharge.
+const ivaOrdine = (ord, imp) => (ord && ord.reverseCharge) ? 0 : totIVA(imp !== undefined ? imp : totOrdine(ord));
+const IVA_LABEL = ord => (ord && ord.reverseCharge) ? "IVA (reverse charge)" : "IVA 4%";
 
 // ─── DATI INIZIALI ────────────────────────────────────────────────────────────
 const D0 = {
@@ -5000,7 +5013,7 @@ function composeEmailOrdine(ordine, cliente, ordiniCliente, opts) {
   const isAbituale = nOrdiniCliente >= 3;
   // Calcoli
   const imp = totOrdine(ordine);
-  const iva = totIVA(imp);
+  const iva = ivaOrdine(ordine, imp);
   const sped = costoSpedizione(ordine);
   const totFin = imp + iva + sped;
   // Righe come bullet list compatta
@@ -5034,7 +5047,7 @@ function composeEmailOrdine(ordine, cliente, ordiniCliente, opts) {
   // Riepilogo prezzi
   const blocPrezzi = (
     "Imponibile: " + fmt(imp) + "\n" +
-    "IVA 4%: " + fmt(iva) + "\n" +
+    IVA_LABEL(ordine) + ": " + fmt(iva) + "\n" +
     (sped > 0 ? ("Spedizione (" + spedLabel + "): " + fmt(sped) + "\n") : ("Spedizione (" + spedLabel + "): GRATUITA\n")) +
     "Totale finale: " + fmt(totFin)
   );
@@ -5116,7 +5129,7 @@ const costoSpedizione = ord => {
 const totFinale = ord => {
   if (ord && ord.campione) return 0; // campione gratuito: nessun importo
   const imp = totOrdine(ord);
-  return imp + totIVA(imp) + costoSpedizione(ord);
+  return imp + ivaOrdine(ord, imp) + costoSpedizione(ord);
 };
 
 // ─── BADGE MAPS ────────────────────────────────────────────────────────────────
@@ -6806,7 +6819,7 @@ function Pipeline({
     }
     var tpl = MAIL_TEMPLATES[quickMailTpl];
     if (!tpl) return;
-    var dest = { referente: p.referente || pNome(p), nomeDisplay: pNome(p), email: p.email };
+    var dest = { referente: refDisplay(p.referente) || pNome(p), nomeDisplay: pNome(p), email: p.email };
     var ogg = tpl.oggetto(dest);
     var corpo = tpl.corpo(dest);
     window.tnbConfirm("Inviare a " + pNome(p) + " <" + p.email + ">?\nOggetto: " + ogg, function() {
@@ -6859,7 +6872,7 @@ function Pipeline({
           id: uid(),
           ragioneSociale: p.ragioneSociale || "",
           insegna: p.insegna || p.ragioneSociale || "",
-          referente: p.referente || "",
+          referente: refDisplay(p.referente),
           email: p.email || "",
           telefono: p.telefono || "",
           indirizzo: p.indirizzo || "",
@@ -6897,7 +6910,7 @@ function Pipeline({
     if (filter) {
       const q = filter.toLowerCase();
       const label = pNome(p).toLowerCase();
-      if (!(label.includes(q) || (p.insegna||"").toLowerCase().includes(q) || (p.ragioneSociale||"").toLowerCase().includes(q) || (p.indirizzo||"").toLowerCase().includes(q) || (p.email||"").toLowerCase().includes(q) || (p.referente||"").toLowerCase().includes(q) || (p.note||"").toLowerCase().includes(q))) return false;
+      if (!(label.includes(q) || (p.insegna||"").toLowerCase().includes(q) || (p.ragioneSociale||"").toLowerCase().includes(q) || (p.indirizzo||"").toLowerCase().includes(q) || (p.email||"").toLowerCase().includes(q) || refDisplay(p.referente).toLowerCase().includes(q) || (p.note||"").toLowerCase().includes(q))) return false;
     }
     if (statoFilter && p.stato !== statoFilter) return false;
     if (categoriaFilter && p.tipo !== categoriaFilter) return false;
@@ -6925,7 +6938,7 @@ function Pipeline({
         case "nome": va = pNome(a); vb = pNome(b); break;
         case "categoria": va = a.tipo || ""; vb = b.tipo || ""; break;
         case "stato": va = a.stato || ""; vb = b.stato || ""; break;
-        case "referente": va = a.referente || ""; vb = b.referente || ""; break;
+        case "referente": va = refDisplay(a.referente); vb = refDisplay(b.referente); break;
         case "citta": va = pCitta(a); vb = pCitta(b); break;
         case "ultimo": va = pUltimoContatto(a); vb = pUltimoContatto(b); break;
         case "prossima": va = pProssimaAzione(a); vb = pProssimaAzione(b); break;
@@ -7072,7 +7085,7 @@ function Pipeline({
           /*#__PURE__*/React.createElement("td", { style: { padding: "8px 6px" } },
             /*#__PURE__*/React.createElement("span", { style: { background: (STATO_FUNNEL[p.stato] || {}).c || C.grigio400, color: "#fff", borderRadius: 10, padding: "2px 8px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" } }, (STATO_FUNNEL[p.stato] || {}).l || p.stato)
           ),
-          /*#__PURE__*/React.createElement("td", { style: { padding: "8px 6px", color: C.grigio600 } }, p.referente || "\u2014"),
+          /*#__PURE__*/React.createElement("td", { style: { padding: "8px 6px", color: C.grigio600 } }, refDisplay(p.referente) || "\u2014"),
           /*#__PURE__*/React.createElement("td", { style: { padding: "8px 6px" }, onClick: function(e) { e.stopPropagation(); } },
             p.telefono ? /*#__PURE__*/React.createElement("a", { href: "tel:" + p.telefono, style: { color: C.blu, textDecoration: "none", fontSize: 11 } }, p.telefono) : /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "\u2014")
           ),
@@ -7496,7 +7509,7 @@ function Pipeline({
     var qp = dati.prospect.find(function(x) { return x.id === quickMailId; });
     if (!qp) return null;
     var tpl = MAIL_TEMPLATES[quickMailTpl];
-    var dest = { referente: qp.referente || pNome(qp), nomeDisplay: pNome(qp), email: qp.email };
+    var dest = { referente: refDisplay(qp.referente) || pNome(qp), nomeDisplay: pNome(qp), email: qp.email };
     return /*#__PURE__*/React.createElement(Modal, {
       title: "\u2709\ufe0f Invia email rapida",
       onClose: function() { setQuickMailId(null); setQuickMailPreview(false); },
@@ -7573,7 +7586,7 @@ function Pipeline({
       v: form.cognome || "", on: v => setForm(f => ({...f, cognome: v}))
     }) : null, form.tipo !== "Privato" ? /*#__PURE__*/React.createElement(Inp, {
       label: "Referente", ph: "es. Mario Rossi",
-      v: form.referente || "", on: v => setForm(f => ({...f, referente: v}))
+      v: refDisplay(form.referente), on: v => setForm(f => ({...f, referente: v}))
     }) : null, /*#__PURE__*/React.createElement(Inp, {
       label: "Email",
       ph: form.tipo === "Privato" ? "mario.rossi@email.it" : "info@locale.it",
@@ -7697,7 +7710,7 @@ function Pipeline({
           saveProspectSilent();
           var nomeRef = form.tipo === "Privato"
             ? ((form.nome||"") + " " + (form.cognome||"")).trim()
-            : (form.referente || form.ragioneSociale || "");
+            : (refDisplay(form.referente) || form.ragioneSociale || "");
           var intestazione = nomeRef ? "Gentile " + nomeRef : "Buongiorno";
           var canaleLabel = CANALE[form.canale] || "";
           var canaleTxt = canaleLabel ? " a seguito del nostro contatto" : "";
@@ -7820,7 +7833,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
               clienteForm: {
                 ragioneSociale: p.ragioneSociale || "",
                 insegna: p.insegna || p.ragioneSociale || "",
-                referente: p.referente || "",
+                referente: refDisplay(p.referente),
                 email: p.email || "",
                 telefono: p.telefono || "",
                 indirizzo: p.indirizzo || "",
@@ -8679,7 +8692,7 @@ function Clienti({
                     dataConversione: null,
                     ragioneSociale: cli.ragioneSociale || p.ragioneSociale,
                     insegna: cli.insegna || p.insegna,
-                    referente: cli.referente || p.referente,
+                    referente: refDisplay(cli.referente) || refDisplay(p.referente),
                     email: cli.email || p.email,
                     telefono: cli.telefono || p.telefono,
                     indirizzo: cli.indirizzo || p.indirizzo,
@@ -8693,7 +8706,7 @@ function Clienti({
                   id: uid(),
                   ragioneSociale: cli.ragioneSociale || "",
                   insegna: cli.insegna || cli.ragioneSociale || "",
-                  referente: cli.referente || "",
+                  referente: refDisplay(cli.referente),
                   email: cli.email || "",
                   telefono: cli.telefono || "",
                   indirizzo: cli.indirizzo || "",
@@ -8905,13 +8918,13 @@ function Clienti({
       ),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#5f5e5a", letterSpacing: 0.4, marginBottom: 6, marginTop: 4 } }, "REFERENTE OPERATIVO"),
       /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 } },
-        /*#__PURE__*/React.createElement(Inp, { label: "Nome", v: form.referente?.nome || "", on: v => setForm(f => ({ ...f, referente: { ...(f.referente || {}), nome: v } })) }),
-        /*#__PURE__*/React.createElement(Inp, { label: "Cognome", v: form.referente?.cognome || "", on: v => setForm(f => ({ ...f, referente: { ...(f.referente || {}), cognome: v } })) }),
-        /*#__PURE__*/React.createElement(Inp, { label: "Ruolo", v: form.referente?.ruolo || "", on: v => setForm(f => ({ ...f, referente: { ...(f.referente || {}), ruolo: v } })), ph: "es. Direttore acquisti" })
+        /*#__PURE__*/React.createElement(Inp, { label: "Nome", v: form.referente?.nome || "", on: v => setForm(f => ({ ...f, referente: { ...(typeof f.referente === "object" && f.referente ? f.referente : (f.referente ? { nome: String(f.referente) } : {})), nome: v } })) }),
+        /*#__PURE__*/React.createElement(Inp, { label: "Cognome", v: form.referente?.cognome || "", on: v => setForm(f => ({ ...f, referente: { ...(typeof f.referente === "object" && f.referente ? f.referente : (f.referente ? { nome: String(f.referente) } : {})), cognome: v } })) }),
+        /*#__PURE__*/React.createElement(Inp, { label: "Ruolo", v: form.referente?.ruolo || "", on: v => setForm(f => ({ ...f, referente: { ...(typeof f.referente === "object" && f.referente ? f.referente : (f.referente ? { nome: String(f.referente) } : {})), ruolo: v } })), ph: "es. Direttore acquisti" })
       ),
       /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 } },
-        /*#__PURE__*/React.createElement(Inp, { label: "Telefono", type: "tel", v: form.referente?.telefono || "", on: v => setForm(f => ({ ...f, referente: { ...(f.referente || {}), telefono: v } })) }),
-        /*#__PURE__*/React.createElement(Inp, { label: "Email", type: "email", v: form.referente?.email || "", on: v => setForm(f => ({ ...f, referente: { ...(f.referente || {}), email: v } })) })
+        /*#__PURE__*/React.createElement(Inp, { label: "Telefono", type: "tel", v: form.referente?.telefono || "", on: v => setForm(f => ({ ...f, referente: { ...(typeof f.referente === "object" && f.referente ? f.referente : (f.referente ? { nome: String(f.referente) } : {})), telefono: v } })) }),
+        /*#__PURE__*/React.createElement(Inp, { label: "Email", type: "email", v: form.referente?.email || "", on: v => setForm(f => ({ ...f, referente: { ...(typeof f.referente === "object" && f.referente ? f.referente : (f.referente ? { nome: String(f.referente) } : {})), email: v } })) })
       ),
       // UX2.2 — Condizioni pagamento default
       /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr", gap: 8, marginBottom: 8 } },
@@ -8921,6 +8934,15 @@ function Clienti({
           on: v => setForm(f => ({ ...f, condizioniPagamentoDefault: v })),
           ph: "Es: 30 gg data fattura, bonifico anticipato..."
         })
+      ),
+      // tkt_1781179078824: flag reverse charge a livello cliente (pre-compila gli ordini)
+      /*#__PURE__*/React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer", marginBottom: 8 } },
+        /*#__PURE__*/React.createElement("input", {
+          type: "checkbox",
+          checked: !!form.reverseCharge,
+          onChange: e => setForm(f => ({ ...f, reverseCharge: e.target.checked }))
+        }),
+        /*#__PURE__*/React.createElement("span", { style: { fontWeight: 600, color: "#5f5e5a" } }, "\ud83c\uddea\ud83c\uddfa Reverse charge (cliente UE) \u2014 i nuovi ordini non includeranno IVA")
       ),
       /*#__PURE__*/React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer", marginBottom: 8 } },
         /*#__PURE__*/React.createElement("input", {
@@ -9022,12 +9044,12 @@ function generateModuloPDF(ordine, clienti, isCV) {
   doc.line(20, y, 190, y);
   y += 7;
   var totale = ordine.totale || 0;
-  var iva = totale * 0.04;
+  var iva = ordine.reverseCharge ? 0 : totale * 0.04;
   doc.setFontSize(10);
   doc.setTextColor(40, 40, 40);
   doc.text('Imponibile: €' + totale.toFixed(2), 130, y);
   y += 6;
-  doc.text('IVA 4%: €' + iva.toFixed(2), 130, y);
+  doc.text((ordine.reverseCharge ? 'IVA (reverse charge): €' : 'IVA 4%: €') + iva.toFixed(2), 130, y);
   y += 6;
   doc.setFontSize(12);
   doc.setTextColor(62, 79, 31);
@@ -9406,11 +9428,11 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
     doc.setFillColor(...TNB_C_DARK);
     doc.rect(M + colSxW + 6, boxY, colDxW, 38, "F");
     doc.setFont(FONT_BODY, "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
-    const iva = imponibile * 0.04;
+    const iva = ordine.reverseCharge ? 0 : imponibile * 0.04;
     const spedC = costoSpedizione(ordine);
     const totaleFin = imponibile + iva + spedC;
     const spedLabel = spedC === 0 ? "GRATUITA" : fmtPdf(spedC);
-    const tt = [["Imponibile", fmtPdf(imponibile)], ["IVA 4%", fmtPdf(iva)], ["Spedizione", spedLabel]];
+    const tt = [["Imponibile", fmtPdf(imponibile)], [ordine.reverseCharge ? "IVA (rev. charge)" : "IVA 4%", fmtPdf(iva)], ["Spedizione", spedLabel]];
     tt.forEach((row, i) => {
       const isFree = row[0] === "Spedizione" && spedC === 0;
       if (isFree) { doc.setFont(FONT_BODY, "bold"); doc.setTextColor(180, 230, 150); }
@@ -9458,11 +9480,11 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
     doc.setFillColor(...TNB_C_DARK);
     doc.rect(colDx, boxY, colDxW, 36, "F");
     doc.setFont(FONT_BODY, "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
-    const iva = imponibile * 0.04;
+    const iva = ordine.reverseCharge ? 0 : imponibile * 0.04;
     const spedC = costoSpedizione(ordine);
     const totaleFin = imponibile + iva + spedC;
     const spedLabel = spedC === 0 ? "GRATUITA" : fmtPdf(spedC);
-    const tt = [["Imponibile", fmtPdf(imponibile)], ["IVA 4%", fmtPdf(iva)], ["Spedizione", spedLabel]];
+    const tt = [["Imponibile", fmtPdf(imponibile)], [ordine.reverseCharge ? "IVA (rev. charge)" : "IVA 4%", fmtPdf(iva)], ["Spedizione", spedLabel]];
     tt.forEach((row, i) => {
       const isFree = row[0] === "Spedizione" && spedC === 0;
       if (isFree) { doc.setFont(FONT_BODY, "bold"); doc.setTextColor(180, 230, 150); }
@@ -10233,7 +10255,8 @@ function Ordini({
         righe: [],
         consegnaScaglionata: false,
         modalitaFattura: "unica",
-        condizioniPagamento: (_pendCl && _pendCl.condizioniPagamentoDefault) || ""
+        condizioniPagamento: (_pendCl && _pendCl.condizioniPagamentoDefault) || "",
+        reverseCharge: !!(_pendCl && _pendCl.reverseCharge)
       });
       setModal("new");
       window._tnbPendingOrdineCliente = null;
@@ -11208,7 +11231,7 @@ function Ordini({
         marginTop: 6,
         fontWeight: 600
       }
-    }, "Valore totale consegnato: ", fmt(totOrdine(cvModal)), " + IVA ", fmt(totIVA(totOrdine(cvModal)))), /*#__PURE__*/React.createElement("div", {
+    }, "Valore totale consegnato: ", fmt(totOrdine(cvModal)), " + IVA ", fmt(ivaOrdine(cvModal))), /*#__PURE__*/React.createElement("div", {
       style: {
         color: C.arancio
       }
@@ -11303,7 +11326,7 @@ function Ordini({
       value: form.clienteId || "",
       onChange: v => {
         var cl = (dati.clienti || []).find(function(c) { return c.id === v; });
-        setForm(f => ({ ...f, clienteId: v, condizioniPagamento: f.condizioniPagamento || (cl && cl.condizioniPagamentoDefault) || "" }));
+        setForm(f => ({ ...f, clienteId: v, reverseCharge: cl ? !!cl.reverseCharge : !!f.reverseCharge, condizioniPagamento: f.condizioniPagamento || (cl && cl.condizioniPagamentoDefault) || "" }));
       },
       disabled: !!form._lockCliente || form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       label: "Cliente",
@@ -11583,7 +11606,7 @@ function Ordini({
       }, "🎁 Campione gratuito") : (() => {
       const imp = (form.righe || []).reduce((s, r) => s + (r.qta || 0) * (r.prezzoUnitario || 0), 0);
       const sped = costoSpedizione(form);
-      const ivaCalc = totIVA(imp);
+      const ivaCalc = ivaOrdine(form, imp);
       const totFin = imp + ivaCalc + sped;
       return /*#__PURE__*/React.createElement("div", {
         style: {
@@ -11599,7 +11622,7 @@ function Ordini({
         }
       },
         /*#__PURE__*/React.createElement("div", null, "Imponibile: ", /*#__PURE__*/React.createElement("strong", { style: { color: C.grigio800 } }, fmt(imp))),
-        /*#__PURE__*/React.createElement("div", null, "IVA 4%: ", /*#__PURE__*/React.createElement("strong", { style: { color: C.grigio800 } }, fmt(ivaCalc))),
+        /*#__PURE__*/React.createElement("div", null, IVA_LABEL(form) + ": ", /*#__PURE__*/React.createElement("strong", { style: { color: C.grigio800 } }, fmt(ivaCalc))),
         /*#__PURE__*/React.createElement("div", null, "Spedizione: ",
           sped === 0
             ? /*#__PURE__*/React.createElement("strong", { style: { color: C.verde, letterSpacing: 0.5 } }, "GRATUITA")
@@ -11609,7 +11632,15 @@ function Ordini({
           style: { fontWeight: 700, fontSize: 15, color: C.olivaScuro, marginTop: 6, borderTop: "1px solid #e8e6e0", paddingTop: 6 }
         }, "Totale: ", fmt(totFin))
       );
-    })()), /*#__PURE__*/React.createElement(Inp, {
+    })()), !form.campione && /*#__PURE__*/React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer", margin: "8px 0" } },
+      /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: !!form.reverseCharge,
+        disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
+        onChange: e => setForm(f => ({ ...f, reverseCharge: e.target.checked }))
+      }),
+      /*#__PURE__*/React.createElement("span", { style: { fontWeight: 600, color: "#5f5e5a" } }, "\ud83c\uddea\ud83c\uddfa Reverse charge \u2014 cliente UE, IVA esclusa dall'ordine (art. 7-ter DPR 633/72)")
+    ), /*#__PURE__*/React.createElement(Inp, {
       label: "Note",
       v: form.note || "",
       disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
@@ -19568,7 +19599,7 @@ function SchedaClienteCommerciale({
       }
     }, "Nessun ordine registrato"), ordiniCl.map(o => {
       const tot = totOrdine(o);
-      const iva = totIVA(tot);
+      const iva = ivaOrdine(o, tot);
       return /*#__PURE__*/React.createElement("div", {
         key: o.id,
         style: {
@@ -19632,7 +19663,7 @@ function SchedaClienteCommerciale({
           gap: 16,
           fontSize: 12
         }
-      }, /*#__PURE__*/React.createElement("span", null, "Imponibile: ", /*#__PURE__*/React.createElement("strong", null, fmt(tot))), /*#__PURE__*/React.createElement("span", null, "IVA 4%: ", /*#__PURE__*/React.createElement("strong", null, fmt(iva))), /*#__PURE__*/React.createElement("span", {
+      }, /*#__PURE__*/React.createElement("span", null, "Imponibile: ", /*#__PURE__*/React.createElement("strong", null, fmt(tot))), /*#__PURE__*/React.createElement("span", null, IVA_LABEL(o) + ": ", /*#__PURE__*/React.createElement("strong", null, fmt(iva))), /*#__PURE__*/React.createElement("span", {
         style: {
           color: C.olivaScuro,
           fontWeight: 700
@@ -19855,7 +19886,7 @@ function OggiAzioni({
     const tpl = MAIL_TEMPLATES["primo_contatto"];
     if (!tpl) return;
     const pNomeBrief = p.tipo === "Privato" ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato" : (p.insegna || p.ragioneSociale || "—");
-    const dest = { referente: p.referente || pNomeBrief, nomeDisplay: pNomeBrief, email: p.email };
+    const dest = { referente: refDisplay(p.referente) || pNomeBrief, nomeDisplay: pNomeBrief, email: p.email };
     window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(p.email) + "&su=" + encodeURIComponent(tpl.oggetto(dest)) + "&body=" + encodeURIComponent(tpl.corpo(dest)), "_blank");
     if (window.tnbToast) window.tnbToast("✉️ Email inviata a " + p.email);
   };
@@ -21459,7 +21490,7 @@ const MAIL_TEMPLATES = {
     colore: C.oliva,
     target: ["clienti"],
     oggetto: (dest, ord) => _tnbNome() + " \u2014 Proposta ordine per " + (dest.nomeDisplay || dest.insegna || dest.ragioneSociale || ""),
-    corpo: (dest, ord) => "Gentile " + (dest.referente || "") + ",\n\nin seguito alla nostra conversazione, le inviamo il riepilogo della proposta:\n\n" + ((ord && ord.righe) ? ord.righe.map(function(r){ return "\u2022 " + r.qta + " \u00d7 " + r.formato + " Raccolta " + r.annata + " \u2014 " + fmt(r.prezzoUnitario) + " cad."; }).join("\n") : "") + "\n\nTotale imponibile: " + fmt(ord ? totOrdine(ord) : 0) + "\nIVA 4%: " + fmt(ord ? totIVA(totOrdine(ord)) : 0) + (ord && costoSpedizione(ord) > 0 ? "\nSpedizione: " + fmt(costoSpedizione(ord)) : "") + "\nTotale finale: " + fmt(ord ? totFinale(ord) : 0) + "\n\nPer procedere con l'ordine le invieremo il modulo da firmare.\n\nCordiali saluti,\n" + _tnbFirma()
+    corpo: (dest, ord) => "Gentile " + (dest.referente || "") + ",\n\nin seguito alla nostra conversazione, le inviamo il riepilogo della proposta:\n\n" + ((ord && ord.righe) ? ord.righe.map(function(r){ return "\u2022 " + r.qta + " \u00d7 " + r.formato + " Raccolta " + r.annata + " \u2014 " + fmt(r.prezzoUnitario) + " cad."; }).join("\n") : "") + "\n\nTotale imponibile: " + fmt(ord ? totOrdine(ord) : 0) + "\n" + IVA_LABEL(ord) + ": " + fmt(ord ? ivaOrdine(ord) : 0) + (ord && costoSpedizione(ord) > 0 ? "\nSpedizione: " + fmt(costoSpedizione(ord)) : "") + "\nTotale finale: " + fmt(ord ? totFinale(ord) : 0) + "\n\nPer procedere con l'ordine le invieremo il modulo da firmare.\n\nCordiali saluti,\n" + _tnbFirma()
   },
   conferma_ordine: {
     label: "\u2705 Conferma ordine",
@@ -22986,7 +23017,7 @@ function PreventiviTab(p2){
   var updR=function(i,k,v){setFPv(function(f){return{...f,righe:f.righe.map(function(r,j){return j!==i?r:{...r,[k]:v};})};});};
   var tot=fPv.righe.reduce(function(s,r){return s+(r.qta||0)*(r.prezzoUnitario||0);},0);
   var sped=fPv.spedizione==="fuori"?15:fPv.spedizione==="fuori_regione"?30:0;
-  var iva=Math.round(tot*0.04*100)/100;
+  var cliPv=(dati.clienti||[]).find(function(c){return c.id===fPv.clienteId;});var rcPv=!!(cliPv&&cliPv.reverseCharge);var iva=rcPv?0:Math.round(tot*0.04*100)/100;
   var getD=function(fmt2,ann){var s=dati.magazzino.find(function(m){return m.formato===fmt2&&m.annata===ann;});return s?(s.giacenza&&s.giacenza.disponibile||0):null;};
   var genPDF=function(){
     var cl=dati.clienti.find(function(c){return c.id===fPv.clienteId;})||{};
@@ -23019,7 +23050,7 @@ function PreventiviTab(p2){
       y+=4;doc.line(15,y,195,y);y+=6;
       if(sped>0){doc.text("Spedizione:",130,y);doc.text("EUR "+sped.toFixed(2),165,y);y+=6;}
       doc.text("Imponibile:",130,y);doc.text("EUR "+tot.toFixed(2),165,y);y+=6;
-      doc.text("IVA 4%:",130,y);doc.text("EUR "+iva.toFixed(2),165,y);y+=6;
+      doc.text(rcPv?"IVA (rev. charge):":"IVA 4%:",130,y);doc.text("EUR "+iva.toFixed(2),165,y);y+=6;
       doc.setFont("helvetica","bold");doc.text("TOTALE:",130,y);doc.text("EUR "+(tot+iva+sped).toFixed(2),165,y);y+=10;
       doc.setFont("helvetica","normal");doc.setFontSize(8);
       if(fPv.note)doc.text("Note: "+fPv.note,15,y);
@@ -23079,7 +23110,7 @@ function PreventiviTab(p2){
     fPv.righe.length>0?React.createElement("div",{style:{borderTop:"1px solid #e8e6e0",paddingTop:"12px",marginTop:"8px",display:"flex",justifyContent:"flex-end",gap:"16px",fontSize:"13px"}},
       React.createElement("span",null,"Imponibile: ",React.createElement("strong",null,fmt(tot))),
       sped>0?React.createElement("span",null,"Sped: +EUR"+sped):null,
-      React.createElement("span",null,"IVA 4%: +"+fmt(iva)),
+      React.createElement("span",null,(rcPv?"IVA (reverse charge): +":"IVA 4%: +")+fmt(iva)),
       React.createElement("span",{style:{fontWeight:700}},"TOTALE: "+fmt(tot+iva+sped))
     ):null
   )}));
