@@ -2344,6 +2344,8 @@ const MOD_CONSEGNA_EMOJI = {
 const consegnePianificate = (ordini) => {
   const out = [];
   (ordini || []).forEach(o => {
+    // tkt_1781169406976: le consegne di ordini annullati non vanno pianificate/mostrate
+    if (o.stato === "annullato") return;
     (o.righe || []).forEach((r, rigaIdx) => {
       if (r.modalitaConsegna === "immediata") return;
       (r.schedule || []).forEach((s, scheduleIdx) => {
@@ -6020,6 +6022,8 @@ function Dashboard({
     const scad = [];
     const clientiRev = {};
     dati.ordini.forEach(o => {
+      // tkt_1781169406976: gli ordini annullati non entrano nei KPI/totali della dashboard
+      if (o.stato === "annullato") return;
       const tot = totOrdine(o);
       const mese = (o.data || "").slice(0, 7);
       if (!mesiMap[mese]) mesiMap[mese] = {
@@ -6148,7 +6152,7 @@ function Dashboard({
     icon: "\uD83E\uDD1D",
     val: fmt(cvEsposizione),
     label: "Da Liquidare CV",
-    sub: `${dati.ordini.filter(o => o.modalita === "conto_vendita" && o.statoPagamento !== "pagato").length} contratti aperti`,
+    sub: `${dati.ordini.filter(o => o.stato !== "annullato" && o.modalita === "conto_vendita" && o.statoPagamento !== "pagato").length} contratti aperti`,
     color: C.viola,
     onClick: () => { window._tnbNav = {tab: "da_liquidare"}; window._nav("ordini"); }
   }), /*#__PURE__*/React.createElement(KPI, {
@@ -6156,7 +6160,7 @@ function Dashboard({
     icon: "\u26A0\uFE0F",
     val: fmt(daRiscuotere),
     label: "Da Riscuotere",
-    sub: `${dati.ordini.filter(o => o.statoPagamento === "da_pagare").length} ordini`,
+    sub: `${dati.ordini.filter(o => o.stato !== "annullato" && o.statoPagamento === "da_pagare").length} ordini`,
     color: daRiscuotere > 500 ? C.rosso : C.arancio,
     onClick: () => { window._tnbNav = {tab: "da_pagare"}; window._nav("ordini"); }
   }), /*#__PURE__*/React.createElement(KPI, {
@@ -18042,7 +18046,7 @@ function App() {
   }];
   const access = ROLE_ACCESS[currentUser.role] || [];
   const NAV = ALL_NAV.filter(n => access.includes(n.k));
-  const alerts = [dati.magazzino.filter(m => giacenzaDisp(m) <= m.soglia).length, dati.ordini.filter(o => o.statoPagamento === "da_pagare" && o.modalita === "vendita").length, dati.ordini.filter(o => o.scadenzaCV && o.scadenzaCV < todayStr() && o.statoPagamento !== "pagato").length].reduce((s, n) => s + n, 0);
+  const alerts = [dati.magazzino.filter(m => giacenzaDisp(m) <= m.soglia).length, dati.ordini.filter(o => o.stato !== "annullato" && o.statoPagamento === "da_pagare" && o.modalita === "vendita").length, dati.ordini.filter(o => o.stato !== "annullato" && o.scadenzaCV && o.scadenzaCV < todayStr() && o.statoPagamento !== "pagato").length].reduce((s, n) => s + n, 0);
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("style", null, css), supaWarn && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
@@ -19874,7 +19878,7 @@ function OggiAzioni({
     nota: c.followUp.nota,
     gg: giorniAlla(c.followUp.scadenza)
   })).sort((a, b) => a.data.localeCompare(b.data));
-  const azioniCV = dati.ordini.filter(o => o.modalita === "conto_vendita" && o.scadenzaCV && o.scadenzaCV <= finoStr && o.statoPagamento !== "pagato").map(o => {
+  const azioniCV = dati.ordini.filter(o => o.stato !== "annullato" && o.modalita === "conto_vendita" && o.scadenzaCV && o.scadenzaCV <= finoStr && o.statoPagamento !== "pagato").map(o => {
     const cl = dati.clienti.find(c => c.id === o.clienteId);
     return {
       tipo: "cv",
@@ -19893,7 +19897,7 @@ function OggiAzioni({
       gg: 0
     };
   });
-  const daPagare = dati.ordini.filter(o => o.modalita === "vendita" && o.statoPagamento === "da_pagare" && o.stato !== "da_firmare" && !agendaState.dismissed[`pagamento_${o.id}`] && !(agendaState.postponed[`pagamento_${o.id}`] && agendaState.postponed[`pagamento_${o.id}`] > oggi)).map(o => {
+  const daPagare = dati.ordini.filter(o => o.stato !== "annullato" && o.modalita === "vendita" && o.statoPagamento === "da_pagare" && o.stato !== "da_firmare" && !agendaState.dismissed[`pagamento_${o.id}`] && !(agendaState.postponed[`pagamento_${o.id}`] && agendaState.postponed[`pagamento_${o.id}`] > oggi)).map(o => {
     const cl = dati.clienti.find(c => c.id === o.clienteId);
     return {
       tipo: "pagamento",
@@ -20780,7 +20784,7 @@ function AlertsPage({
     color: C.rosso
   })),
   // CV scadute
-  ...dati.ordini.filter(o => o.modalita === "conto_vendita" && o.scadenzaCV && o.scadenzaCV < oggi && o.statoPagamento !== "pagato").map(o => {
+  ...dati.ordini.filter(o => o.stato !== "annullato" && o.modalita === "conto_vendita" && o.scadenzaCV && o.scadenzaCV < oggi && o.statoPagamento !== "pagato").map(o => {
     const cl = dati.clienti.find(c => c.id === o.clienteId);
     const gg = Math.abs(Math.round((new Date(oggi) - new Date(o.scadenzaCV)) / (1000 * 60 * 60 * 24)));
     return {
@@ -20814,7 +20818,7 @@ function AlertsPage({
     };
   }),
   // Vendite da riscuotere
-  ...dati.ordini.filter(o => o.modalita === "vendita" && o.statoPagamento === "da_pagare").map(o => {
+  ...dati.ordini.filter(o => o.stato !== "annullato" && o.modalita === "vendita" && o.statoPagamento === "da_pagare").map(o => {
     const cl = dati.clienti.find(c => c.id === o.clienteId);
     return {
       id: "pag_" + o.id,
@@ -20887,7 +20891,7 @@ function AlertsPage({
   }),
   // CV in scadenza entro 7gg
   ...dati.ordini.filter(o => {
-    if (o.modalita !== "conto_vendita" || o.statoPagamento === "pagato" || !o.scadenzaCV) return false;
+    if (o.stato === "annullato" || o.modalita !== "conto_vendita" || o.statoPagamento === "pagato" || !o.scadenzaCV) return false;
     const gg = Math.round((new Date(o.scadenzaCV) - new Date(oggi)) / (1000 * 60 * 60 * 24));
     return gg >= 0 && gg <= 7;
   }).map(o => {
