@@ -8115,7 +8115,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
               if (!clienteId) { if (window.tnbToast) window.tnbToast("⚠ Cliente non trovato", "err"); return; }
               var anno = todayStr().slice(0, 4);
               // Generate order number
-              var existing = (dati.ordini || []).filter(function(o) { return o.numero && o.numero.includes("/" + anno); }).map(function(o) { return parseInt(o.numero); }).filter(function(n) { return !isNaN(n); });
+              var existing = (dati.ordini || []).filter(function(o) { return o.stato !== "annullato" && o.numero && o.numero.includes("/" + anno); }).map(function(o) { return parseInt(o.numero); }).filter(function(n) { return !isNaN(n); });
               var numero = String(Math.max(0, Math.max.apply(null, existing.length ? existing : [0]) + 1)).padStart(4, "0") + "/" + anno;
               var ordineId = uid();
               var ordine = {
@@ -8649,21 +8649,92 @@ function Clienti({
         if (window._nav) window._nav("ordini");
       }
     }), /*#__PURE__*/React.createElement(Btn, {
+      ch: "↩️ Riporta in Pipeline",
+      v: "sec",
+      sz: "sm",
+      onClick: () => {
+        // tkt_1781162856400: cliente → prospect senza perdere i dati
+        var nOrdAtt = dati.ordini.filter(function(o){ return o.clienteId === detail.id && o.stato !== "annullato"; }).length;
+        if (nOrdAtt > 0) {
+          window.tnbToast('⛔ Impossibile: ' + nOrdAtt + ' ordin' + (nOrdAtt===1?'e attivo':'i attivi') + ' collegat' + (nOrdAtt===1?'o':'i') + '. Annullali prima.', 'err');
+          return;
+        }
+        var cli = detail;
+        var nomeP = cli.insegna || cli.ragioneSociale;
+        window.tnbConfirm(
+          'Riportare "' + nomeP + '" in Pipeline come prospect? I dati anagrafici verranno conservati e il record cliente verrà rimosso dalla sezione Clienti.',
+          function(){
+            setDati(function(d){
+              var esistente = cli._fromProspectId ? (d.prospect || []).find(function(p){ return p.id === cli._fromProspectId; }) : null;
+              var prospectAgg;
+              if (esistente) {
+                prospectAgg = (d.prospect || []).map(function(p){
+                  if (p.id !== esistente.id) return p;
+                  return Object.assign({}, p, {
+                    stato: "in_trattativa",
+                    dataConversione: null,
+                    ragioneSociale: cli.ragioneSociale || p.ragioneSociale,
+                    insegna: cli.insegna || p.insegna,
+                    referente: cli.referente || p.referente,
+                    email: cli.email || p.email,
+                    telefono: cli.telefono || p.telefono,
+                    indirizzo: cli.indirizzo || p.indirizzo,
+                    piva: cli.piva || p.piva,
+                    pec: cli.pec || p.pec,
+                    note: ((p.note ? p.note + "\n" : "") + "[Rientro da Clienti " + todayStr() + "]")
+                  });
+                });
+              } else {
+                prospectAgg = [...(d.prospect || []), {
+                  id: uid(),
+                  ragioneSociale: cli.ragioneSociale || "",
+                  insegna: cli.insegna || cli.ragioneSociale || "",
+                  referente: cli.referente || "",
+                  email: cli.email || "",
+                  telefono: cli.telefono || "",
+                  indirizzo: cli.indirizzo || "",
+                  tipo: cli.tipo || "horeca",
+                  canale: cli.canale || "irene",
+                  piva: cli.piva || "",
+                  pec: cli.pec || "",
+                  codiceFiscale: cli.codiceFiscale || "",
+                  stato: "in_trattativa",
+                  note: "[Rientro da Clienti " + todayStr() + "]" + (cli.note ? "\n" + cli.note : ""),
+                  calls: [],
+                  azioni: []
+                }];
+              }
+              return Object.assign({}, d, {
+                prospect: prospectAgg,
+                clienti: d.clienti.filter(function(c){ return c.id !== cli.id; }),
+                ordini: (d.ordini || []).filter(function(o){ return o.clienteId !== cli.id; })
+              });
+            });
+            if (logAction) logAction('Cliente → Pipeline', 'clienti', nomeP);
+            setDetailId(null);
+            window.tnbToast('✅ "' + nomeP + '" riportato in Pipeline come prospect');
+          },
+          { title: 'Riporta in Pipeline', okLabel: 'Riporta', danger: false }
+        );
+      }
+    }), /*#__PURE__*/React.createElement(Btn, {
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.del, null), " Elimina"),
       v: "dan",
       sz: "sm",
       onClick: () => {
-        var nOrd = dati.ordini.filter(function(o){ return o.clienteId === detail.id; }).length;
+        // tkt_1781162734882: gli ordini annullati non bloccano più l'eliminazione del cliente
+        var nOrd = dati.ordini.filter(function(o){ return o.clienteId === detail.id && o.stato !== "annullato"; }).length;
         if (nOrd > 0) {
           window.tnbToast('⛔ Impossibile eliminare: ' + nOrd + ' ordin' + (nOrd===1?'e':'i') + ' collegat' + (nOrd===1?'o':'i'), 'err');
           return;
         }
         var nome = detail.insegna || detail.ragioneSociale;
         var detailId = detail.id;
+        var nAnn = dati.ordini.filter(function(o){ return o.clienteId === detailId && o.stato === "annullato"; }).length;
         window.tnbConfirm(
-          'Eliminare definitivamente "' + nome + '"? L\'azione non è reversibile.',
+          'Eliminare definitivamente "' + nome + '"?' + (nAnn > 0 ? ' Verranno rimossi anche ' + nAnn + ' ordin' + (nAnn===1?'e annullato':'i annullati') + '.' : '') + ' L\'azione non è reversibile.',
           function(){
-            setDati(function(d){ return Object.assign({}, d, { clienti: d.clienti.filter(function(c){ return c.id !== detailId; }) }); });
+            setDati(function(d){ return Object.assign({}, d, { clienti: d.clienti.filter(function(c){ return c.id !== detailId; }), ordini: (d.ordini || []).filter(function(o){ return o.clienteId !== detailId; }) }); });
             if (logAction) logAction('Eliminazione cliente', 'clienti', nome);
             setDetailId(null);
             window.tnbToast('✅ Cliente eliminato');
@@ -8896,6 +8967,8 @@ function generateModuloPDF(ordine, clienti, isCV) {
   doc.setFontSize(10);
   doc.setTextColor(100, 100, 100);
   doc.text('N° ' + numero + '   —   ' + data, 20, 55);
+  // tkt_1781163213633: riferimento esterno (Excel) visibile nel PDF
+  if (ordine.numeroEsterno) { doc.text('Rif. esterno (Excel): ' + ordine.numeroEsterno, 20, 60); }
 
   // Cliente
   doc.setFontSize(11);
@@ -9194,6 +9267,13 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
   const numero = ordine.numero || ordine.id || "—";
   const dataOrd = ordine.data || todayStr();
   doc.text("N° " + numero + " · " + fmtD(dataOrd), W - M, y, { align: "right" });
+  // tkt_1781163213633: mostra il riferimento esterno (Excel) nel PDF se presente
+  if (ordine.numeroEsterno) {
+    doc.setFontSize(8);
+    doc.text("Rif. esterno: " + ordine.numeroEsterno, W - M, y + 4, { align: "right" });
+    doc.setFontSize(9);
+    y += 4;
+  }
   y += 6;
 
   // Box cliente
@@ -10276,7 +10356,8 @@ function Ordini({
   };
 
   const nextNum = anno => {
-    const existing = dati.ordini.filter(o => o.numero && o.numero.includes("/" + anno)).map(o => parseInt(o.numero)).filter(n => !isNaN(n));
+    // tkt_1781163213633: gli ordini annullati non consumano più la numerazione
+    const existing = dati.ordini.filter(o => o.stato !== "annullato" && o.numero && o.numero.includes("/" + anno)).map(o => parseInt(o.numero)).filter(n => !isNaN(n));
     return `${(Math.max(0, ...existing) + 1).toString().padStart(4, "0")}/${anno}`;
   };
   const saveOrdine = () => {
@@ -12676,6 +12757,30 @@ function Magazzino({
     if (logAction) logAction(isNew ? "Nuovo SKU" : "Modifica SKU", "magazzino", `${sku.prodotto} ${sku.formato} ${sku.annata}`);
     setModal(null);
   };
+  // tkt_1781161595244: eliminazione SKU dal magazzino (con cleanup movimenti collegati)
+  const deleteSku = () => {
+    if (!form.id) return;
+    const skuId = form.id;
+    const m = (dati.magazzino || []).find(x => x.id === skuId);
+    const nomeSku = m ? `${m.prodotto} ${m.formato} ${m.annata || ""}`.trim() : "SKU";
+    const movCollegati = (dati.movimenti || []).filter(mv => (mv.skuId || mv.magId) === skuId);
+    const fisica = m ? giacenzaFisica(m) : 0;
+    const msg = 'Eliminare definitivamente "' + nomeSku + '" dal magazzino?' +
+      (fisica > 0 ? ' ⚠️ Giacenza fisica attuale: ' + fisica + ' pz.' : '') +
+      (movCollegati.length > 0 ? ' Verranno eliminati anche ' + movCollegati.length + ' movimenti collegati.' : '') +
+      ' L\'operazione è irreversibile.';
+    window.tnbConfirm(msg, () => {
+      setDati(d => ({
+        ...d,
+        magazzino: (d.magazzino || []).filter(x => x.id !== skuId),
+        movimenti: (d.movimenti || []).filter(mv => (mv.skuId || mv.magId) !== skuId)
+      }));
+      if (logAction) logAction("Elimina SKU", "magazzino", nomeSku);
+      setModal(null);
+      setForm({});
+      window.tnbToast('🗑 "' + nomeSku + '" eliminato dal magazzino');
+    }, { title: "Conferma eliminazione SKU", okLabel: "Elimina", danger: true });
+  };
   const valTot = dati.magazzino.reduce((s, m) => s + giacenzaDisp(m) * (m.prezzoListino || 0), 0);
   const valFisico = dati.magazzino.reduce((s, m) => s + giacenzaFisica(m) * (m.prezzoListino || 0), 0);
   const sotto = dati.magazzino.filter(m => giacenzaDisp(m) <= m.soglia);
@@ -13548,7 +13653,12 @@ function Magazzino({
         justifyContent: "flex-end",
         gap: 8
       }
-    }, /*#__PURE__*/React.createElement(Btn, {
+    }, form.id && !readonly && /*#__PURE__*/React.createElement(Btn, {
+      ch: "🗑 Elimina SKU",
+      v: "dan",
+      onClick: deleteSku,
+      style: { marginRight: "auto" }
+    }), /*#__PURE__*/React.createElement(Btn, {
       ch: "Annulla",
       v: "sec",
       onClick: () => setModal(null)
