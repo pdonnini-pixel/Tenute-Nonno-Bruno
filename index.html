@@ -11484,6 +11484,14 @@ function Ordini({
         ...f,
         scadenzaCV: v
       }))
+    }), !form.campione && /*#__PURE__*/React.createElement(Inp, {
+      label: "Scadenza pagamento",
+      type: "date",
+      v: form.scadenzaPagamento || "",
+      on: v => setForm(f => ({
+        ...f,
+        scadenzaPagamento: v
+      }))
     }), !form.campione && /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
       /*#__PURE__*/React.createElement(Inp, {
         label: "Condizioni di pagamento",
@@ -19928,7 +19936,7 @@ function OggiAzioni({
       gg: 0
     };
   });
-  const daPagare = dati.ordini.filter(o => o.stato !== "annullato" && o.modalita === "vendita" && o.statoPagamento === "da_pagare" && o.stato !== "da_firmare" && !agendaState.dismissed[`pagamento_${o.id}`] && !(agendaState.postponed[`pagamento_${o.id}`] && agendaState.postponed[`pagamento_${o.id}`] > oggi)).map(o => {
+  const daPagare = dati.ordini.filter(o => o.stato !== "annullato" && o.modalita === "vendita" && o.statoPagamento === "da_pagare" && !o.scadenzaPagamento && o.stato !== "da_firmare" && !agendaState.dismissed[`pagamento_${o.id}`] && !(agendaState.postponed[`pagamento_${o.id}`] && agendaState.postponed[`pagamento_${o.id}`] > oggi)).map(o => {
     const cl = dati.clienti.find(c => c.id === o.clienteId);
     return {
       tipo: "pagamento",
@@ -19946,7 +19954,17 @@ function OggiAzioni({
   })).sort((a,b) => a.data.localeCompare(b.data));
   // UX3.1 — Prossime chiamate oggi (prospect con nextCall oggi o scadute)
   const chiamateOggi = dati.prospect.filter(p => p.nextCall && p.nextCall.data && p.nextCall.data <= oggi && STATO_FUNNEL[p.stato]?.l && p.stato !== "acquisito" && p.stato !== "non_interessato").sort((a,b) => (a.nextCall.data||"").localeCompare(b.nextCall.data||""));
-  const tutti = [...azioniFU, ...azioniRichiama, ...azioniCV].filter(a => !agendaState.dismissed[azKey(a)] && !(agendaState.postponed[azKey(a)] && agendaState.postponed[azKey(a)] > oggi));
+  const azioniPag = dati.ordini.filter(o => o.stato !== "annullato" && o.scadenzaPagamento && o.scadenzaPagamento <= finoStr && o.statoPagamento !== "pagato").map(o => {
+    const cl = dati.clienti.find(c => c.id === o.clienteId);
+    return {
+      tipo: "pagamento",
+      data: o.scadenzaPagamento,
+      ordine: o,
+      cliente: cl,
+      gg: giorniAlla(o.scadenzaPagamento)
+    };
+  }).sort((a, b) => a.data.localeCompare(b.data));
+  const tutti = [...azioniFU, ...azioniRichiama, ...azioniCV, ...azioniPag].filter(a => !agendaState.dismissed[azKey(a)] && !(agendaState.postponed[azKey(a)] && agendaState.postponed[azKey(a)] > oggi));
   const scadute = tutti.filter(a => a.gg !== null && a.gg < 0);
   const oggi_ = tutti.filter(a => a.gg === 0);
   const prossimi = tutti.filter(a => a.gg !== null && a.gg > 0 && a.gg <= days);
