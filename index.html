@@ -21951,14 +21951,28 @@ function ReportAIPage({ dati }) {
       if (calA && r.data > calA) return false;
       return true;
     });
-    // Deduplica: rimuove righe identiche (stesso soggetto convertito può comparire
-    // come Prospect "acquisito" e come Cliente). Confronto su data+soggetto+telefono+esito+nota.
+    // Deduplica righe identiche (stesso soggetto convertito può comparire come
+    // Prospect "acquisito" e come Cliente). Confronto su data+soggetto+telefono+esito+nota.
     var _seen = {};
     rows = rows.filter(function(r) {
       var k = (r.data || "") + "|" + (r.soggetto || "") + "|" + (r.telefono || "") + "|" + (r.esito || "") + "|" + (r.nota || "");
       if (_seen[k]) return false;
       _seen[k] = true;
       return true;
+    });
+    // Raggruppa per soggetto+giorno: più chiamate stesso prospect nello stesso giorno
+    // diventano 1 riga con le note unite (es. "Non interessato · prezzo elevato").
+    var _grp = {}, _ordine = [];
+    rows.forEach(function(r) {
+      var gk = (r.data || "") + "|" + (r.soggetto || "") + "|" + (r.fonte || "") + "|" + (r.telefono || "");
+      var testo = [r.esito, r.nota].filter(Boolean).join(" — ");
+      if (!_grp[gk]) { _grp[gk] = { data: r.data, soggetto: r.soggetto, fonte: r.fonte, telefono: r.telefono, esito: "", note: [], count: 0 }; _ordine.push(gk); }
+      _grp[gk].count++;
+      if (testo && _grp[gk].note.indexOf(testo) === -1) _grp[gk].note.push(testo);
+    });
+    rows = _ordine.map(function(gk) {
+      var g = _grp[gk];
+      return { data: g.data, soggetto: g.soggetto, fonte: g.fonte, telefono: g.telefono, esito: "", nota: g.note.join(" · "), count: g.count };
     });
     rows.sort(function(a, b) { return (b.data || "").localeCompare(a.data || ""); });
     return rows;
