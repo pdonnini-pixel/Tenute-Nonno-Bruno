@@ -1231,8 +1231,13 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260623-v61-ux
+</script><script>// TNB-BUILD-20260623-v62-ux
 // ═══════════════════════════════════════════════════════════════════════════
+// v48.1 (build v62) — Report Attività: righe CLICCABILI con drill-down. Il pannello
+//   mostra quando/chi/modulo + dettaglio completo; per "Modifica anagrafica" registra e
+//   mostra i CAMPI cambiati (prima → dopo). logAction accetta un 4° arg opzionale {changes}.
+//   Voci vecchie senza diff: nota "dettaglio campi non disponibile".
+//
 // v48.0 (build v61) — MERGE: reintegrate le feature mie sopra i fix "fix(auto)" tkt_.
 //   • Report Attività (ex Log): PERMANENTE/append-only (niente cancellazione, niente
 //     "Svuota log", reset dati non azzera il log), filtro mese + chip per tipo
@@ -18863,7 +18868,24 @@ function ActivityLog({
         whiteSpace: "nowrap",
         flexShrink: 0
       }
-    }, fmt2(l.ts)))), filtered.length === 0 && logs.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, (expanded === l.id ? "▾ " : "▸ ") + fmt2(l.ts))), expanded === l.id && /*#__PURE__*/React.createElement("div", {
+      style: { padding: "4px 12px 14px 40px", fontSize: 12, color: C.grigio700 }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { marginBottom: 6, color: C.grigio500, fontSize: 11 } },
+        "🕒 " + fmt2(l.ts) + "  ·  👤 " + (l.userName || "—") + (l.userRole ? " (" + l.userRole + ")" : "") + "  ·  📂 " + (l.modulo || "—")),
+      /*#__PURE__*/React.createElement("div", { style: { marginBottom: (l.changes && l.changes.length) ? 8 : 0, whiteSpace: "normal", wordBreak: "break-word" } }, isoToEu(l.dettaglio || "—")),
+      (l.changes && l.changes.length)
+        ? /*#__PURE__*/React.createElement("div", { style: { marginTop: 4 } },
+            /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 11, color: C.grigio600, marginBottom: 4 } }, "Campi modificati:"),
+            l.changes.map((ch, ci) => /*#__PURE__*/React.createElement("div", { key: ci, style: { display: "flex", gap: 8, padding: "2px 0", flexWrap: "wrap", alignItems: "baseline" } },
+              /*#__PURE__*/React.createElement("span", { style: { fontWeight: 700, minWidth: 130 } }, ch.campo),
+              /*#__PURE__*/React.createElement("span", { style: { color: "#c0392b", textDecoration: "line-through" } }, isoToEu(String(ch.da))),
+              /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "→"),
+              /*#__PURE__*/React.createElement("span", { style: { color: "#2e7d32", fontWeight: 600 } }, isoToEu(String(ch.a)))
+            )))
+        : (/^(modifica|nuovo)/i.test(l.azione || "")
+            ? /*#__PURE__*/React.createElement("div", { style: { fontStyle: "italic", color: C.grigio400, fontSize: 11 } }, "Dettaglio dei singoli campi non disponibile per questa voce (registrata prima dell'aggiornamento).")
+            : null)))), filtered.length === 0 && logs.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         padding: 32,
         textAlign: "center",
