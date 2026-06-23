@@ -18213,7 +18213,7 @@ function App() {
     icon: /*#__PURE__*/React.createElement(I.ord, null)
   }, {
     k: "contratti",
-    l: "📝 Contratti",
+    l: "📝 Accordi Fornitori",
     icon: /*#__PURE__*/React.createElement(I.ord, null)
   }, {
     k: "log",
@@ -23185,10 +23185,9 @@ function ContrattiModule({
   setDati,
   logAction
 }) {
-  // F2 (2026-05-14): modulo Contratti in fase di attivazione — UI in sola lettura.
-  // Il codice di create/edit/delete è preservato ma disabilitato a livello di UI.
-  // Per riattivare il modulo, mettere READONLY_MODE = false.
-  const READONLY_MODE = true;
+  // Modulo Accordi Fornitori: creazione/modifica attive (riattivato 2026-06-23).
+  // READONLY_MODE = true rimette l'intera UI in sola lettura.
+  const READONLY_MODE = false;
   const [tab, setTab] = useState("lista");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
@@ -23211,7 +23210,7 @@ function ContrattiModule({
   const contratti = dati.contratti || [];
   const saveContratto = () => {
     const errors = [];
-    if (!form.tipo) errors.push("Tipo contratto obbligatorio");
+    if (!form.tipo) errors.push("Tipo accordo obbligatorio");
     const isFornitore = form.tipoControparte === "fornitore";
     if (isFornitore && !form.fornitoreId) errors.push("Seleziona un fornitore");
     if (!isFornitore && !form.clienteId) errors.push("Seleziona un cliente");
@@ -23314,7 +23313,7 @@ function ContrattiModule({
     if (!form.id || !window.tnbConfirm) return;
     const nome = getControparteName(form);
     window.tnbConfirm(
-      `Eliminare definitivamente il contratto con "${nome}"? Tutti i documenti allegati verranno cancellati. L'operazione è irreversibile.`,
+      `Eliminare definitivamente l'accordo con "${nome}"? Tutti i documenti allegati verranno cancellati. L'operazione è irreversibile.`,
       () => {
         (form.documenti || []).forEach(doc => {
           if (doc.path && window.tnbStorage) {
@@ -23483,7 +23482,7 @@ Data: ___/___/______                      Data: ___/___/______
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83D\uDCDD Contratti",
     action: READONLY_MODE ? null : /*#__PURE__*/React.createElement(Btn, {
-      ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Nuovo contratto"),
+      ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Nuovo accordo"),
       sz: "sm",
       onClick: () => {
         setForm({
@@ -23495,8 +23494,8 @@ Data: ___/___/______                      Data: ___/___/______
       }
     })
   }),
-  // F2: banner read-only mode
-  READONLY_MODE && /*#__PURE__*/React.createElement("div", {
+  // Banner informativo: a cosa serve il modulo
+  /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "12px 16px",
       background: "#e3f2fd",
@@ -23513,8 +23512,8 @@ Data: ___/___/______                      Data: ___/___/______
   },
     /*#__PURE__*/React.createElement("span", { style: { fontSize: 18 } }, "\u2139\uFE0F"),
     /*#__PURE__*/React.createElement("span", null,
-      /*#__PURE__*/React.createElement("strong", null, "Modulo Contratti in fase di attivazione"),
-      " \u2014 solo consultazione. Creazione, modifica ed eliminazione sono temporaneamente disabilitate."
+      /*#__PURE__*/React.createElement("strong", null, "Accordi Fornitori"),
+      " \u2014 archivia qui gli accordi contrattuali con fornitori e partner (frantoio, materie prime, packaging, servizi, trasporto): controparte, tipo, date di inizio/scadenza/rinnovo, valore e PDF firmato. Non sono ordini di vendita n\u00E9 Conto Vendita."
     )
   ),
   /*#__PURE__*/React.createElement(PageSummary, { items: (() => {
@@ -23537,7 +23536,7 @@ Data: ___/___/______                      Data: ___/___/______
       { label: "Valore firmati", value: valoreTot > 0 ? fmt(valoreTot) : "—", color: "#3a3a3a" }
     ];
   })() }), /*#__PURE__*/React.createElement(Tab, {
-    tabs: [{k:"lista",l:"Tutti i contratti",n:contratti.length},{k:"preventivi",l:"Preventivi"},{k:"bozze",l:"Bozze"},{k:"attivi",l:"Attivi/Firmati"}],
+    tabs: [{k:"lista",l:"Tutti gli accordi",n:contratti.length},{k:"preventivi",l:"Preventivi"},{k:"bozze",l:"Bozze"},{k:"attivi",l:"Attivi/Firmati"}],
     active: tab,
     onSelect: setTab
   }), tab === "preventivi" && /*#__PURE__*/React.createElement(PreventiviTab, { dati: dati, setDati: setDati, logAction: logAction }),
@@ -23557,12 +23556,12 @@ Data: ___/___/______                      Data: ___/___/______
       fontSize: 15,
       fontWeight: 600
     }
-  }, "Nessun contratto ancora"), /*#__PURE__*/React.createElement("div", {
+  }, "Nessun accordo ancora"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       marginTop: 4
     }
-  }, "Crea il primo contratto con il pulsante in alto a destra")),
+  }, "Crea il primo accordo con il pulsante in alto a destra")),
   // v53-golive: filtri tab lista (solo per tab "lista")
   tab === "lista" && /*#__PURE__*/React.createElement("div", {
     style: { display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr auto", gap: 10, alignItems: "end", marginBottom: 12 }
@@ -23823,7 +23822,7 @@ Data: ___/___/______                      Data: ___/___/______
       /*#__PURE__*/React.createElement("div", {
       style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }
     }, /*#__PURE__*/React.createElement(Sel, {
-      label: "Tipo contratto",
+      label: "Tipo accordo",
       v: form.tipo || "",
       on: v => setForm(f => ({
         ...f,
@@ -24134,7 +24133,7 @@ Data: ___/___/______                      Data: ___/___/______
     ),
     !form.id && /*#__PURE__*/React.createElement("div", {
       style: { padding: "8px 12px", background: "#fff8e1", borderRadius: 6, fontSize: 11, color: "#7a5900", borderLeft: `3px solid ${C.oro}` }
-    }, "📎 Salva il contratto per poter allegare documenti.")
+    }, "📎 Salva l'accordo per poter allegare documenti.")
     ), // F2: chiude wrapper read-only (campi disabilitati)
     // v53-golive: Footer con Annulla + Elimina (se form.id) + Salva
     // F2: in read-only mode mostra solo "Chiudi"; nascondi delete e save.
@@ -24148,7 +24147,7 @@ Data: ___/___/______                      Data: ___/___/______
       }
     },
       !READONLY_MODE && form.id && /*#__PURE__*/React.createElement(Btn, {
-        ch: "🗑 Elimina contratto", v: "dan", sz: "sm",
+        ch: "🗑 Elimina accordo", v: "dan", sz: "sm",
         style: { marginRight: "auto" },
         onClick: deleteContratto
       }),
@@ -24157,7 +24156,7 @@ Data: ___/___/______                      Data: ___/___/______
       v: "sec",
       onClick: () => setModal(null)
     }), !READONLY_MODE && /*#__PURE__*/React.createElement(Btn, {
-      ch: "Salva contratto",
+      ch: "Salva accordo",
       onClick: saveContratto
     })))
   }));
@@ -24787,9 +24786,9 @@ const GUIDA_CONTENUTI = {
     corpo: "Centro notifiche automatico che raccoglie tutto ciò che richiede la tua attenzione.\n\nCOME FUNZIONA\nGli alert vengono generati automaticamente analizzando i dati di tutti i moduli. Sono raggruppati per priorità: Alta (rosso), Media (arancione), Bassa (giallo), Info (blu). Ogni alert ha un pulsante che ti porta direttamente all'elemento da gestire.\n\nTIPI DI ALERT\n• Magazzino sotto soglia: un formato è sceso sotto la soglia minima.\n• CV scadute: conto vendita oltre la data di scadenza.\n• Ordini da firmare: ordini inviati ma ancora senza firma.\n• Vendite da riscuotere: ordini con pagamento scaduto.\n• Follow-up scaduti: prospect con richiamo in ritardo.\n• Contratti scaduti: contratti oltre la data di scadenza.\n• Contratti in scadenza: contratti che scadono entro 30 giorni.\n• CV in scadenza 7gg: conto vendita in scadenza a breve.\n• Lotti senza imbottigliamento >30gg: lotti fermi in produzione.\n• Bottiglie senza prezzo listino: formati senza prezzo configurato.\n\nCOME SI USA\n1. Apri Alert — vedi il conteggio totale e per priorità.\n2. Gli alert Alta priorità sono in cima — gestiscili per primi.\n3. Clicca il pulsante azione per andare direttamente all'elemento.\n4. Gli alert si aggiornano automaticamente: quando risolvi il problema, l'alert sparisce.\n\nSUGGERIMENTI\n• Controlla gli alert almeno una volta al giorno.\n• Gli alert sono de-duplicati per cliente: se un cliente ha 3 ordini da pagare, vedi un solo alert.\n• Se un alert persiste, è perché il problema alla base non è stato risolto."
   },
   contratti: {
-    titolo: "Contratti",
+    titolo: "Accordi Fornitori",
     icona: "📝",
-    corpo: "Gestione contratti con clienti e fornitori.\n\nNOTA: il modulo è attualmente in sola lettura (consultazione e download dei documenti). La creazione e la modifica dei contratti sono temporaneamente disabilitate.\n\nCOME FUNZIONA\nOgni contratto ha: controparte (cliente o fornitore), tipo, date (inizio, scadenza, rinnovo), valore, stato. I documenti vengono caricati su Supabase Storage. Gli alert di scadenza sono automatici.\n\nSTATI\nBozza → Inviato → Firmato → Scaduto → Annullato. Il rinnovo automatico può essere attivato per contratti ricorrenti.\n\nTAB\n• Lista: tutti i contratti.\n• Preventivi: contratti in fase di proposta.\n• Bozze: contratti non ancora inviati.\n• Attivi/Firmati: contratti firmati e in vigore.\n\nCOME SI USA\n1. Crea un nuovo contratto: seleziona controparte, tipo, date, valore.\n2. Allega documenti (PDF del contratto, condizioni, allegati).\n3. Avanza lo stato man mano che il processo procede.\n4. Il sistema genera alert per contratti in scadenza entro 30 giorni.\n\nSUGGERIMENTI\n• Attiva il rinnovo automatico per contratti annuali ricorrenti.\n• Carica sempre il PDF firmato — serve per archivio legale.\n• Collega il contratto al fornitore per vederlo nella scheda fornitore."
+    corpo: "Archivio degli accordi contrattuali con fornitori e partner (frantoio, materie prime, packaging, servizi, trasporto). Non sono ordini di vendita né Conto Vendita.\n\nCOME FUNZIONA\nOgni accordo ha: controparte (fornitore o cliente), tipo, date (inizio, scadenza, rinnovo), valore, stato. I documenti (PDF firmato, condizioni, allegati) vengono caricati su Supabase Storage. Gli alert di scadenza sono automatici.\n\nSTATI\nBozza → Inviato → Firmato → Scaduto → Annullato. Il rinnovo automatico può essere attivato per accordi ricorrenti.\n\nTAB\n• Lista: tutti gli accordi.\n• Preventivi: accordi in fase di proposta.\n• Bozze: accordi non ancora inviati.\n• Attivi/Firmati: accordi firmati e in vigore.\n\nCOME SI USA\n1. Crea un nuovo accordo: seleziona controparte, tipo, date, valore.\n2. Allega i documenti (PDF firmato, condizioni, allegati).\n3. Avanza lo stato man mano che il processo procede.\n4. Il sistema genera alert per accordi in scadenza entro 30 giorni.\n\nSUGGERIMENTI\n• Attiva il rinnovo automatico per accordi annuali ricorrenti.\n• Carica sempre il PDF firmato — serve per archivio legale.\n• Collega l'accordo al fornitore per vederlo nella sua scheda."
   },
   report: {
     titolo: "Report Periodo",
