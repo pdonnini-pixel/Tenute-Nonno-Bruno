@@ -1,0 +1,10 @@
+# Config Netlify per Tenute Nonno Bruno.
+# Unico scopo del build: stampare data/ora di pubblicazione (Europe/Rome) in index.html
+# tramite stamp-build.sh, così il banner "Nuova versione" mostra l'orario corretto
+# ad OGNI deploy (anche per i commit automatici).
+[build]
+  command = "bash stamp-build.sh"
+  publish = "."
+
+[functions]
+  directory = "netlify/functions"
