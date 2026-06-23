@@ -21567,10 +21567,6 @@ function ReportAIPage({ dati }) {
   var _s5 = useState(""); var search = _s5[0]; var setSearch = _s5[1];
   var _s6 = useState([]); var storicoReport = _s6[0]; var setStoricoReport = _s6[1];
   var _s7 = useState(""); var filtroTipo = _s7[0]; var setFiltroTipo = _s7[1];
-  // tkt_1782210737255: filtro periodo per estrarre le chiamate effettuate.
-  var _oggiCal = (typeof todayStr === "function" ? todayStr() : new Date().toISOString().slice(0, 10));
-  var _s8 = useState(_oggiCal); var calDa = _s8[0]; var setCalDa = _s8[1];
-  var _s9 = useState(_oggiCal); var calA = _s9[0]; var setCalA = _s9[1];
 
   var CE = React.createElement;
 
@@ -21744,91 +21740,9 @@ function ReportAIPage({ dati }) {
     navigator.clipboard.writeText(report).then(function() { window.tnbToast("📋 Report copiato"); });
   };
 
-  // tkt_1782210737255: aggrega tutte le chiamate (prospect.calls + clienti.callLog)
-  // e le filtra per il periodo selezionato. Le date sono in formato YYYY-MM-DD,
-  // quindi il confronto lessicografico è equivalente al confronto cronologico.
-  var chiamatePeriodo = (function() {
-    var rows = [];
-    (dati.prospect || []).forEach(function(p) {
-      (p.calls || []).forEach(function(c) {
-        if (!c || !c.data) return;
-        rows.push({ data: c.data, soggetto: p.insegna || p.ragioneSociale || ((p.nome || "") + " " + (p.cognome || "")).trim() || "—", fonte: "Prospect", telefono: p.telefono || "", esito: c.esito || "", nota: c.nota || "" });
-      });
-    });
-    (dati.clienti || []).forEach(function(cl) {
-      (cl.callLog || []).forEach(function(c) {
-        if (!c || !c.data) return;
-        rows.push({ data: c.data, soggetto: cl.insegna || cl.ragioneSociale || "—", fonte: "Cliente", telefono: cl.telefono || "", esito: c.esito || "", nota: c.nota || "" });
-      });
-    });
-    rows = rows.filter(function(r) {
-      if (calDa && r.data < calDa) return false;
-      if (calA && r.data > calA) return false;
-      return true;
-    });
-    // Deduplica righe identiche (stesso soggetto convertito può comparire come
-    // Prospect "acquisito" e come Cliente). Confronto su data+soggetto+telefono+esito+nota.
-    var _seen = {};
-    rows = rows.filter(function(r) {
-      var k = (r.data || "") + "|" + (r.soggetto || "") + "|" + (r.telefono || "") + "|" + (r.esito || "") + "|" + (r.nota || "");
-      if (_seen[k]) return false;
-      _seen[k] = true;
-      return true;
-    });
-    // Raggruppa per soggetto+giorno: più chiamate stesso prospect nello stesso giorno
-    // diventano 1 riga con le note unite (es. "Non interessato · prezzo elevato").
-    var _grp = {}, _ordine = [];
-    rows.forEach(function(r) {
-      var gk = (r.data || "") + "|" + (r.soggetto || "") + "|" + (r.fonte || "") + "|" + (r.telefono || "");
-      var testo = [r.esito, r.nota].filter(Boolean).join(" — ");
-      if (!_grp[gk]) { _grp[gk] = { data: r.data, soggetto: r.soggetto, fonte: r.fonte, telefono: r.telefono, esito: "", note: [], count: 0 }; _ordine.push(gk); }
-      _grp[gk].count++;
-      if (testo && _grp[gk].note.indexOf(testo) === -1) _grp[gk].note.push(testo);
-    });
-    rows = _ordine.map(function(gk) {
-      var g = _grp[gk];
-      return { data: g.data, soggetto: g.soggetto, fonte: g.fonte, telefono: g.telefono, esito: "", nota: g.note.join(" · "), count: g.count };
-    });
-    rows.sort(function(a, b) { return (b.data || "").localeCompare(a.data || ""); });
-    return rows;
-  })();
-
-  var chiamateCard = CE("div", { style: { border: "1px solid " + C.grigio200, borderRadius: 10, padding: 14, marginBottom: 16, background: "#fafaf6" } },
-    CE("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } },
-      CE("div", { style: { fontWeight: 700, fontSize: 13, color: C.grigio800 } }, "📞 Chiamate effettuate nel periodo"),
-      CE("div", { style: { marginLeft: "auto", fontSize: 13, fontWeight: 700, color: C.oliva } }, chiamatePeriodo.length + (chiamatePeriodo.length === 1 ? " chiamata" : " chiamate"))
-    ),
-    CE("div", { style: { display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 10 } },
-      CE("div", null,
-        CE("div", { style: { fontSize: 11, color: C.grigio500, marginBottom: 2 } }, "Dal"),
-        CE("input", { type: "date", value: calDa, onChange: function(e) { setCalDa(e.target.value); }, style: { padding: "6px 8px", border: "1px solid " + C.grigio200, borderRadius: 6, fontSize: 13 } })
-      ),
-      CE("div", null,
-        CE("div", { style: { fontSize: 11, color: C.grigio500, marginBottom: 2 } }, "Al"),
-        CE("input", { type: "date", value: calA, onChange: function(e) { setCalA(e.target.value); }, style: { padding: "6px 8px", border: "1px solid " + C.grigio200, borderRadius: 6, fontSize: 13 } })
-      ),
-      (calDa || calA) ? CE("button", { onClick: function() { setCalDa(""); setCalA(""); }, style: { padding: "7px 12px", borderRadius: 6, border: "1px solid " + C.grigio200, background: "#fff", cursor: "pointer", fontSize: 12 } }, "Azzera") : null
-    ),
-    chiamatePeriodo.length === 0
-      ? CE("div", { style: { fontSize: 12, color: C.grigio500, padding: "6px 0" } }, "Nessuna chiamata nel periodo selezionato.")
-      : CE("div", { style: { maxHeight: 280, overflowY: "auto" } },
-          chiamatePeriodo.map(function(r, i) {
-            return CE("div", { key: i, style: { display: "grid", gridTemplateColumns: "92px 1fr", gap: 8, padding: "6px 0", borderTop: i > 0 ? "1px solid " + C.grigio200 : "none", fontSize: 12.5 } },
-              CE("div", { style: { color: C.grigio600, fontWeight: 600 } }, fmtD(r.data)),
-              CE("div", null,
-                CE("span", { style: { fontWeight: 700, color: C.grigio800 } }, r.soggetto),
-                CE("span", { style: { color: C.grigio500 } }, " · " + r.fonte + (r.telefono ? " · " + r.telefono : "")),
-                (r.esito || r.nota) ? CE("div", { style: { color: C.grigio600, marginTop: 2 } }, [r.esito, r.nota].filter(Boolean).join(" — ")) : null
-              )
-            );
-          })
-        )
-  );
-
   return CE("div", null,
     CE(SH, { title: "🤖 Report AI" }),
     CE("div", { style: { fontSize: 12, color: C.grigio500, marginTop: -10, marginBottom: 16 } }, "Analisi intelligente per la proprietà"),
-    chiamateCard,
 
     CE("div", { style: { display: "flex", gap: 8, marginBottom: 16 } },
       ["prospect", "clienti"].map(function(f) {
