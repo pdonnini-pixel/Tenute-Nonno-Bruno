@@ -9279,24 +9279,28 @@ function drawPdfFooter(doc, opts) {
 // "Bonifico anticipato". Restituisce le righe in ordine di priorità (modalità, scadenza,
 // condizioni, causale) così che i layout con poco spazio mostrino prima le più importanti.
 function _pdfPagamentoLinee(ordine, isCV) {
+  const out = [];
   if (isCV) {
-    return [
-      "Pagamento posticipato dietro fattura emessa al momento",
-      "della rivendita o entro 12 mesi dalla consegna",
-      "(art. 6 c.1 lett.d DPR 633/72)"
-    ];
+    // Scadenza conto vendita reale, se impostata, altrimenti testo standard.
+    if (ordine.scadenzaCV) out.push("Posticipato — scadenza conto vendita: " + fmtD(ordine.scadenzaCV));
+    else out.push("Pagamento posticipato (conto vendita)");
+    out.push("Fattura alla rivendita o entro 12 mesi dalla consegna");
+    out.push("(art. 6 c.1 lett.d DPR 633/72)");
+  } else {
+    const MOD = {
+      bonifico: "Bonifico — IBAN: " + TNB_IBAN,
+      contanti: "Pagamento in contanti alla consegna",
+      rimessa_diretta: "Rimessa diretta",
+      altro: "Modalità di pagamento concordata"
+    };
+    const mp = ordine.modalitaPagamento || "bonifico";
+    out.push(MOD[mp] || MOD.bonifico);
+    if (ordine.scadenzaPagamento) out.push("Scadenza pagamento: " + fmtD(ordine.scadenzaPagamento));
+    if (ordine.condizioniPagamento) out.push("Condizioni: " + ordine.condizioniPagamento);
+    if (mp === "bonifico") out.push("Causale: " + (ordine.causaleBonifico || ("Ord. " + (ordine.numero || ordine.id || "") + " TNB")));
   }
-  const MOD = {
-    bonifico: "Bonifico — IBAN: " + TNB_IBAN,
-    contanti: "Pagamento in contanti alla consegna",
-    rimessa_diretta: "Rimessa diretta",
-    altro: "Modalità di pagamento concordata"
-  };
-  const mp = ordine.modalitaPagamento || "bonifico";
-  const out = [MOD[mp] || MOD.bonifico];
-  if (ordine.scadenzaPagamento) out.push("Scadenza pagamento: " + fmtD(ordine.scadenzaPagamento));
-  if (ordine.condizioniPagamento) out.push("Condizioni: " + ordine.condizioniPagamento);
-  if (mp === "bonifico") out.push("Causale: " + (ordine.causaleBonifico || ("Ord. " + (ordine.numero || ordine.id || "") + " TNB")));
+  // Modalità fatturazione: mostrata solo quando diversa dalla default "unica".
+  if (ordine.modalitaFattura === "multipla") out.push("Fatturazione: una fattura per ogni consegna");
   return out;
 }
 
@@ -9408,10 +9412,13 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
     doc.text(String(qta), cols[3].x + cols[3].w - 1.5, y + rigaH * 0.65, { align: "right" });
     doc.text(fmtPdf(prezzoUn), cols[4].x + cols[4].w - 1.5, y + rigaH * 0.65, { align: "right" });
     doc.text(fmtPdf(totRiga), cols[5].x + cols[5].w - 1.5, y + rigaH * 0.65, { align: "right" });
-    // tkt_1782117992702: nel PDF compare anche "senza conf." quando la riga è senza confezione.
+    // tkt_1782117992702: nel PDF compaiono anche "senza conf." e i pezzi in OMAGGIO della riga,
+    // che prima venivano salvati (r.omaggio) ma non comparivano mai sul documento.
+    const _omaggio = Number(r.omaggio) || 0;
     const _noteParts = [];
     if (listino?.esaurimento) _noteParts.push("esaur.");
     if (r.confezione === false) _noteParts.push("senza conf.");
+    if (_omaggio > 0) _noteParts.push("+" + _omaggio + " omaggio");
     if (_noteParts.length) {
       doc.setFontSize(7); doc.setTextColor(138, 109, 0);
       doc.text(_noteParts.join(" · "), cols[6].x + 1.5, y + rigaH * 0.65, { maxWidth: cols[6].w - 2 });
