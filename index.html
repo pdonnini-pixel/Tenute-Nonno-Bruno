@@ -9274,6 +9274,32 @@ function drawPdfFooter(doc, opts) {
   if (opts.dx) doc.text(opts.dx, W - M, H - M - 2, { align: "right" });
 }
 
+// tkt_1782117992702: il blocco "Pagamento" del PDF deve riflettere ciò che è stato
+// realmente impostato nell'ordine (modalità, scadenza, condizioni) e non un testo fisso
+// "Bonifico anticipato". Restituisce le righe in ordine di priorità (modalità, scadenza,
+// condizioni, causale) così che i layout con poco spazio mostrino prima le più importanti.
+function _pdfPagamentoLinee(ordine, isCV) {
+  if (isCV) {
+    return [
+      "Pagamento posticipato dietro fattura emessa al momento",
+      "della rivendita o entro 12 mesi dalla consegna",
+      "(art. 6 c.1 lett.d DPR 633/72)"
+    ];
+  }
+  const MOD = {
+    bonifico: "Bonifico — IBAN: " + TNB_IBAN,
+    contanti: "Pagamento in contanti alla consegna",
+    rimessa_diretta: "Rimessa diretta",
+    altro: "Modalità di pagamento concordata"
+  };
+  const mp = ordine.modalitaPagamento || "bonifico";
+  const out = [MOD[mp] || MOD.bonifico];
+  if (ordine.scadenzaPagamento) out.push("Scadenza pagamento: " + fmtD(ordine.scadenzaPagamento));
+  if (ordine.condizioniPagamento) out.push("Condizioni: " + ordine.condizioniPagamento);
+  if (mp === "bonifico") out.push("Causale: " + (ordine.causaleBonifico || ("Ord. " + (ordine.numero || ordine.id || "") + " TNB")));
+  return out;
+}
+
 // Renderer condiviso pagina 1 Vendita/CV (refactor v47).
 // `tipoDoc`: "vendita" | "contoVendita". `layoutSpaced`: true=B (font 10.5pt + box separati), false=A (font 10pt + box merge).
 async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layoutSpaced) {
@@ -9358,7 +9384,19 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
     const qta = Number(r.qta) || 0;
     const key = formato + "|" + annata;
     const listino = LISTINO_PDF[key];
-    const colli = String(Math.max(0, Math.round(qta)));
+    // tkt_1781877293976: i COLLI non sono uguali alla quantità di bottiglie.
+    // Si calcolano dividendo le bottiglie (qta) per i pezzi che compongono un collo
+    // (pezziCollo dal listino). Se il formato/annata non è a listino (es. latte 3L/5L)
+    // si usa pezziCollo=1 → 1 pezzo = 1 collo. Override manuale: r.colliManuale se presente.
+    const _pezziCollo = Number(r.pezziCollo) || Number(listino?.pezziCollo) || 1;
+    const _colliNum = (r.colliManuale != null && r.colliManuale !== "")
+      ? Number(r.colliManuale)
+      : (_pezziCollo > 0 ? qta / _pezziCollo : qta);
+    const colli = (Number(_colliNum) > 0)
+      ? (Number.isInteger(_colliNum)
+          ? String(_colliNum)
+          : Number(_colliNum).toFixed(2).replace(/\.?0+$/, "").replace(".", ","))
+      : "0";
     const prezzoUn = Number(r.prezzoUnitario) || 0;
     const totRiga = qta * prezzoUn;
     imponibile += totRiga;
@@ -9370,9 +9408,13 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
     doc.text(String(qta), cols[3].x + cols[3].w - 1.5, y + rigaH * 0.65, { align: "right" });
     doc.text(fmtPdf(prezzoUn), cols[4].x + cols[4].w - 1.5, y + rigaH * 0.65, { align: "right" });
     doc.text(fmtPdf(totRiga), cols[5].x + cols[5].w - 1.5, y + rigaH * 0.65, { align: "right" });
-    if (listino?.esaurimento) {
+    // tkt_1782117992702: nel PDF compare anche "senza conf." quando la riga è senza confezione.
+    const _noteParts = [];
+    if (listino?.esaurimento) _noteParts.push("esaur.");
+    if (r.confezione === false) _noteParts.push("senza conf.");
+    if (_noteParts.length) {
       doc.setFontSize(7); doc.setTextColor(138, 109, 0);
-      doc.text("esaur.", cols[6].x + 1.5, y + rigaH * 0.65);
+      doc.text(_noteParts.join(" · "), cols[6].x + 1.5, y + rigaH * 0.65, { maxWidth: cols[6].w - 2 });
       doc.setFontSize(layoutSpaced ? 9.5 : 9);
     }
     y += rigaH;
@@ -9417,13 +9459,10 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
     doc.setFont(FONT_BODY, "bold"); doc.setFontSize(9); doc.setTextColor(...TNB_C_DARK);
     doc.text("Pagamento", M + 3, boxY + 25);
     doc.setFont(FONT_BODY, "normal"); doc.setFontSize(8); doc.setTextColor(...TNB_C_GRAY);
-    if (isCV) {
-      doc.text("Posticipato — fattura al momento della rivendita", M + 3, boxY + 30, { maxWidth: colSxW - 6 });
-      doc.text("o entro 12 mesi (art. 6 c.1 lett.d DPR 633/72)", M + 3, boxY + 34, { maxWidth: colSxW - 6 });
-    } else {
-      doc.text("Bonifico anticipato — IBAN " + TNB_IBAN, M + 3, boxY + 30, { maxWidth: colSxW - 6 });
-      doc.text("Causale: " + (ordine.causaleBonifico || ("Ord. " + numero + " TNB")), M + 3, boxY + 34, { maxWidth: colSxW - 6 });
-    }
+    // tkt_1782117992702: mostra le prime 2 righe pagamento reali (modalità + scadenza).
+    const _plB = _pdfPagamentoLinee(ordine, isCV);
+    doc.text(_plB[0] || "", M + 3, boxY + 30, { maxWidth: colSxW - 6 });
+    if (_plB[1]) doc.text(_plB[1], M + 3, boxY + 34, { maxWidth: colSxW - 6 });
     // DX Totali
     doc.setFillColor(...TNB_C_DARK);
     doc.rect(M + colSxW + 6, boxY, colDxW, 38, "F");
@@ -9457,19 +9496,11 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
     doc.setFont(FONT_BODY, "bold"); doc.setFontSize(9); doc.setTextColor(...TNB_C_DARK);
     doc.text(isCV ? "Spedizione & Pagamento (Conto Vendita)" : "Spedizione & Pagamento", colSx + 3, boxY + 5);
     doc.setFont(FONT_BODY, "normal"); doc.setFontSize(8); doc.setTextColor(...TNB_C_GRAY);
-    const lineeSped = isCV ? [
-      "Indirizzo consegna: " + (indPVStr || ind),
-      "Tariffa: " + sped,
-      "Pagamento posticipato dietro fattura emessa al momento",
-      "della rivendita o entro 12 mesi dalla consegna",
-      "(art. 6 c.1 lett.d DPR 633/72)"
-    ] : [
-      "Indirizzo consegna: " + ind,
-      "Tariffa: " + sped,
-      "Bonifico anticipato — IBAN: " + TNB_IBAN,
-      "Causale: " + (ordine.causaleBonifico || ("Ord. " + numero + " TNB")),
-      "Saldo entro 5gg lavorativi dalla firma"
-    ];
+    // tkt_1782117992702: indirizzo + tariffa + righe pagamento reali (modalità/scadenza/condizioni).
+    const lineeSped = [
+      "Indirizzo consegna: " + (isCV ? (indPVStr || ind) : ind),
+      "Tariffa: " + sped
+    ].concat(_pdfPagamentoLinee(ordine, isCV));
     // Fix ticket tkt_1779879729913: stack lines dynamically so wrapped Indirizzo does not overlap Tariffa
     let _yLnA = boxY + 10;
     lineeSped.forEach((l) => {
@@ -11523,7 +11554,7 @@ function Ordini({
     })), (form.righe || []).length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "grid",
-        gridTemplateColumns: form.campione ? "2fr 1fr 80px 40px 36px" : "2fr 1fr 80px 90px 80px 40px 36px",
+        gridTemplateColumns: form.campione ? "2fr 1fr 80px 40px 36px" : "2fr 1fr 80px 90px 80px 70px 40px 36px",
         gap: 8,
         padding: "0 4px 6px 4px",
         borderBottom: `1px solid ${C.grigio200}`,
@@ -11535,13 +11566,14 @@ function Ordini({
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Numero pezzi totali ordinati (esclusi omaggi)" }, "QUANTITÀ"),
       !form.campione && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Prezzo unitario al netto IVA, in euro per pezzo" }, "PREZZO UN. €"),
       !form.campione && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Pezzi regalati gratuitamente al cliente, non fatturati" }, "OMAGGIO"),
+      !form.campione && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "tkt_1782117992702: prodotto consegnato CON o SENZA confezione/scatola" }, "CONF."),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Modalità di consegna: immediata, ricorrente o schedule a date fisse" }, "CONSEGNA"),
       /*#__PURE__*/React.createElement("div", null, "")
     ), (form.righe || []).map((r, i) => /*#__PURE__*/React.createElement("div", {
       key: i,
       style: {
         display: "grid",
-        gridTemplateColumns: form.campione ? "2fr 1fr 80px 40px 36px" : "2fr 1fr 80px 90px 80px 40px 36px",
+        gridTemplateColumns: form.campione ? "2fr 1fr 80px 40px 36px" : "2fr 1fr 80px 90px 80px 70px 40px 36px",
         gap: 8,
         marginBottom: 8,
         alignItems: "end"
@@ -11580,6 +11612,11 @@ function Ordini({
       on: v => updRiga(i, "omaggio", v),
       disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       ph: "Omagg."
+    }), !form.campione && /*#__PURE__*/React.createElement(Sel, {
+      v: r.confezione ? "con" : "senza",
+      on: v => updRiga(i, "confezione", v === "con"),
+      opts: [{ v: "con", l: "Con" }, { v: "senza", l: "Senza" }],
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato"
     }), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: () => setRigaConsegnaIndex(i),
