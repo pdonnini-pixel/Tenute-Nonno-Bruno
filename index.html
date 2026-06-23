@@ -18373,7 +18373,15 @@ function App() {
       letterSpacing: 1.2,
       marginTop: 2
     }
-  }, "GESTIONALE PRO")), /*#__PURE__*/React.createElement("button", {
+  }, "GESTIONALE PRO"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: "rgba(255,255,255,.4)",
+      marginTop: 6,
+      whiteSpace: "nowrap"
+    },
+    title: "Versione attualmente in uso"
+  }, "v. " + (window.__TNB_BUILD__ || "").replace(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}).*/, "$3/$2/$1 $4"))), /*#__PURE__*/React.createElement("button", {
     onClick: () => setSideOpen(o => !o),
     style: {
       background: "rgba(255,255,255,.08)",
