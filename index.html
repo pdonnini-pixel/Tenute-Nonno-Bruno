@@ -6745,15 +6745,30 @@ function Pipeline({
         }]
       };
     });
-    // Dedup: per prospect esistenti logga "Modifica anagrafica" SOLO se qualcosa è cambiato
-    // davvero (niente voci per aperture/salvataggi a vuoto). Chiamate e mail restano eventi
-    // separati, loggati solo da cornetta/lettera.
-    let _changed = isNew;
+    // Dedup + cattura modifiche: logga "Modifica anagrafica" SOLO se qualcosa è cambiato e
+    // registra i campi modificati (vecchio→nuovo) per il drill-down dal report.
+    const _CAMPI_LABEL = {
+      ragioneSociale: "Ragione sociale", insegna: "Insegna", tipo: "Tipo", piva: "P.IVA", cf: "Cod. fiscale",
+      email: "Email", pec: "PEC", telefono: "Telefono", cellulare: "Cellulare", sdi: "SDI", sito: "Sito",
+      indirizzo: "Indirizzo", citta: "Città", cap: "CAP", provincia: "Provincia", canale: "Canale",
+      zona: "Zona", stato: "Stato", note: "Note", nome: "Nome", cognome: "Cognome", fonte: "Fonte",
+      campioneInviato: "Campione inviato"
+    };
+    const _fmtVal = v => (v == null || v === "") ? "—" : String(v);
+    let _changed = isNew, _changes = [];
     if (!isNew) {
-      const _oldP = dati.prospect.find(p => p.id === form.id);
-      try { _changed = !_oldP || JSON.stringify(_oldP) !== JSON.stringify({ ..._oldP, ...form }); } catch (_) { _changed = true; }
+      const _oldP = dati.prospect.find(p => p.id === form.id) || {};
+      try { _changed = JSON.stringify(_oldP) !== JSON.stringify({ ..._oldP, ...form }); } catch (_) { _changed = true; }
+      const _skip = ["id", "calls", "azioni", "nextCall", "campioneFormati", "dataConversione", "log"];
+      Object.keys({ ..._oldP, ...form }).forEach(k => {
+        if (_skip.includes(k)) return;
+        const a = form[k], b = _oldP[k];
+        if ((a && typeof a === "object") || (b && typeof b === "object")) return; // salta strutture complesse
+        if (String(a == null ? "" : a) !== String(b == null ? "" : b))
+          _changes.push({ campo: _CAMPI_LABEL[k] || k, da: _fmtVal(b), a: _fmtVal(a) });
+      });
     }
-    if (logAction && _changed) logAction(isNew ? "Nuovo prospect" : "Modifica anagrafica", "pipeline", label);
+    if (logAction && _changed) logAction(isNew ? "Nuovo prospect" : "Modifica anagrafica", "pipeline", label, _changes.length ? { changes: _changes } : undefined);
     return true;
   };
   const saveProspect = () => {
@@ -18020,7 +18035,7 @@ function App() {
       return next;
     });
   }, []);
-  const logAction = useCallback(async (azione, modulo, dettaglio) => {
+  const logAction = useCallback(async (azione, modulo, dettaglio, extra) => {
     try {
       const raw = await window.storage.get("tnb-log");
       const logs = raw ? JSON.parse(raw.value) : [];
@@ -18032,7 +18047,9 @@ function App() {
         userRole: currentUser?.role,
         azione,
         modulo,
-        dettaglio
+        dettaglio,
+        // extra: campi opzionali (es. { changes: [{campo, da, a}] }) per il drill-down nel report
+        ...(extra && typeof extra === "object" ? extra : {})
       };
       logs.unshift(entry);
       // Policy: il log attività è APPEND-ONLY — nessuna voce viene mai cancellata.
@@ -18607,6 +18624,7 @@ function ActivityLog({
   const [filterUser, setFilterUser] = useState("");
   const [filterMese, setFilterMese] = useState("");
   const [filterTipo, setFilterTipo] = useState(""); // "" | "chiamate" | "email" | "ordini" | "altro"
+  const [expanded, setExpanded] = useState(null); // id riga espansa per il dettaglio
   // Classifica una voce log in un "tipo report"
   const tipoDiAzione = az => {
     az = az || "";
@@ -18773,12 +18791,18 @@ function ActivityLog({
     }, filtered.map((l, i) => /*#__PURE__*/React.createElement("div", {
       key: l.id,
       style: {
+        borderBottom: `1px solid ${C.grigio100}`,
+        background: i % 2 === 0 ? C.bianco : C.grigio50
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      onClick: () => setExpanded(expanded === l.id ? null : l.id),
+      title: "Clicca per vedere il dettaglio",
+      style: {
         display: "flex",
         gap: 12,
         alignItems: "flex-start",
         padding: "10px 4px",
-        borderBottom: `1px solid ${C.grigio100}`,
-        background: i % 2 === 0 ? C.bianco : C.grigio50
+        cursor: "pointer"
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -21732,8 +21756,9 @@ function ReportAIPage({ dati }) {
   var _s6 = useState([]); var storicoReport = _s6[0]; var setStoricoReport = _s6[1];
   var _s7 = useState(""); var filtroTipo = _s7[0]; var setFiltroTipo = _s7[1];
   // tkt_1782210737255: filtro periodo per estrarre le chiamate effettuate.
-  var _s8 = useState(""); var calDa = _s8[0]; var setCalDa = _s8[1];
-  var _s9 = useState(""); var calA = _s9[0]; var setCalA = _s9[1];
+  var _oggiCal = (typeof todayStr === "function" ? todayStr() : new Date().toISOString().slice(0, 10));
+  var _s8 = useState(_oggiCal); var calDa = _s8[0]; var setCalDa = _s8[1];
+  var _s9 = useState(_oggiCal); var calA = _s9[0]; var setCalA = _s9[1];
 
   var CE = React.createElement;
 
@@ -21904,19 +21929,18 @@ function ReportAIPage({ dati }) {
       if (calA && r.data > calA) return false;
       return true;
     });
+    // Deduplica: rimuove righe identiche (stesso soggetto convertito può comparire
+    // come Prospect "acquisito" e come Cliente). Confronto su data+soggetto+telefono+esito+nota.
+    var _seen = {};
+    rows = rows.filter(function(r) {
+      var k = (r.data || "") + "|" + (r.soggetto || "") + "|" + (r.telefono || "") + "|" + (r.esito || "") + "|" + (r.nota || "");
+      if (_seen[k]) return false;
+      _seen[k] = true;
+      return true;
+    });
     rows.sort(function(a, b) { return (b.data || "").localeCompare(a.data || ""); });
     return rows;
   })();
-
-  var copiaChiamate = function() {
-    if (!navigator.clipboard) { window.tnbToast("⚠ Clipboard non disponibile", "err"); return; }
-    if (chiamatePeriodo.length === 0) { window.tnbToast("Nessuna chiamata da copiare", "err"); return; }
-    var head = "Data;Soggetto;Fonte;Telefono;Esito;Nota";
-    var lines = chiamatePeriodo.map(function(r) {
-      return [fmtD(r.data), r.soggetto, r.fonte, r.telefono, r.esito, String(r.nota || "").replace(/[\r\n;]+/g, " ")].join(";");
-    });
-    navigator.clipboard.writeText([head].concat(lines).join("\n")).then(function() { window.tnbToast("📋 " + chiamatePeriodo.length + " chiamate copiate (CSV)"); });
-  };
 
   var chiamateCard = CE("div", { style: { border: "1px solid " + C.grigio200, borderRadius: 10, padding: 14, marginBottom: 16, background: "#fafaf6" } },
     CE("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } },
@@ -21932,8 +21956,7 @@ function ReportAIPage({ dati }) {
         CE("div", { style: { fontSize: 11, color: C.grigio500, marginBottom: 2 } }, "Al"),
         CE("input", { type: "date", value: calA, onChange: function(e) { setCalA(e.target.value); }, style: { padding: "6px 8px", border: "1px solid " + C.grigio200, borderRadius: 6, fontSize: 13 } })
       ),
-      (calDa || calA) ? CE("button", { onClick: function() { setCalDa(""); setCalA(""); }, style: { padding: "7px 12px", borderRadius: 6, border: "1px solid " + C.grigio200, background: "#fff", cursor: "pointer", fontSize: 12 } }, "Azzera") : null,
-      CE("button", { onClick: copiaChiamate, style: { padding: "7px 12px", borderRadius: 6, border: "none", background: C.oliva, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700 } }, "📋 Copia (CSV)")
+      (calDa || calA) ? CE("button", { onClick: function() { setCalDa(""); setCalA(""); }, style: { padding: "7px 12px", borderRadius: 6, border: "1px solid " + C.grigio200, background: "#fff", cursor: "pointer", fontSize: 12 } }, "Azzera") : null
     ),
     chiamatePeriodo.length === 0
       ? CE("div", { style: { fontSize: 12, color: C.grigio500, padding: "6px 0" } }, "Nessuna chiamata nel periodo selezionato.")
