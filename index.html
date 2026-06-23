@@ -24908,12 +24908,22 @@ const GUIDA_CONTENUTI = {
       "🟡 Medio — funzionalità parzialmente compromessa\n" +
       "🔴 Alto — funzionalità bloccata\n" +
       "🚨 Critico — il gestionale non funziona"
+  },
+  report_ai: {
+    titolo: "Report AI",
+    icona: "🤖",
+    corpo: "Generatore di report intelligenti sull'attività commerciale. Selezioni prospect o clienti e l'AI produce un'analisi pronta per la proprietà.\n\nCOME FUNZIONA\nIn alto trovi sempre il riepilogo delle CHIAMATE NEL PERIODO: il sistema unisce le chiamate registrate sui prospect (Pipeline) e quelle sui clienti, elimina i doppioni (stessa data/soggetto/telefono/esito/nota) e raggruppa per soggetto e giorno, unendo le note della stessa giornata. Le date 'Dal' e 'Al' partono da oggi e si possono allargare.\nPoi scegli la fonte dati (Prospect o Clienti), selezioni uno o più soggetti e poni una domanda. L'AI risponde in streaming usando solo i dati reali dei soggetti scelti (ultime chiamate, azioni, ordini, stato, canale).\n\nCOME SI USA\n1. Imposta il periodo delle chiamate (Dal/Al) per vedere l'attività telefonica.\n2. Scegli Prospect o Clienti con il toggle.\n3. Filtra per testo o tipo e seleziona i soggetti (anche 'seleziona tutti i filtrati').\n4. Scegli una domanda preimpostata (Panoramica, Analisi per categoria, Chi ricontattare, Opportunità, Criticità e rischi, Report per la proprietà) oppure scrivi una domanda libera.\n5. Genera il report: appare nel riquadro a destra. Usa Copia per riutilizzarlo.\n6. In basso trovi lo storico degli ultimi report generati: cliccaci per rivederli.\n\nSUGGERIMENTI\n• Per il report alla proprietà, seleziona tutti i clienti attivi e usa il preset 'Report per la proprietà'.\n• Allarga il periodo chiamate per coprire la settimana o il mese, non solo oggi.\n• Più soggetti selezioni, più completa (ma più lenta) è l'analisi.\n• Il report è generato dall'AI sui dati reali: verifica sempre numeri e nomi prima di girarlo a terzi."
+  },
+  utenti: {
+    titolo: "Utenti",
+    icona: "👥",
+    corpo: "Elenco di sola lettura degli utenti del gestionale con ruolo e moduli accessibili.\n\nCOME FUNZIONA\nOgni utente è mostrato come scheda con iniziali colorate, nome, username, badge del ruolo (colore per ruolo) e numero di moduli a cui ha accesso, con l'elenco dei moduli. Gli accessi dipendono dal ruolo (vedi sezione 'Ruoli e permessi').\n\nCREDENZIALI\nLe credenziali (username e password) sono gestite nel codice sorgente, non da questa schermata. Per aggiungere un utente o cambiare una password contatta il SuperAdmin: non è possibile modificarle dall'interfaccia.\n\nSUGGERIMENTI\n• Usa questa pagina per verificare rapidamente chi ha accesso a cosa.\n• Se a un collega mancano dei moduli, controlla qui il suo ruolo e chiedi al SuperAdmin di adeguarlo.\n• Il modulo è visibile solo a SuperAdmin e Admin."
   }
 };
 function GuidaPage() {
   const [sezione, setSezione] = useState("intro");
   const C2 = { grigio100:"#f5f5f5", grigio200:"#e0e0e0", grigio400:"#bdbdbd", grigio600:"#757575", grigio800:"#424242", bianco:"#fff", verde:"#2e7d32", blu:"#1565c0" };
-  const sezioni = ["intro","ruoli","oggi","dashboard","pipeline","clienti","ordini","magazzino","produzione","fornitori","costi","listino","marketing","mailing","alerts","contratti","report","log","impostazioni","doppioni","ticket"];
+  const sezioni = ["intro","ruoli","oggi","dashboard","pipeline","clienti","ordini","magazzino","produzione","fornitori","costi","listino","marketing","mailing","alerts","contratti","report","report_ai","log","impostazioni","utenti","doppioni","ticket"];
   const renderCorpo = (testo) => {
     return testo.split("\n\n").map(function(para, pi) {
       if (para.startsWith("•") || para.includes("\n•")) {
