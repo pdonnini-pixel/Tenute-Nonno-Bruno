@@ -43,7 +43,7 @@ ${datiOrdini ? "ORDINI CORRELATI:\n" + JSON.stringify(datiOrdini, null, 2) : ""}
 Genera il report richiesto basandoti su questi dati.`;
 
     const requestBody = JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 4000,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }]
