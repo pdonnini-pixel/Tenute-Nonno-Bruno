@@ -21410,237 +21410,11 @@ function AlertsPage({
 // MAILING SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════
 // ── HELP SYSTEM ──────────────────────────────────────────────────────────────
-const HELP_CONTENT = {
-  "oggi": {
-    titolo: "Oggi & Azioni",
-    desc: "La scrivania giornaliera. Mostra cosa fare oggi e traccia le azioni commerciali.",
-    tips: [
-      "Inizia sempre da qui ogni mattina",
-      "Le card rosse sono priorità alta — gestiscile per prime",
-      "Le azioni scadute compaiono automaticamente dall'agenda"
-    ],
-    sezioni: [
-      { t: "Agenda del giorno", d: "Attività urgenti estratte automaticamente: prospect da richiamare, ordini in scadenza, alert attivi." },
-      { t: "Azioni recenti", d: "Log delle ultime operazioni. Serve per capire chi ha fatto cosa e quando." }
-    ]
-  },
-  "dashboard": {
-    titolo: "Dashboard BI",
-    desc: "Panoramica numerica: vendite, clienti, magazzino, margini — tutto aggiornato in tempo reale.",
-    tips: [
-      "Clicca sulle card KPI per andare alla sezione corrispondente",
-      "I valori in rosso segnalano situazioni da gestire subito"
-    ],
-    sezioni: [
-      { t: "KPI principali", d: "Fatturato, ordini aperti, clienti attivi, giacenza magazzino." },
-      { t: "Grafici trend", d: "Andamento vendite per formato e periodo. Utile per capire quali prodotti trainano." }
-    ]
-  },
-  "pipeline": {
-    titolo: "Pipeline Prospect",
-    desc: "CRM commerciale. Gestisce tutti i contatti che Irene sta lavorando: ristoranti, enoteche, negozi.",
-    tips: [
-      "Un prospect con email può ricevere mail direttamente dal Mailing",
-      "Quando un prospect diventa cliente, spostalo in Clienti dalla sua scheda",
-      "Usa 🔍 Doppioni per evitare duplicati prima di inserire nuovi contatti"
-    ],
-    sezioni: [
-      { t: "Aggiungi prospect", d: "Clicca '+ Prospect'. Scegli tipo (azienda o privato), compila ragione sociale e stato funnel." },
-      { t: "Stati del funnel", d: "Da contattare → Interessato → In trattativa → Acquisito. Avanza con il bottone freccia sulla card." },
-      { t: "Azioni", d: "Ogni prospect ha un registro azioni (richiamare, mail, campionatura...). Aggiungile dalla scheda e chiudile quando completate." }
-    ]
-  },
-  "clienti": {
-    titolo: "Clienti Acquisiti",
-    desc: "Anagrafica clienti attivi con storico ordini, email inviate e contratti.",
-    tips: [
-      "Email e P.IVA devono essere univoci — il sistema blocca duplicati",
-      "Nella scheda cliente trovi tutto lo storico email inviate via Mailing"
-    ],
-    sezioni: [
-      { t: "Scheda cliente", d: "Clicca su un cliente per vedere ordini, email inviate e contratti attivi." },
-      { t: "Aggiungi cliente", d: "Usa '+ Cliente'. Campi obbligatori: ragione sociale, tipo, email." },
-      { t: "Storico invii", d: "Tutte le email inviate dal Mailing: data, template usato e oggetto." }
-    ]
-  },
-  "ordini": {
-    titolo: "Ordini & Conto Vendita",
-    desc: "Gestione di tutti gli ordini di vendita e i contratti conto vendita.",
-    tips: [
-      "Lo stato ordine segue: Bozza → Confermato → Spedito → Fatturato",
-      "L'IVA al 4% si applica automaticamente ai prodotti biologici alimentari"
-    ],
-    sezioni: [
-      { t: "Nuovo ordine", d: "Seleziona cliente, aggiungi righe prodotto (formato, qta, prezzo), scegli modalità pagamento." },
-      { t: "Conto Vendita", d: "Registra merce consegnata, poi aggiorna le vendite effettive a fine periodo." },
-      { t: "PDF ordine", d: "Da ogni ordine puoi generare il PDF di conferma da inviare al cliente." }
-    ]
-  },
-  "magazzino": {
-    titolo: "Magazzino",
-    desc: "Giacenze per formato e lotto. Si aggiorna automaticamente con ogni ordine confermato.",
-    tips: [
-      "Le giacenze sotto soglia generano un alert automatico",
-      "Ogni uscita di magazzino è collegata a un ordine specifico"
-    ],
-    sezioni: [
-      { t: "Giacenze", d: "Quantità disponibile per ogni formato (100ml, 250ml, 500ml, latte). Aggiornate in tempo reale." },
-      { t: "Movimenti", d: "Storico di tutte le entrate (produzione) e uscite (ordini) per tracciabilità." }
-    ]
-  },
-  "produzione": {
-    titolo: "Produzione — Lotti",
-    desc: "Tracciabilità dei lotti: dalla raccolta alla frangitura fino all'imbottigliamento.",
-    tips: [
-      "Registra ogni lotto subito dopo la frangitura",
-      "La resa tipica è 15-18% del peso delle olive"
-    ],
-    sezioni: [
-      { t: "Lotti", d: "Data raccolta, kg olive, resa in olio, quantità imbottigliata per formato." },
-      { t: "Tracciabilità", d: "Ogni bottiglia venduta è collegabile a un lotto. Fondamentale per certificazioni biologiche e IGP." }
-    ]
-  },
-  "fornitori": {
-    titolo: "Fornitori",
-    desc: "Anagrafica fornitori: bottiglie, tappi, etichette, imballaggi, frantoio.",
-    tips: [
-      "Collega ogni fornitore alla categoria merceologica corretta",
-      "I prezzi d'acquisto entrano nel calcolo dei margini"
-    ],
-    sezioni: [
-      { t: "Scheda fornitore", d: "Contatti, condizioni di pagamento, materiali forniti e storico ordini." },
-      { t: "Ordini d'acquisto", d: "Registra acquisti da fornitori per tracciare costi e calcolare margini reali." }
-    ]
-  },
-  "costi": {
-    titolo: "Costi & Margini",
-    desc: "Analisi della redditività per formato, periodo e canale di vendita.",
-    tips: [
-      "Un margine sotto il 30% è da monitorare",
-      "Il 100ml ha costo unitario più alto ma prezzo al litro maggiore"
-    ],
-    sezioni: [
-      { t: "Margine per formato", d: "Confronta prezzo vendita vs costo totale (produzione + imbottigliamento + etichettatura)." },
-      { t: "Analisi canale", d: "HoReCa vs Retail vs Diretto: qual è il canale più redditizio?" }
-    ]
-  },
-  "listino": {
-    titolo: "Listino Commerciale",
-    desc: "Prezzi ufficiali per formato con scaglioni di quantità. Usati automaticamente negli ordini.",
-    tips: [
-      "Modifica i prezzi solo a inizio campagna commerciale",
-      "Gli ordini già confermati mantengono il prezzo originale al momento dell'ordine"
-    ],
-    sezioni: [
-      { t: "Prezzi base", d: "Prezzo al pubblico, HoReCa e distribuzione per ogni formato — aggiornati Raccolta 2025." },
-      { t: "Scaglioni", d: "I prezzi variano per numero colli. Vengono applicati automaticamente creando gli ordini." }
-    ]
-  },
-  "alerts": {
-    titolo: "Alert & Notifiche",
-    desc: "Centro notifiche automatico. Il sistema genera alert quando serve attenzione.",
-    tips: [
-      "Gli alert si generano automaticamente — non serve configurarli",
-      "Rosso = oggi | Arancio = entro 3 giorni | Grigio = info"
-    ],
-    sezioni: [
-      { t: "Tipologie", d: "Scadenze CV, giacenza sotto soglia, ordini non evasi, prospect da richiamare, contratti in scadenza." },
-      { t: "Gestione", d: "Clicca '→' per andare direttamente alla sezione coinvolta." }
-    ]
-  },
-  "marketing": {
-    titolo: "Marketing e Comunicazione",
-    desc: "Carica e gestisci materiali marketing (PDF, brochure, cataloghi, presentazioni). I materiali caricati qui diventano allegati selezionabili nel Mailing.",
-    tips: [
-      "Trascina i file direttamente nell'area di upload oppure clicca per selezionare",
-      "I formati supportati sono PDF, DOC, DOCX, PNG, JPG, PPTX, XLSX (max 20 MB)",
-      "I link ai materiali sono permanenti e non scadono",
-      "Usa le categorie per organizzare: Scheda tecnica, Brochure, Presentazione, Catalogo, Altro"
-    ],
-    sezioni: [
-      { t: "Caricare un materiale", d: "Clicca '+ Carica materiale' oppure trascina un file nell'area tratteggiata. Inserisci nome, descrizione e categoria, poi conferma." },
-      { t: "Gestire i materiali", d: "Ogni card mostra il materiale con anteprima, copia link ed elimina. Usa la barra di ricerca e i filtri categoria per trovare quello che cerchi." },
-      { t: "Collegamento al Mailing", d: "Nel Mailing, i materiali caricati qui appaiono nella sezione 'Materiali da allegare'. Seleziona quelli da includere — i link vengono inseriti automaticamente nel corpo dell'email." }
-    ]
-  },
-  "mailing": {
-    titolo: "Mailing",
-    desc: "Email commerciali a clienti e prospect con template, allegati e conferma grafica. Non invia in automatico — apre Gmail precompilato.",
-    tips: [
-      "Cerca i destinatari per nome con l'autocomplete (non serve scorrere una lista)",
-      "Puoi creare template personalizzati con segnaposti {nome}, {azienda}, {firma}",
-      "I materiali dal modulo Marketing vengono proposti come allegati selezionabili",
-      "Prima di aprire Gmail vedi sempre una conferma grafica con riepilogo"
-    ],
-    sezioni: [
-      { t: "Singolo", d: "Scegli template, cerca il destinatario con l'autocomplete, genera il testo, seleziona i materiali da allegare, clicca Apri Gmail. I link ai materiali vengono inseriti nel corpo dell'email." },
-      { t: "Massivo", d: "Seleziona piu destinatari, genera la coda, invia uno per uno con Apri Gmail. Ogni invio viene confermato con modale grafica." },
-      { t: "Template personalizzati", d: "Crea template con nome, colore, oggetto e corpo. Usa i segnaposti: {nome} per il referente, {azienda} per Tenute NB, {firma} per la firma completa." },
-      { t: "Materiali e allegati", d: "I materiali caricati nel modulo Marketing appaiono come allegati selezionabili. Puoi anche aggiungere allegati personalizzati (URL o upload file)." },
-      { t: "CC e BCC", d: "Sopra l'oggetto trovi i campi CC e BCC per inviare copie dell'email. Le email vengono validate prima dell'invio." },
-      { t: "Ordine collegato", d: "I template Proposta ordine e Conferma ordine richiedono un ordine collegato. Seleziona prima il cliente, poi l'ordine — i dati vengono inseriti automaticamente nel testo." }
-    ]
-  },
-  "contratti": {
-    titolo: "Contratti",
-    desc: "Contratti attivi con clienti: vendita diretta, conto vendita, distribuzione.",
-    tips: [
-      "I contratti in scadenza entro 30 giorni generano alert automatici",
-      "Un contratto attivo è prerequisito per alcune tipologie di ordine"
-    ],
-    sezioni: [
-      { t: "Nuovo contratto", d: "Collega a un cliente, scegli tipo, inserisci durata e condizioni." },
-      { t: "Scadenze", d: "I contratti in scadenza entro 30 giorni generano un alert automatico." }
-    ]
-  },
-  "log": {
-    titolo: "Report Attività",
-    desc: "Storico completo di tutte le operazioni eseguite — chi, quando, cosa.",
-    tips: [
-      "Il log non è modificabile — garantisce tracciabilità completa",
-      "Superadmin vede tutto, Commerciale vede solo le proprie azioni"
-    ],
-    sezioni: [
-      { t: "Filtri", d: "Filtra per utente, modulo o periodo per trovare un'operazione specifica." },
-      { t: "Lettura", d: "Ogni riga: quando, chi, cosa ha fatto e in quale sezione." }
-    ]
-  },
-  "ticket": {
-    titolo: "Ticket e Segnalazioni",
-    desc: "Segnala bug e richiedi nuove funzioni direttamente dal gestionale. Il team riceve la segnalazione con screenshot automatico e risponde tramite commenti.",
-    tips: [
-      "Il bottone rosa in basso a destra e sempre visibile su ogni pagina",
-      "Lo screenshot viene catturato automaticamente quando apri il modulo di segnalazione",
-      "Piu dettagli inserisci nella descrizione, piu velocemente il problema viene risolto",
-      "Controlla il badge rosa nel menu Ticket per vedere se hai ricevuto risposte"
-    ],
-    sezioni: [
-      { t: "Segnalare un bug", d: "Clicca il bottone rosa, scegli 'Segnala bug', inserisci titolo e descrizione dettagliata. Lo screenshot si cattura da solo. Scegli la priorita e clicca Invia." },
-      { t: "Richiedere una funzione", d: "Clicca il bottone rosa, scegli 'Richiedi funzione'. Descrivi: cosa vorresti fare, perche ti serve, come immagini che funzioni. Indica quanto e importante." },
-      { t: "Seguire i ticket", d: "Vai nel modulo Ticket per vedere i tuoi ticket. Ogni ticket mostra lo stato (Aperto, In corso, Risolto, Chiuso), lo screenshot, i commenti e le note di risoluzione." },
-      { t: "Comunicare", d: "Usa il bottone Commenta su ogni ticket per aggiungere informazioni o rispondere al team. I tuoi messaggi appaiono in azzurro, quelli del team in viola." }
-    ]
-  },
-  "report_ai": {
-    titolo: "Report AI",
-    desc: "Seleziona prospect o clienti e chiedi all'AI di generare un report intelligente per la proprietà. Analizza attività, trend e criticità.",
-    tips: [
-      "Seleziona uno o più soggetti dalla lista a sinistra",
-      "Usa i preset per domande comuni oppure scrivi la tua domanda",
-      "Il report analizza chiamate, follow-up, ordini e stato di ogni soggetto",
-      "Puoi copiare il report e incollarlo in una email o documento"
-    ],
-    sezioni: [
-      { t: "Selezionare i soggetti", d: "Scegli Prospect o Clienti, poi seleziona uno o più dalla lista. Usa la ricerca e il filtro tipo per trovare rapidamente. Puoi selezionare tutti i filtrati con un click." },
-      { t: "Fare una domanda", d: "Scegli un preset (Panoramica, Analisi per categoria, Chi ricontattare, ecc.) oppure scrivi una domanda libera. Più è specifica la domanda, più utile è il report." },
-      { t: "Leggere il report", d: "Il report AI analizza i dati reali dei soggetti selezionati. Include numeri, date, criticità e suggerimenti concreti. Alla fine c'è sempre un riepilogo esecutivo." },
-      { t: "Storico report", d: "In basso trovi i report generati di recente. Cliccaci per rivederli." }
-    ]
-  }
-};
+// ── HELP SYSTEM ── HELP_CONTENT rimosso: guida unificata su GUIDA_CONTENUTI (vedi piu sotto). HelpModal/HelpFab/HelpBtn leggono tutti da li.
 
 function HelpModal({ modulo, onClose }) {
-  var h = HELP_CONTENT[modulo];
+  // Unificato: legge GUIDA_CONTENUTI (stessa fonte del ? del titolo e della pagina #guida).
+  var h = GUIDA_CONTENUTI[modulo];
   if (!h) return null;
   var CE = React.createElement;
   return CE("div", {
@@ -21656,28 +21430,17 @@ function HelpModal({ modulo, onClose }) {
       CE("div",{style:{padding:"18px 22px 14px",borderBottom:"1px solid "+C.grigio100,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}},
         CE("div",null,
           CE("div",{style:{fontSize:10,fontWeight:700,color:C.oliva,letterSpacing:1.2,marginBottom:4,textTransform:"uppercase"}},"Guida sezione"),
-          CE("h3",{style:{fontSize:17,fontWeight:700,color:C.olivaScuro,margin:0}},h.titolo)
+          CE("h3",{style:{fontSize:17,fontWeight:700,color:C.olivaScuro,margin:0}},(h.icona?h.icona+" ":"")+h.titolo)
         ),
         CE("button",{onClick:onClose,style:{background:"none",border:"none",fontSize:18,cursor:"pointer",
           color:C.grigio400,padding:"0 0 0 12px",lineHeight:1,flexShrink:0}},"\u2715")
       ),
       CE("div",{style:{padding:"14px 22px 20px"}},
-        CE("p",{style:{fontSize:13,color:C.grigio600,lineHeight:1.65,marginTop:0,marginBottom:14}},h.desc),
-        h.sezioni.map(function(s,i){
-          return CE("div",{key:i,style:{marginBottom:10,padding:"9px 13px",background:C.grigio50,
-            borderRadius:8,borderLeft:"3px solid "+C.oliva}},
-            CE("div",{style:{fontSize:12,fontWeight:700,color:C.olivaScuro,marginBottom:3}},s.t),
-            CE("div",{style:{fontSize:12,color:C.grigio600,lineHeight:1.55}},s.d)
-          );
-        }),
-        h.tips && h.tips.length > 0 && CE("div",{style:{marginTop:14,padding:"10px 13px",
-          background:"#fffde7",borderRadius:8,border:"1px solid #f9a825"}},
-          CE("div",{style:{fontSize:10,fontWeight:700,color:"#e65100",letterSpacing:1,marginBottom:7,textTransform:"uppercase"}},
-            "\uD83D\uDCA1 Consigli pratici"),
-          h.tips.map(function(t,i){
-            return CE("div",{key:i,style:{fontSize:12,color:"#4e342e",marginBottom:i<h.tips.length-1?5:0}},
-              "\u2022 "+t);
-          })
+        CE("div",{style:{fontSize:13,color:C.grigio600,lineHeight:1.7,whiteSpace:"pre-line"}},h.corpo),
+        CE("div",{style:{marginTop:14,paddingTop:10,borderTop:"1px solid "+C.grigio100,display:"flex",justifyContent:"flex-end"}},
+          CE("button",{onClick:function(){ onClose(); if(window._nav) window._nav("guida"); },
+            style:{fontSize:12,padding:"6px 14px",border:"none",borderRadius:6,background:C.oliva,color:"#fff",cursor:"pointer",fontWeight:600}},
+            "\uD83D\uDCD6 Apri guida completa")
         )
       )
     )
@@ -21686,7 +21449,7 @@ function HelpModal({ modulo, onClose }) {
 
 function HelpFab({ modulo }) {
   var _s = useState(false); var open = _s[0]; var setOpen = _s[1];
-  if (!modulo || !HELP_CONTENT[modulo]) return null;
+  if (!modulo || !GUIDA_CONTENUTI[modulo]) return null;
   var CE = React.createElement;
   return CE(React.Fragment, null,
     CE("button",{
