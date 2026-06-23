@@ -1231,8 +1231,12 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260623-v63-ux
+</script><script>// TNB-BUILD-20260623-v64-ux
 // ═══════════════════════════════════════════════════════════════════════════
+// v48.3 (build v64) — Report drill-down: niente più dettaglio ripetuto. Cliccando
+//   la riga il dettaglio si espande in-place (non troncato); il pannello mostra solo
+//   meta (quando/chi/ruolo/modulo) + tabella campi modificati quando presente.
+//
 // v48.2 (build v63) — Drill-down "campi modificati" esteso a CLIENTE e ORDINE.
 //   Helper globale tnbDiffCampi(old,new,label,skip) usato per prospect, cliente
 //   (form + anagrafica) e ordine (campi a livello ordine; le righe sono array, escluse).
@@ -18876,9 +18880,10 @@ function ActivityLog({
       style: {
         fontSize: 12,
         color: C.grigio600,
-        overflow: "hidden",
+        overflow: expanded === l.id ? "visible" : "hidden",
         textOverflow: "ellipsis",
-        whiteSpace: "nowrap"
+        whiteSpace: expanded === l.id ? "normal" : "nowrap",
+        wordBreak: "break-word"
       }
     }, isoToEu(l.dettaglio))), /*#__PURE__*/React.createElement("div", {
       style: {
@@ -18890,9 +18895,8 @@ function ActivityLog({
     }, (expanded === l.id ? "▾ " : "▸ ") + fmt2(l.ts))), expanded === l.id && /*#__PURE__*/React.createElement("div", {
       style: { padding: "4px 12px 14px 40px", fontSize: 12, color: C.grigio700 }
     },
-      /*#__PURE__*/React.createElement("div", { style: { marginBottom: 6, color: C.grigio500, fontSize: 11 } },
+      /*#__PURE__*/React.createElement("div", { style: { marginBottom: (l.changes && l.changes.length) ? 8 : 0, color: C.grigio500, fontSize: 11 } },
         "🕒 " + fmt2(l.ts) + "  ·  👤 " + (l.userName || "—") + (l.userRole ? " (" + l.userRole + ")" : "") + "  ·  📂 " + (l.modulo || "—")),
-      /*#__PURE__*/React.createElement("div", { style: { marginBottom: (l.changes && l.changes.length) ? 8 : 0, whiteSpace: "normal", wordBreak: "break-word" } }, isoToEu(l.dettaglio || "—")),
       (l.changes && l.changes.length)
         ? /*#__PURE__*/React.createElement("div", { style: { marginTop: 4 } },
             /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 11, color: C.grigio600, marginBottom: 4 } }, "Campi modificati:"),
