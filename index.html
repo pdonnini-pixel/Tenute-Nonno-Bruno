@@ -25310,4 +25310,42 @@ function ListinoPage({ dati, setDati }) {
     }, "Tutti i prezzi si intendono + IVA 4%"))
   }));
 }
-</script><script>ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App,null));</script></body></html>
+</script><script>ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App,null));</script><script>
+/* TNB auto-update — rileva un nuovo deploy (ETag dell'HTML su Netlify) e ricarica
+   da solo la pagina, senza interrompere chi sta scrivendo in un campo o in un modale. */
+(function(){
+  var KNOWN = null;     // ETag della versione attualmente in esecuzione
+  var pending = false;  // nuova versione rilevata, in attesa di un momento sicuro
+  var busy = false;
+  function fetchTag(cb){
+    try {
+      fetch(location.pathname + "?_v=" + Date.now(), { method:"HEAD", cache:"no-store" })
+        .then(function(r){ cb(r && r.ok ? (r.headers.get("etag") || r.headers.get("last-modified")) : null); })
+        .catch(function(){ cb(null); });
+    } catch(e){ cb(null); }
+  }
+  function staScrivendo(){
+    var a = document.activeElement;
+    return !!(a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable));
+  }
+  function applica(){
+    if (staScrivendo()){ pending = true; return; }   // riprova quando l'utente non sta scrivendo
+    try { if (window.tnbToast) window.tnbToast("🔄 Aggiornamento all'ultima versione…"); } catch(e){}
+    setTimeout(function(){ location.reload(); }, 800);
+  }
+  function controlla(){
+    if (busy) return; busy = true;
+    fetchTag(function(tag){
+      busy = false;
+      if (!tag) return;
+      if (KNOWN === null){ KNOWN = tag; return; }
+      if (tag !== KNOWN){ KNOWN = tag; applica(); }
+      else if (pending){ applica(); }
+    });
+  }
+  fetchTag(function(t){ KNOWN = t; });
+  setInterval(controlla, 120000);  // controllo ogni 2 minuti
+  document.addEventListener("visibilitychange", function(){ if (document.visibilityState === "visible") controlla(); });
+  window.addEventListener("focus", controlla);
+})();
+</script></body></html>
