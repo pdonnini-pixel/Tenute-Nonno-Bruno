@@ -1231,8 +1231,20 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260514-v54-ux
+</script><script>// TNB-BUILD-20260623-v61-ux
 // ═══════════════════════════════════════════════════════════════════════════
+// v48.0 (build v61) — MERGE: reintegrate le feature mie sopra i fix "fix(auto)" tkt_.
+//   • Report Attività (ex Log): PERMANENTE/append-only (niente cancellazione, niente
+//     "Svuota log", reset dati non azzera il log), filtro mese + chip per tipo
+//     (📞 Chiamate / ✉️ Email / 📦 Ordini / 📌 Altro), date sempre europee (isoToEu).
+//   • Chiamate (cornetta) ed Email (lettera) loggate con CONTENUTO in pipeline + agenda;
+//     "Modifica prospect" → "Modifica anagrafica" con DEDUP (solo se cambia davvero).
+//   • Modale "Registra Chiamata" (ex "Log Chiamata"): Esito OPZIONALE (salva con esito,
+//     nota o prossima data), pulsante abilitato, bottone agenda più leggibile.
+//   • COLLI: tenuta la logica dell'altro agente (auto = qta/pezziCollo + override
+//     r.colliManuale nel PDF) e AGGIUNTO l'input "Colli" nel modal (form + wizard) che
+//     scrive colliManuale — proposta automatica, sovrascrivibile a mano.
+//
 // v54 UX COMMERCIALE — tutti i moduli 🟢 per Irene
 //
 //   UX1: Pipeline vista lista + log rapido (2 click) + timeline unificata
@@ -6733,7 +6745,15 @@ function Pipeline({
         }]
       };
     });
-    if (logAction) logAction(isNew ? "Nuovo prospect" : "Modifica prospect", "pipeline", label);
+    // Dedup: per prospect esistenti logga "Modifica anagrafica" SOLO se qualcosa è cambiato
+    // davvero (niente voci per aperture/salvataggi a vuoto). Chiamate e mail restano eventi
+    // separati, loggati solo da cornetta/lettera.
+    let _changed = isNew;
+    if (!isNew) {
+      const _oldP = dati.prospect.find(p => p.id === form.id);
+      try { _changed = !_oldP || JSON.stringify(_oldP) !== JSON.stringify({ ..._oldP, ...form }); } catch (_) { _changed = true; }
+    }
+    if (logAction && _changed) logAction(isNew ? "Nuovo prospect" : "Modifica anagrafica", "pipeline", label);
     return true;
   };
   const saveProspect = () => {
@@ -6794,9 +6814,14 @@ function Pipeline({
     { v: "ordine", l: "Ordine", stato: "acquisito" }
   ];
   const logCallSave = () => {
-    if (!logCallId || !logCallForm.esito) return;
+    if (!logCallId) return;
+    // Esito OPZIONALE: si salva con esito, nota o prossima call.
+    if (!logCallForm.esito && !(logCallForm.nota || "").trim() && !logCallForm.prossimaCall) {
+      if (window.tnbToast) window.tnbToast("⚠ Inserisci almeno l'esito, una nota o la prossima data", "err");
+      return;
+    }
     var esito = ESITI_CALL.find(e => e.v === logCallForm.esito);
-    var nota = (esito ? esito.l : "") + (logCallForm.nota ? " — " + logCallForm.nota : "");
+    var nota = (esito ? esito.l : "Chiamata") + (logCallForm.nota ? " — " + logCallForm.nota : "");
     addCall(logCallId, nota, logCallForm.dataCall || "");
     // add azione
     var azTipo = logCallForm.esito === "campione" ? "campionatura" : "richiamare";
@@ -6807,6 +6832,12 @@ function Pipeline({
     if (logCallForm.prossimaCall) {
       setDati(d => ({ ...d, prospect: d.prospect.map(p => p.id !== logCallId ? p : { ...p, nextCall: { data: logCallForm.prossimaCall, nota: logCallForm.nota || "" } }) }));
     }
+    // Log globale con contenuto (esito + nota + date)
+    var _prc = (dati.prospect || []).find(p => p.id === logCallId);
+    if (logAction) logAction("Chiamata", "pipeline",
+      (_prc ? pNome(_prc) : "") + " — " + nota
+      + (logCallForm.dataCall ? " · " + fmtD(logCallForm.dataCall) : "")
+      + (logCallForm.prossimaCall ? " · prossima call " + fmtD(logCallForm.prossimaCall) : ""));
     if (window.tnbToast) window.tnbToast("📞 Chiamata registrata");
     setLogCallId(null);
     setLogCallForm({ esito: "", nota: "", prossimaCall: "", dataCall: "" });
@@ -6824,7 +6855,7 @@ function Pipeline({
     var corpo = tpl.corpo(dest);
     window.tnbConfirm("Inviare a " + pNome(p) + " <" + p.email + ">?\nOggetto: " + ogg, function() {
       window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(p.email) + "&su=" + encodeURIComponent(ogg) + "&body=" + encodeURIComponent(corpo), "_blank");
-      if (logAction) logAction("Mail " + quickMailTpl, "pipeline", pNome(p));
+      if (logAction) logAction("Email: " + (tpl.label || quickMailTpl), "pipeline", pNome(p) + " <" + p.email + "> — " + ogg);
       var azTipoMail = quickMailTpl === "primo_contatto" ? "mail_presentazione" : quickMailTpl === "followup_offerta" ? "mail_followup" : quickMailTpl === "campionatura" ? "campionatura" : "mail_presentazione";
       addAzione(p.id, azTipoMail, "Inviata via Gmail — " + (tpl.label || quickMailTpl));
       window.tnbToast("✅ Gmail aperto per " + p.email);
@@ -7099,7 +7130,7 @@ function Pipeline({
           ),
           /*#__PURE__*/React.createElement("td", { style: { padding: "8px 6px", whiteSpace: "nowrap" }, onClick: function(e) { e.stopPropagation(); } },
             /*#__PURE__*/React.createElement("button", {
-              title: "Log chiamata",
+              title: "Registra chiamata",
               onClick: function() { setLogCallId(p.id); setLogCallForm({ esito: "", nota: "", prossimaCall: "" }); },
               style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: "2px 4px" }
             }, "\ud83d\udcde"),
@@ -7470,7 +7501,7 @@ function Pipeline({
   }),
   // UX1.3: Log chiamata rapido mini-modal
   logCallId && /*#__PURE__*/React.createElement(Modal, {
-    title: "\ud83d\udcde Log chiamata rapida",
+    title: "\ud83d\udcde Registra chiamata rapida",
     onClose: function() { setLogCallId(null); },
     ch: /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.grigio500 } }, pNome(dati.prospect.find(function(x) { return x.id === logCallId; }) || {})),
@@ -7498,7 +7529,7 @@ function Pipeline({
         /*#__PURE__*/React.createElement(Btn, { ch: "Annulla", v: "sec", onClick: function() { setLogCallId(null); } }),
         /*#__PURE__*/React.createElement(Btn, {
           ch: "\ud83d\udcde Salva chiamata",
-          style: { opacity: logCallForm.esito ? 1 : 0.4 },
+          style: { opacity: (logCallForm.esito || (logCallForm.nota || "").trim() || logCallForm.prossimaCall) ? 1 : 0.4 },
           onClick: logCallSave
         })
       )
@@ -7735,7 +7766,7 @@ _AZ_NOME + " produce olio extravergine di oliva biologico" + (_AZ_LUOGO ? " sull
 _firmaAz + "\n" +
 _firmaContact;
           window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(form.email) + "&su=" + encodeURIComponent(ogg) + "&body=" + encodeURIComponent(corpo), "_blank");
-          if(logAction) logAction("Mail pres.", "pipeline", form.ragioneSociale);
+          if(logAction) logAction("Email: Presentazione", "pipeline", (form.ragioneSociale || "") + (form.email ? " <" + form.email + ">" : "") + " — " + ogg);
           if(form.id) {
             var azId = uid();
             setDati(function(d) { return {
@@ -7999,7 +8030,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
         setOrdineWizard(function(w) {
           var righe = (w.ordineForm.righe || []).map(function(r, i) {
             if (i !== idx) return r;
-            var updated = Object.assign({}, r, { [key]: key === "qta" || key === "prezzoUnitario" || key === "omaggio" ? Number(val) : val });
+            var updated = Object.assign({}, r, { [key]: key === "qta" || key === "prezzoUnitario" || key === "omaggio" || key === "colliManuale" ? (val === "" || val === null ? "" : Number(val)) : val });
             // Auto-price from listino
             if (key === "formato" || key === "qta") {
               var fmt = key === "formato" ? val : updated.formato;
@@ -8019,7 +8050,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
       var addRigaWiz = function() {
         setOrdineWizard(function(w) {
           return Object.assign({}, w, { ordineForm: Object.assign({}, w.ordineForm, {
-            righe: [...(w.ordineForm.righe || []), { formato: "500 ml", annata: "2025", qta: 1, prezzoUnitario: 19.50, confezione: false, omaggio: 0 }]
+            righe: [...(w.ordineForm.righe || []), { formato: "500 ml", annata: "2025", qta: 1, colliManuale: "", prezzoUnitario: 19.50, confezione: false, omaggio: 0 }]
           }) });
         });
       };
@@ -8043,11 +8074,12 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
           ),
           // Header
           (of.righe || []).length > 0 && /*#__PURE__*/React.createElement("div", {
-            style: { display: "grid", gridTemplateColumns: "2fr 1fr 80px 90px 80px 36px", gap: 8, padding: "0 4px 6px 4px", borderBottom: "1px solid " + C.grigio200, marginBottom: 8 }
+            style: { display: "grid", gridTemplateColumns: "2fr 1fr 80px 70px 90px 80px 36px", gap: 8, padding: "0 4px 6px 4px", borderBottom: "1px solid " + C.grigio200, marginBottom: 8 }
           },
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6 } }, "FORMATO"),
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6 } }, "ANNATA"),
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center" } }, "QTÀ"),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center" }, title: "Colli — vuoto = proposta automatica (qtà ÷ pezzi/collo), oppure forza a mano" }, "COLLI"),
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center" } }, "PREZZO UN. €"),
             /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "right" } }, "TOTALE"),
             /*#__PURE__*/React.createElement("div", null, "")
@@ -8056,7 +8088,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
           (of.righe || []).map(function(r, i) {
             return /*#__PURE__*/React.createElement("div", {
               key: i,
-              style: { display: "grid", gridTemplateColumns: "2fr 1fr 80px 90px 80px 36px", gap: 8, marginBottom: 6, alignItems: "end" }
+              style: { display: "grid", gridTemplateColumns: "2fr 1fr 80px 70px 90px 80px 36px", gap: 8, marginBottom: 6, alignItems: "end" }
             },
               /*#__PURE__*/React.createElement(Sel, {
                 v: r.formato,
@@ -8072,6 +8104,12 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
                 type: "number", min: 0, step: 1,
                 v: r.qta,
                 on: function(v) { updateRiga(i, "qta", v); }
+              }),
+              /*#__PURE__*/React.createElement(Inp, {
+                type: "number", min: 0, step: 1,
+                v: r.colliManuale != null ? r.colliManuale : "",
+                on: function(v) { updateRiga(i, "colliManuale", v); },
+                ph: (function() { var pc = Number((LISTINO[r.formato] || {}).pezziCollo) || 1; var a = pc > 0 ? (Number(r.qta) || 0) / pc : 0; return a ? ("auto " + (Number.isInteger(a) ? a : a.toFixed(2))) : "Colli"; })()
               }),
               /*#__PURE__*/React.createElement(Inp, {
                 type: "number", min: 0, step: 0.5,
@@ -8149,6 +8187,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
                     formato: r.formato,
                     annata: r.annata,
                     qta: Number(r.qta) || 0,
+                    colliManuale: (r.colliManuale === "" || r.colliManuale == null) ? null : (Number(r.colliManuale) || 0),
                     prezzoUnitario: Number(r.prezzoUnitario) || 0,
                     confezione: r.confezione !== undefined ? r.confezione : false,
                     omaggio: Number(r.omaggio) || 0,
@@ -10501,6 +10540,8 @@ function Ordini({
         return {
           ...r,
           qta: qtaNum,
+          // Colli manuale (override del calcolo qta/pezziCollo nel PDF). Vuoto → null = auto.
+          colliManuale: (r.colliManuale === "" || r.colliManuale == null) ? null : (Number(r.colliManuale) || 0),
           // Campione: la qta scala il magazzino, ma prezzo e omaggio azzerati
           prezzoUnitario: isCamp ? 0 : prezzoNum,
           omaggio: isCamp ? 0 : omaggioNum,
@@ -10839,6 +10880,7 @@ function Ordini({
       formato: "500 ml",
       annata: "2025",
       qta: 1,
+      colliManuale: "",
       prezzoUnitario: 19.50,
       confezione: false,
       omaggio: 0
@@ -10848,7 +10890,7 @@ function Ordini({
     const r = [...(f.righe || [])];
     r[i] = {
       ...r[i],
-      [k]: k === "qta" || k === "prezzoUnitario" || k === "omaggio" ? (v === "" || v === null ? "" : Number(v)) : v
+      [k]: k === "qta" || k === "prezzoUnitario" || k === "omaggio" || k === "colliManuale" ? (v === "" || v === null ? "" : Number(v)) : v
     };
     // Auto-price from listino when format or qty changes
     if (k === "formato" || k === "qta") {
@@ -11573,7 +11615,7 @@ function Ordini({
     })), (form.righe || []).length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "grid",
-        gridTemplateColumns: form.campione ? "2fr 1fr 80px 40px 36px" : "2fr 1fr 80px 90px 80px 70px 40px 36px",
+        gridTemplateColumns: form.campione ? "2fr 1fr 80px 70px 40px 36px" : "2fr 1fr 80px 70px 90px 80px 70px 40px 36px",
         gap: 8,
         padding: "0 4px 6px 4px",
         borderBottom: `1px solid ${C.grigio200}`,
@@ -11583,6 +11625,7 @@ function Ordini({
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6 }, title: "Confezione del prodotto (es. 100 ml, 500 ml, 3 L latta)" }, "FORMATO"),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6 }, title: "Anno di produzione del lotto" }, "ANNATA"),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Numero pezzi totali ordinati (esclusi omaggi)" }, "QUANTITÀ"),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Numero colli/cartoni. Vuoto = proposta automatica (quantità ÷ pezzi per collo). Scrivi un valore per forzarlo a mano." }, "COLLI"),
       !form.campione && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Prezzo unitario al netto IVA, in euro per pezzo" }, "PREZZO UN. €"),
       !form.campione && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "Pezzi regalati gratuitamente al cliente, non fatturati" }, "OMAGGIO"),
       !form.campione && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 0.6, textAlign: "center", cursor: "help" }, title: "tkt_1782117992702: prodotto consegnato CON o SENZA confezione/scatola" }, "CONF."),
@@ -11592,7 +11635,7 @@ function Ordini({
       key: i,
       style: {
         display: "grid",
-        gridTemplateColumns: form.campione ? "2fr 1fr 80px 40px 36px" : "2fr 1fr 80px 90px 80px 70px 40px 36px",
+        gridTemplateColumns: form.campione ? "2fr 1fr 80px 70px 40px 36px" : "2fr 1fr 80px 70px 90px 80px 70px 40px 36px",
         gap: 8,
         marginBottom: 8,
         alignItems: "end"
@@ -11615,6 +11658,14 @@ function Ordini({
       on: v => updRiga(i, "qta", v),
       disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
       ph: "Q.t\xE0"
+    }), /*#__PURE__*/React.createElement(Inp, {
+      type: "number",
+      min: 0,
+      step: 1,
+      v: r.colliManuale != null ? r.colliManuale : "",
+      on: v => updRiga(i, "colliManuale", v),
+      disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
+      ph: (function() { var pc = Number((LISTINO[r.formato] || {}).pezziCollo) || 1; var a = pc > 0 ? (Number(r.qta) || 0) / pc : 0; return a ? ("auto " + (Number.isInteger(a) ? a : a.toFixed(2))) : "Colli"; })()
     }), !form.campione && /*#__PURE__*/React.createElement(Inp, {
       type: "number",
       min: 0,
@@ -17984,7 +18035,8 @@ function App() {
         dettaglio
       };
       logs.unshift(entry);
-      await window.storage.set("tnb-log", JSON.stringify(logs.slice(0, 500)));
+      // Policy: il log attività è APPEND-ONLY — nessuna voce viene mai cancellata.
+      await window.storage.set("tnb-log", JSON.stringify(logs));
     } catch (e) {}
   }, [currentUser]);
   const isReadonly = mod => (ROLE_READONLY[currentUser?.role] || []).includes(mod);
@@ -18120,7 +18172,7 @@ function App() {
     icon: /*#__PURE__*/React.createElement(I.ord, null)
   }, {
     k: "log",
-    l: "Log Attività",
+    l: "📊 Report Attività",
     icon: /*#__PURE__*/React.createElement(I.alert, null)
   }, {
     k: "impostazioni",
@@ -18527,8 +18579,25 @@ const ACTION_ICONS = {
   "Nuovo SKU": "📦",
   "Modifica SKU": "✏️",
   "Movimento carico": "⬆️",
-  "Movimento scarico": "⬇️"
+  "Movimento scarico": "⬇️",
+  "Modifica anagrafica": "✏️",
+  "Chiamata": "📞",
+  "Chiamata registrata": "📞"
 };
+// Icona per azione: match esatto, poi per prefisso (azioni con suffisso dinamico)
+function iconAzione(az) {
+  if (!az) return "📌";
+  if (ACTION_ICONS[az]) return ACTION_ICONS[az];
+  if (/^(email|mail)/i.test(az)) return "✉️";
+  if (/^chiamata/i.test(az)) return "📞";
+  if (/^stato →/i.test(az)) return "🔄";
+  if (/^mov\.|^movimento/i.test(az)) return "📦";
+  if (/pdf/i.test(az)) return "📄";
+  if (/anagrafic/i.test(az)) return "✏️";
+  if (/cliente/i.test(az)) return "👤";
+  if (/ordine/i.test(az)) return "📋";
+  return "📌";
+}
 function ActivityLog({
   currentUser
 }) {
@@ -18536,6 +18605,16 @@ function ActivityLog({
   const [filter, setFilter] = useState("");
   const [filterMod, setFilterMod] = useState("");
   const [filterUser, setFilterUser] = useState("");
+  const [filterMese, setFilterMese] = useState("");
+  const [filterTipo, setFilterTipo] = useState(""); // "" | "chiamate" | "email" | "ordini" | "altro"
+  // Classifica una voce log in un "tipo report"
+  const tipoDiAzione = az => {
+    az = az || "";
+    if (/^chiamata/i.test(az)) return "chiamate";
+    if (/^(email|mail)/i.test(az)) return "email";
+    if (/ordine|pdf|consegna|stato →|sollecit/i.test(az)) return "ordini";
+    return "altro";
+  };
   useEffect(() => {
     (async () => {
       try {
@@ -18548,16 +18627,21 @@ function ActivityLog({
     })();
   }, []);
   const clearLog = async () => {
-    if (!confirm("Eliminare tutto il log attività?")) return;
-    try {
-      await window.storage.set("tnb-log", JSON.stringify([]));
-      setLogs([]);
-    } catch (e) {
-      console.warn('Impossibile svuotare log:', e);
-    }
+    // Policy: i log non vengono MAI cancellati. Azione disabilitata.
+    if (window.tnbToast) window.tnbToast("🔒 Il report attività è permanente e non cancellabile", "err");
   };
-  const filtered = logs.filter(l => (!filter || l.dettaglio?.toLowerCase().includes(filter.toLowerCase()) || l.azione?.toLowerCase().includes(filter.toLowerCase())) && (!filterMod || l.modulo === filterMod) && (!filterUser || l.userId === filterUser));
+  const filtered = logs.filter(l => (!filter || l.dettaglio?.toLowerCase().includes(filter.toLowerCase()) || l.azione?.toLowerCase().includes(filter.toLowerCase())) && (!filterMod || l.modulo === filterMod) && (!filterUser || l.userId === filterUser) && (!filterMese || (l.ts || "").slice(0, 7) === filterMese) && (!filterTipo || tipoDiAzione(l.azione) === filterTipo));
   const moduli = [...new Set(logs.map(l => l.modulo))].filter(Boolean);
+  // Mesi disponibili (YYYY-MM dal timestamp), ordinati dal più recente
+  const mesi = [...new Set(logs.map(l => (l.ts || "").slice(0, 7)).filter(Boolean))].sort().reverse();
+  const meseLabel = ym => {
+    const d = new Date(ym + "-01T00:00:00");
+    if (isNaN(d)) return ym;
+    const s = d.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  };
+  // Converte eventuali date ISO (YYYY-MM-DD) dentro il testo in formato europeo (DD/MM/YYYY).
+  const isoToEu = s => (s || "").replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_, y, m, d) => d + "/" + m + "/" + y);
   const fmt2 = iso => {
     if (!iso) return "—";
     const d = new Date(iso);
@@ -18571,14 +18655,29 @@ function ActivityLog({
     });
   };
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
-    title: "\uD83D\uDCDC Log Attivit\xE0",
-    action: currentUser?.role === "superadmin" && /*#__PURE__*/React.createElement(Btn, {
-      ch: "\uD83D\uDDD1 Svuota log",
-      v: "dan",
-      sz: "sm",
-      onClick: clearLog
-    })
-  }), /*#__PURE__*/React.createElement("div", {
+    title: "\uD83D\uDCCA Report Attivit\xE0",
+    action: /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio400, fontWeight: 600 } }, "\uD83D\uDD12 Permanente")
+  }), (function() {
+    var tipi = [
+      { k: "", l: "Tutti", ic: "\uD83D\uDCCB" },
+      { k: "chiamate", l: "Chiamate", ic: "\uD83D\uDCDE" },
+      { k: "email", l: "Email", ic: "\u2709\uFE0F" },
+      { k: "ordini", l: "Ordini", ic: "\uD83D\uDCE6" },
+      { k: "altro", l: "Altro", ic: "\uD83D\uDCCC" }
+    ];
+    var cnt = {}; logs.forEach(function(l) { var t = tipoDiAzione(l.azione); cnt[t] = (cnt[t] || 0) + 1; });
+    return /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" } },
+      tipi.map(function(t) {
+        var attivo = filterTipo === t.k;
+        var n = t.k === "" ? logs.length : (cnt[t.k] || 0);
+        return /*#__PURE__*/React.createElement("button", { key: t.k || "all", onClick: function() { setFilterTipo(t.k); },
+          style: { display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 999,
+            border: "1.5px solid " + (attivo ? C.blu : C.grigio200), background: attivo ? C.blu : C.bianco,
+            color: attivo ? "#fff" : C.grigio600, cursor: "pointer", fontSize: 12, fontWeight: 700 } },
+          t.ic + " " + t.l, /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, opacity: .8 } }, "(" + n + ")"));
+      })
+    );
+  })(), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -18630,7 +18729,23 @@ function ActivityLog({
   }, "Tutti gli utenti"), USERS.map(u => /*#__PURE__*/React.createElement("option", {
     key: u.id,
     value: u.id
-  }, u.nome))), /*#__PURE__*/React.createElement("span", {
+  }, u.nome))), /*#__PURE__*/React.createElement("select", {
+    value: filterMese,
+    onChange: e => setFilterMese(e.target.value),
+    style: {
+      border: `1.5px solid ${C.grigio200}`,
+      borderRadius: 6,
+      padding: "6px 10px",
+      fontSize: 12,
+      background: C.bianco,
+      outline: "none"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Tutti i mesi"), mesi.map(m => /*#__PURE__*/React.createElement("option", {
+    key: m,
+    value: m
+  }, meseLabel(m)))), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 11,
       color: C.grigio400,
@@ -18672,7 +18787,7 @@ function ActivityLog({
         flexShrink: 0,
         textAlign: "center"
       }
-    }, ACTION_ICONS[l.azione] || "📌"), /*#__PURE__*/React.createElement("div", {
+    }, iconAzione(l.azione)), /*#__PURE__*/React.createElement("div", {
       style: {
         flex: 1,
         minWidth: 0
@@ -18717,7 +18832,7 @@ function ActivityLog({
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }
-    }, l.dettaglio)), /*#__PURE__*/React.createElement("div", {
+    }, isoToEu(l.dettaglio))), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 10,
         color: C.grigio400,
@@ -19349,7 +19464,7 @@ function SchedaClienteCommerciale({
         l: "📋 Anagrafica"
       }, {
         k: "call",
-        l: `📞 Call Log (${calls.length})`
+        l: `📞 Report Chiamate (${calls.length})`
       }, {
         k: "ordini",
         l: `📦 Ordini (${ordiniCl.length})`
@@ -19927,9 +20042,14 @@ function OggiAzioni({
     { v: "ordine", l: "Ordine", stato: "acquisito" }
   ];
   const logCallSaveBrief = () => {
-    if (!logCallIdBrief || !logCallFormBrief.esito) return;
+    if (!logCallIdBrief) return;
+    // Esito OPZIONALE: si salva con esito, nota o prossima call.
+    if (!logCallFormBrief.esito && !(logCallFormBrief.nota || "").trim() && !logCallFormBrief.prossimaCall) {
+      if (window.tnbToast) window.tnbToast("⚠ Inserisci almeno l'esito, una nota o la prossima data", "err");
+      return;
+    }
     const esito = ESITI_CALL_BRIEF.find(e => e.v === logCallFormBrief.esito);
-    const nota = (esito ? esito.l : "") + (logCallFormBrief.nota ? " — " + logCallFormBrief.nota : "");
+    const nota = (esito ? esito.l : "Chiamata") + (logCallFormBrief.nota ? " — " + logCallFormBrief.nota : "");
     const newCall = { data: todayStr(), nota: nota || "" };
     setDati(d => ({
       ...d,
@@ -19941,6 +20061,10 @@ function OggiAzioni({
         return updated;
       })
     }));
+    const _prB = (dati.prospect || []).find(p => p.id === logCallIdBrief);
+    if (logAction) logAction("Chiamata", "agenda",
+      (_prB ? pNomeBrief(_prB) : "") + " — " + nota
+      + (logCallFormBrief.prossimaCall ? " · prossima call " + fmtD(logCallFormBrief.prossimaCall) : ""));
     if (window.tnbToast) window.tnbToast("📞 Chiamata registrata");
     setLogCallIdBrief(null);
     setLogCallFormBrief({ esito: "", nota: "", prossimaCall: "" });
@@ -20254,7 +20378,7 @@ function OggiAzioni({
       ),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, whiteSpace: "nowrap" } }, fmtD(p.nextCall.data)),
       /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 4, flexShrink: 0 } },
-        /*#__PURE__*/React.createElement("button", { onClick: function() { setLogCallIdBrief(p.id); setLogCallFormBrief({ esito: "", nota: "", prossimaCall: "" }); }, title: "Log chiamata", style: { background: C.blu, color: "#fff", border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", fontSize: 12, fontWeight: 600 } }, "📞 Log"),
+        /*#__PURE__*/React.createElement("button", { onClick: function() { setLogCallIdBrief(p.id); setLogCallFormBrief({ esito: "", nota: "", prossimaCall: "" }); }, title: "Registra esito chiamata", style: { background: C.blu, color: "#fff", border: "none", borderRadius: 6, padding: "7px 12px", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" } }, "📞 Registra"),
         /*#__PURE__*/React.createElement("button", { onClick: function() { briefQuickMail(p); }, title: "Invia email", style: { background: C.oliva, color: "#fff", border: "none", borderRadius: 5, padding: "4px 8px", cursor: "pointer", fontSize: 12, fontWeight: 600 } }, "✉️ Email")
       )
     ); })
@@ -20262,7 +20386,7 @@ function OggiAzioni({
   /* UX3.1 — Log Call mini-modal for briefing */
   logCallIdBrief && /*#__PURE__*/React.createElement("div", { style: { position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", background: "rgba(0,0,0,.35)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }, onClick: function() { setLogCallIdBrief(null); } },
     /*#__PURE__*/React.createElement("div", { style: { background: C.bianco, borderRadius: 14, padding: 24, minWidth: 340, maxWidth: 420, boxShadow: "0 8px 32px rgba(0,0,0,.18)" }, onClick: function(e) { e.stopPropagation(); } },
-      /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, marginBottom: 16 } }, "📞 Log Chiamata — ", pNomeBrief(dati.prospect.find(function(p) { return p.id === logCallIdBrief; }) || {})),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, marginBottom: 16 } }, "📞 Registra Chiamata — ", pNomeBrief(dati.prospect.find(function(p) { return p.id === logCallIdBrief; }) || {})),
       /*#__PURE__*/React.createElement("div", { style: { marginBottom: 12 } },
         /*#__PURE__*/React.createElement("label", { style: { fontSize: 12, fontWeight: 600, color: C.grigio600 } }, "Esito"),
         /*#__PURE__*/React.createElement("select", { value: logCallFormBrief.esito, onChange: function(e) { setLogCallFormBrief(function(f) { return Object.assign({}, f, { esito: e.target.value }); }); }, style: { width: "100%", padding: "8px 10px", borderRadius: 6, border: "1.5px solid " + C.grigio200, fontSize: 13, marginTop: 4 } },
@@ -20280,7 +20404,7 @@ function OggiAzioni({
       ),
       /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } },
         /*#__PURE__*/React.createElement("button", { onClick: function() { setLogCallIdBrief(null); }, style: { padding: "8px 16px", borderRadius: 6, border: "1px solid " + C.grigio200, background: C.bianco, cursor: "pointer", fontSize: 13 } }, "Annulla"),
-        /*#__PURE__*/React.createElement("button", { onClick: logCallSaveBrief, style: { padding: "8px 16px", borderRadius: 6, border: "none", background: C.blu, color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, opacity: logCallFormBrief.esito ? 1 : 0.5 }, disabled: !logCallFormBrief.esito }, "Salva")
+        (function() { var _ok = !!(logCallFormBrief.esito || (logCallFormBrief.nota || "").trim() || logCallFormBrief.prossimaCall); return /*#__PURE__*/React.createElement("button", { onClick: logCallSaveBrief, style: { padding: "8px 16px", borderRadius: 6, border: "none", background: C.blu, color: "#fff", cursor: _ok ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 600, opacity: _ok ? 1 : 0.5 }, disabled: !_ok }, "Salva"); })()
       )
     )
   ),
@@ -21401,7 +21525,7 @@ const HELP_CONTENT = {
     ]
   },
   "log": {
-    titolo: "Log Attività",
+    titolo: "Report Attività",
     desc: "Storico completo di tutte le operazioni eseguite — chi, quando, cosa.",
     tips: [
       "Il log non è modificabile — garantisce tracciabilità completa",
@@ -24657,8 +24781,7 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
                     }
                     if (typeof D0 !== "undefined") {
                       setDati(() => JSON.parse(JSON.stringify(D0)));
-                      // Fix: cancella anche i log (chiave separata tnb-log)
-                      try { await window.storage.set("tnb-log", JSON.stringify([])); } catch(_){}
+                      // Policy: il report attività (tnb-log) NON viene azzerato dal reset — traccia permanente.
                     }
                     if (logAction) logAction("RESET COMPLETO a D0 (SuperAdmin)", "impostazioni", n + " ordini + " + c + " clienti azzerati, " + paths.length + " firme rimosse");
                     if (window.tnbToast) window.tnbToast("💣 Reset completo eseguito");
@@ -24755,8 +24878,7 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
                         // Se questo fallisce, vediamo il toast d'errore e abortiamo.
                         try {
                           await window.storage.set("tnb-pro-v2", JSON.stringify(nuovo));
-                          // Fix: cancella anche i log (chiave separata tnb-log)
-                          await window.storage.set("tnb-log", JSON.stringify([]));
+                          // Policy: il report attività (tnb-log) NON viene azzerato — traccia permanente.
                         } catch (eP) {
                           if (window.tnbToast) window.tnbToast("❌ Errore persist Supabase: " + (eP.message || eP), "err");
                           setDangerBusy(null);
@@ -24887,9 +25009,9 @@ const GUIDA_CONTENUTI = {
     corpo: "Reportistica configurabile per qualsiasi intervallo temporale.\n\nCOME FUNZIONA\nSeleziona un periodo (date 'dal' e 'al') e il sistema calcola automaticamente: KPI di attività (chiamate, risposte, clienti attivi, ordini, fatturato), performance per canale, dettaglio chiamate.\n\nCOME SI USA\n1. Imposta le date 'Dal' e 'Al'. Preset disponibili: questo mese, ultimi 30gg, 90gg, anno corrente.\n2. I KPI si aggiornano istantaneamente.\n3. La tabella 'Attività per canale' mostra le performance di ogni canale commerciale.\n4. La tabella 'Dettaglio chiamate' elenca ogni chiamata nel periodo con esito e note.\n\nSUGGERIMENTI\n• Usa il report settimanale (ultimi 7gg) per la riunione del lunedì mattina.\n• Confronta due periodi per capire i trend: es. questo mese vs mese scorso.\n• Il report anno corrente è ideale per le review trimestrali."
   },
   log: {
-    titolo: "Log Attività",
-    icona: "📜",
-    corpo: "Registro cronologico di tutte le azioni nel gestionale.\n\nCOME FUNZIONA\nOgni azione significativa viene registrata automaticamente: chi l'ha fatta, quando, in quale modulo, cosa ha fatto. Il log è salvato separatamente dai dati (chiave tnb-log su Supabase) e può contenere fino a 500 entry.\n\nCOME SI USA\n1. Filtra per testo: cerca un'azione o un dettaglio specifico.\n2. Filtra per modulo: vedi solo le azioni di un modulo specifico.\n3. Filtra per utente: chi ha fatto cosa.\n4. Lo 'Svuota log' (solo SuperAdmin) cancella tutto il registro.\n\nSUGGERIMENTI\n• Usa il log per verificare chi ha modificato un ordine o un cliente.\n• Il log viene automaticamente azzerato durante i reset dati (D0 e Go-Live).\n• Se il log è pieno (500 entry), le più vecchie vengono automaticamente rimosse."
+    titolo: "Report Attività",
+    icona: "📊",
+    corpo: "Registro cronologico di tutte le azioni nel gestionale.\n\nCOME FUNZIONA\nOgni azione significativa viene registrata automaticamente: chi l'ha fatta, quando, in quale modulo, cosa ha fatto. Il log è salvato separatamente dai dati (chiave tnb-log su Supabase) ed è PERMANENTE: ogni voce resta per sempre, senza limite di numero e senza possibilità di cancellazione.\n\nCOME SI USA\n1. Filtra per testo: cerca un'azione o un dettaglio specifico.\n2. Filtra per modulo: vedi solo le azioni di un modulo specifico.\n3. Filtra per utente: chi ha fatto cosa.\n4. Filtra per mese o per tipo (Chiamate/Email/Ordini) con le chip in alto.\n\nSUGGERIMENTI\n• Usa il log per verificare chi ha modificato un ordine o un cliente.\n• Il report NON viene mai cancellato: sopravvive anche ai reset dati (D0 e Go-Live).\n• Nessun tetto massimo: tutte le voci vengono conservate per sempre."
   },
   impostazioni: {
     titolo: "Impostazioni",
