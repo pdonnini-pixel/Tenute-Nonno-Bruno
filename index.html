@@ -18373,15 +18373,7 @@ function App() {
       letterSpacing: 1.2,
       marginTop: 2
     }
-  }, "GESTIONALE PRO"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "rgba(255,255,255,.4)",
-      marginTop: 6,
-      whiteSpace: "nowrap"
-    },
-    title: "Versione attualmente in uso"
-  }, "v. " + (window.__TNB_BUILD__ || "").replace(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}).*/, "$3/$2/$1 $4"))), /*#__PURE__*/React.createElement("button", {
+  }, "GESTIONALE PRO")), /*#__PURE__*/React.createElement("button", {
     onClick: () => setSideOpen(o => !o),
     style: {
       background: "rgba(255,255,255,.08)",
@@ -18465,23 +18457,22 @@ function App() {
       fontSize: 10,
       color: "rgba(255,255,255,.35)"
     }
-  }, "\uD83D\uDCBE Salvataggio\u2026"), sideOpen && /*#__PURE__*/React.createElement("button", {
-    onClick: async () => {
-      if (confirm("Reset ai dati di esempio?")) {
-        {
-          setDati(D0);
-          await window.storage.set("tnb-pro-v2", JSON.stringify(D0));
-        }
-      }
-    },
+  }, "\uD83D\uDCBE Salvataggio\u2026"), sideOpen && /*#__PURE__*/React.createElement("div", {
+    title: "Versione attualmente in uso",
     style: {
-      fontSize: 10,
-      color: "rgba(255,255,255,.25)",
-      background: "none",
-      border: "none",
-      cursor: "pointer"
+      fontSize: 12,
+      color: "#fff",
+      fontWeight: 700,
+      background: "rgba(255,255,255,.14)",
+      border: "1px solid rgba(255,255,255,.22)",
+      borderRadius: 8,
+      padding: "7px 11px",
+      whiteSpace: "nowrap",
+      letterSpacing: 0.2,
+      width: "100%",
+      textAlign: "center"
     }
-  }, "Reset dati"))), /*#__PURE__*/React.createElement("main", {
+  }, "\uD83D\uDFE2 In uso: v. " + (window.__TNB_BUILD__ || "").replace(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}).*/, "$3/$2/$1 $4")))), /*#__PURE__*/React.createElement("main", {
     style: {
       flex: 1,
       display: "flex",
