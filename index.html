@@ -1231,8 +1231,12 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260623-v62-ux
+</script><script>// TNB-BUILD-20260623-v63-ux
 // ═══════════════════════════════════════════════════════════════════════════
+// v48.2 (build v63) — Drill-down "campi modificati" esteso a CLIENTE e ORDINE.
+//   Helper globale tnbDiffCampi(old,new,label,skip) usato per prospect, cliente
+//   (form + anagrafica) e ordine (campi a livello ordine; le righe sono array, escluse).
+//
 // v48.1 (build v62) — Report Attività: righe CLICCABILI con drill-down. Il pannello
 //   mostra quando/chi/modulo + dettaglio completo; per "Modifica anagrafica" registra e
 //   mostra i CAMPI cambiati (prima → dopo). logAction accetta un 4° arg opzionale {changes}.
@@ -1471,6 +1475,21 @@ const fmt = n => {
 };
 const fmtN = n => n != null ? Number(Math.round(n)).toLocaleString("it-IT") : "—";
 const fmtD = d => d ? new Date(d).toLocaleDateString("it-IT") : "—";
+// Diff campi per il drill-down del Report Attività: confronta vecchio vs nuovo record e
+// restituisce [{campo, da, a}] per i campi scalari cambiati (salta strutture complesse).
+function tnbDiffCampi(oldObj, newObj, labelMap, skip) {
+  oldObj = oldObj || {}; newObj = newObj || {}; labelMap = labelMap || {}; skip = skip || [];
+  const _f = v => (v == null || v === "") ? "—" : String(v);
+  const out = [];
+  Object.keys({ ...oldObj, ...newObj }).forEach(k => {
+    if (skip.indexOf(k) >= 0) return;
+    const a = newObj[k], b = oldObj[k];
+    if ((a && typeof a === "object") || (b && typeof b === "object")) return;
+    if (String(a == null ? "" : a) !== String(b == null ? "" : b))
+      out.push({ campo: labelMap[k] || k, da: _f(b), a: _f(a) });
+  });
+  return out;
+}
 // tkt_1781178737726: il referente puo' essere stringa (prospect) o oggetto {nome,cognome,ruolo,...} (clienti).
 // Se un referente stringa veniva modificato dal form clienti, lo spread {...stringa} generava un oggetto
 // corrotto {"0":"G","1":"i",...} che mandava in crash la ricerca pipeline. Normalizza sempre a stringa.
@@ -6759,19 +6778,11 @@ function Pipeline({
       zona: "Zona", stato: "Stato", note: "Note", nome: "Nome", cognome: "Cognome", fonte: "Fonte",
       campioneInviato: "Campione inviato"
     };
-    const _fmtVal = v => (v == null || v === "") ? "—" : String(v);
     let _changed = isNew, _changes = [];
     if (!isNew) {
       const _oldP = dati.prospect.find(p => p.id === form.id) || {};
+      _changes = tnbDiffCampi(_oldP, form, _CAMPI_LABEL, ["id", "calls", "azioni", "nextCall", "campioneFormati", "dataConversione", "log"]);
       try { _changed = JSON.stringify(_oldP) !== JSON.stringify({ ..._oldP, ...form }); } catch (_) { _changed = true; }
-      const _skip = ["id", "calls", "azioni", "nextCall", "campioneFormati", "dataConversione", "log"];
-      Object.keys({ ..._oldP, ...form }).forEach(k => {
-        if (_skip.includes(k)) return;
-        const a = form[k], b = _oldP[k];
-        if ((a && typeof a === "object") || (b && typeof b === "object")) return; // salta strutture complesse
-        if (String(a == null ? "" : a) !== String(b == null ? "" : b))
-          _changes.push({ campo: _CAMPI_LABEL[k] || k, da: _fmtVal(b), a: _fmtVal(a) });
-      });
     }
     if (logAction && _changed) logAction(isNew ? "Nuovo prospect" : "Modifica anagrafica", "pipeline", label, _changes.length ? { changes: _changes } : undefined);
     return true;
@@ -8332,7 +8343,11 @@ function Clienti({
           id: uid()
         }]
       }));
-      if (logAction) logAction(isNew ? "Nuovo cliente" : "Modifica cliente", "clienti", `${formFinal.insegna || formFinal.ragioneSociale}`);
+      if (logAction) {
+        const _LBLC = { ragioneSociale: "Ragione sociale", insegna: "Insegna", piva: "P.IVA", cf: "Cod. fiscale", sdi: "SDI", pec: "PEC", email: "Email", telefono: "Telefono", cellulare: "Cellulare", indirizzoSL: "Sede", sede: "Sede", citta: "Città", cap: "CAP", provincia: "Provincia", canale: "Canale", zona: "Zona", condizioniPagamento: "Cond. pagamento", note: "Note", tipo: "Tipo", codiceCliente: "Codice cliente" };
+        const _chC = isNew ? [] : tnbDiffCampi(dati.clienti.find(c => c.id === form.id), formFinal, _LBLC, ["id"]);
+        logAction(isNew ? "Nuovo cliente" : "Modifica cliente", "clienti", `${formFinal.insegna || formFinal.ragioneSociale}`, _chC.length ? { changes: _chC } : undefined);
+      }
       setModal(null);
       window.tnbToast('✅ Cliente salvato' + (isNew && formFinal.codiceCliente ? ' (codice ' + formFinal.codiceCliente + ')' : ''));
     };
@@ -10614,7 +10629,11 @@ function Ordini({
       // Auto-scarico/annullo magazzino su cambio stato (firmato / annullato)
       return applicaTransizioneOrdineMagazzino(d1, ordine, vecchioStato);
     });
-    if (logAction) logAction(isNew ? "Nuovo ordine" : "Modifica ordine", "ordini", `${ordine.numero} — ${cl?.insegna || cl?.ragioneSociale} — ${ordine.modalita}`);
+    if (logAction) {
+      const _LBLO = { stato: "Stato", statoPagamento: "Stato pagamento", modalita: "Modalità", modalitaPagamento: "Mod. pagamento", spedizione: "Spedizione", condizioniPagamento: "Cond. pagamento", note: "Note", causaleBonifico: "Causale bonifico", layoutPDF: "Layout PDF", modalitaFattura: "Mod. fattura", scadenzaPagamento: "Scadenza pagamento", numero: "Numero", data: "Data", versioneListino: "Versione listino", campione: "Campione" };
+      const _chO = isNew ? [] : tnbDiffCampi(ordinePrev, ordine, _LBLO, ["id", "clienteId"]);
+      logAction(isNew ? "Nuovo ordine" : "Modifica ordine", "ordini", `${ordine.numero} — ${cl?.insegna || cl?.ragioneSociale} — ${ordine.modalita}`, _chO.length ? { changes: _chO } : undefined);
+    }
     setModal(null);
     if (isCamp && window.tnbToast) window.tnbToast("🎁 Ordine campione salvato");
     // UX5.2 — Prompt invio email conferma ordine (solo nuovi ordini, non campioni)
@@ -19394,7 +19413,11 @@ function SchedaClienteCommerciale({
         ...anaForm
       })
     }));
-    if (logAction) logAction("Modifica anagrafica", "clienti", anaForm.ragioneSociale);
+    if (logAction) {
+      const _LBLA = { ragioneSociale: "Ragione sociale", insegna: "Insegna", piva: "P.IVA", cf: "Cod. fiscale", sdi: "SDI", pec: "PEC", email: "Email", telefono: "Telefono", cellulare: "Cellulare", indirizzoSL: "Sede", sede: "Sede", citta: "Città", cap: "CAP", provincia: "Provincia", canale: "Canale", zona: "Zona", condizioniPagamento: "Cond. pagamento", note: "Note", tipo: "Tipo" };
+      const _chA = tnbDiffCampi(cliente, { ...cliente, ...anaForm }, _LBLA, ["id"]);
+      logAction("Modifica anagrafica", "clienti", anaForm.ragioneSociale || cliente.ragioneSociale || "", _chA.length ? { changes: _chA } : undefined);
+    }
     setEditAna(false);
   };
   const fu = cliente.followUp;
