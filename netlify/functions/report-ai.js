@@ -28,6 +28,14 @@ REGOLE:
 - Raggruppa per categoria/stato quando ha senso
 - Alla fine aggiungi sempre un RIEPILOGO ESECUTIVO di 3-5 righe per la proprietà
 
+FORMATTAZIONE (IMPORTANTE):
+- Scrivi in TESTO SEMPLICE. Il report viene mostrato senza rendering: NON usare sintassi Markdown.
+- VIETATO usare: ## (cancelletti per i titoli), ** (asterischi per il grassetto), --- (righe di separazione), tabelle con il carattere |
+- Per i titoli di sezione usa il TESTO MAIUSCOLO, eventualmente con un'emoji iniziale (es. "📋 ANAGRAFICA E STATO")
+- Per gli elenchi usa un trattino semplice "- " a inizio riga
+- Per evidenziare un dato scrivilo in chiaro (es. "Chiamate effettuate: 0"), senza asterischi
+- Separa le sezioni con una riga vuota, non con trattini
+
 DATI AZIENDALI:
 ${contesto || "Tenute Nonno Bruno — olio EVO e vino, Bagno a Ripoli (FI)"}`;
 
