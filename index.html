@@ -11671,7 +11671,7 @@ function Ordini({
         display: "grid",
         gridTemplateColumns: form.campione ? "2fr 1fr 80px 70px 40px 36px" : "2fr 1fr 80px 70px 90px 80px 70px 40px 36px",
         gap: 8,
-        padding: "0 4px 6px 4px",
+        padding: "0 0 6px 0",
         borderBottom: `1px solid ${C.grigio200}`,
         marginBottom: 8
       }
@@ -21641,6 +21641,7 @@ function ReportAIPage({ dati }) {
   var _s5 = useState(""); var search = _s5[0]; var setSearch = _s5[1];
   var _s6 = useState([]); var storicoReport = _s6[0]; var setStoricoReport = _s6[1];
   var _s7 = useState(""); var filtroTipo = _s7[0]; var setFiltroTipo = _s7[1];
+  var _s8 = useState(""); var filtroStato = _s8[0]; var setFiltroStato = _s8[1];
 
   var CE = React.createElement;
 
@@ -21686,11 +21687,14 @@ function ReportAIPage({ dati }) {
       if (s.nome.toLowerCase().indexOf(q) === -1 && (s.tipo || "").toLowerCase().indexOf(q) === -1) return false;
     }
     if (filtroTipo && s.tipo !== filtroTipo) return false;
+    if (filtroStato && s.stato !== filtroStato) return false;
     return true;
   });
 
   var tipi = [];
   soggetti.forEach(function(s) { if (s.tipo && tipi.indexOf(s.tipo) === -1) tipi.push(s.tipo); });
+  var stati = [];
+  soggetti.forEach(function(s) { if (s.stato && s.stato !== "\u2014" && stati.indexOf(s.stato) === -1) stati.push(s.stato); });
 
   var toggle = function(id) {
     setSelezionati(function(s) { return s.indexOf(id) !== -1 ? s.filter(function(x) { return x !== id; }) : s.concat([id]); });
@@ -21822,7 +21826,7 @@ function ReportAIPage({ dati }) {
       ["prospect", "clienti"].map(function(f) {
         var isSel = fonte === f;
         return CE("button", {
-          key: f, onClick: function() { setFonte(f); setSelezionati([]); },
+          key: f, onClick: function() { setFonte(f); setSelezionati([]); setFiltroStato(""); },
           style: {
             padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
             fontSize: 13, fontWeight: 700,
@@ -21850,6 +21854,13 @@ function ReportAIPage({ dati }) {
           },
             CE("option", { value: "" }, "Tutti i tipi"),
             tipi.map(function(t) { return CE("option", { key: t, value: t }, t); })
+          ),
+          fonte === "prospect" && CE("select", {
+            value: filtroStato, onChange: function(e) { setFiltroStato(e.target.value); },
+            style: { border: "1.5px solid " + C.grigio200, borderRadius: 6, padding: "6px 8px", fontSize: 11, outline: "none", color: C.grigio600 }
+          },
+            CE("option", { value: "" }, "Tutti gli stati"),
+            stati.map(function(st) { return CE("option", { key: st, value: st }, (typeof STATO_FUNNEL !== "undefined" && STATO_FUNNEL[st] && STATO_FUNNEL[st].l) || st); })
           )
         ),
         CE("div", { style: { marginBottom: 8 } },
