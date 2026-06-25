@@ -11,10 +11,17 @@ const CORS = {
 };
 
 export default async (req) => {
-  if (req.method === "OPTIONS") {
+  // Rileva il metodo HTTP in modo robusto. In alcuni adapter/runtime Netlify il
+  // metodo puo' non essere esposto come req.method (es. event.httpMethod), e un
+  // confronto diretto "req.method !== POST" generava un 405 spurio sul report AI.
+  const method = (req.method || req.httpMethod || "").toUpperCase();
+  if (method === "OPTIONS") {
     return new Response("", { status: 200, headers: CORS });
   }
-  if (req.method !== "POST") {
+  // Rifiuta solo se il metodo e' NOTO e diverso da POST. Se il metodo non e'
+  // determinabile, proseguiamo: una eventuale richiesta senza body valido verra'
+  // comunque gestita piu' sotto con un 400 chiaro, non con un 405 fuorviante.
+  if (method && method !== "POST") {
     return new Response("Method not allowed", { status: 405, headers: CORS });
   }
 
