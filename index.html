@@ -1611,6 +1611,19 @@ const STATI_MAG = {
 };
 const STATI_MAG_ORDINE = ["disponibile", "in_confezionamento", "riservato", "in_spedizione", "da_etichettare", "in_frantoio"];
 
+// ─── DDT OBBLIGATORIO PER MOVIMENTI DI ENTRATA/USCITA (regola proprietà) ──────
+// Nessun prodotto può entrare o uscire dal magazzino senza un numero DDT + documento
+// archiviato. Lista decisa dalla proprietà: solo movimenti che spostano merce dentro/fuori
+// l'azienda. I passaggi interni (frantoio/etichettatura/confezionamento/riserva), le rettifiche
+// e gli scarichi per perdita NON richiedono DDT.
+//   Entrate: carico, carico_produzione, resa_cv, annullo_ordine
+//   Uscite : affido_spedizioniere, scarico_ordine, consegnato
+const MOV_RICHIEDE_DDT = ["carico", "carico_produzione", "resa_cv", "annullo_ordine", "affido_spedizioniere", "scarico_ordine", "consegnato"];
+const movRichiedeDDT = (tipo) => MOV_RICHIEDE_DDT.indexOf(tipo) !== -1;
+// Direzione fisica del movimento rispetto al magazzino (per l'Archivio DDT).
+const MOV_ENTRATA = ["carico", "carico_produzione", "resa_cv", "annullo_ordine"];
+const movDirezioneDDT = (tipo) => MOV_ENTRATA.indexOf(tipo) !== -1 ? "entrata" : "uscita";
+
 // ─── PRODUZIONE — WORKFLOW LOTTI (v50) ────────────────────────────────────────
 const STATI_LOTTO = {
   pianificato:         { l: "Pianificato",         c: "#9e9e9e", emoji: "📋", desc: "Raccolta programmata, non ancora iniziata" },
@@ -12832,6 +12845,21 @@ function Magazzino({
   const [tab, setTab] = useState("giacenze");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  const [ddtUploading, setDdtUploading] = useState(false);
+  // Carica il documento DDT su Storage e lo aggancia al form del movimento.
+  const handleUploadDDT = async (file) => {
+    if (!file) return;
+    setDdtUploading(true);
+    try {
+      const doc = await window.tnbStorage.uploadDocumento("mov_" + (form.magId || "sku"), file, "ddt-magazzino");
+      setForm(f => ({ ...f, ddtDoc: doc }));
+      if (window.tnbToast) window.tnbToast("📎 Documento DDT caricato");
+    } catch (e) {
+      if (window.tnbToast) window.tnbToast("⚠ Errore upload DDT: " + (e && e.message ? e.message : e), "err");
+    } finally {
+      setDdtUploading(false);
+    }
+  };
   const [expandedId, setExpandedId] = useState(null);
   const [filterSottoSoglia, setFilterSottoSoglia] = useState(false);
   useEffect(() => { setTimeout(() => { if(window._tnbNav){ if(window._tnbNav.soloSottoSoglia){ setFilterSottoSoglia(true); } window._tnbNav=null; } }, 80); }, []);
@@ -12870,6 +12898,8 @@ function Magazzino({
   const [filtroA, setFiltroA] = useState("");
   const [filtroAuto, setFiltroAuto] = useState("tutti");     // tutti | auto | manuali
   const [filtroOrdine, setFiltroOrdine] = useState("");
+  const [ddtDir, setDdtDir] = useState("tutti");             // tutti | entrata | uscita
+  const [ddtSearch, setDdtSearch] = useState("");
   const [rettForm, setRettForm] = useState({});
   // Ricalcolo forzato giacenze: safety net per coerenza con il log movimenti.
   const ricalcolaTutteGiacenze = () => {
@@ -12969,6 +12999,11 @@ function Magazzino({
   const saveMov = () => {
     if (!form.magId || !form.tipo || !form.qta) return;
     if (!form.qta || Number(form.qta) <= 0) { window.alert('⚠ La quantità deve essere maggiore di 0'); return; }
+    // Regola proprietà: i movimenti di entrata/uscita richiedono numero DDT + documento archiviato.
+    if (movRichiedeDDT(form.tipo)) {
+      if (!String(form.ddtNum || "").trim()) { window.alert('⛔ Numero DDT obbligatorio per questo movimento (entrata/uscita merce).'); return; }
+      if (!form.ddtDoc || !form.ddtDoc.path) { window.alert('⛔ Documento DDT obbligatorio: carica il file del DDT prima di registrare il movimento.'); return; }
+    }
     const sku = dati.magazzino.find(m => m.id === form.magId);
     const dataMov = form.data || todayStr();
     const newMov = {
@@ -12978,6 +13013,8 @@ function Magazzino({
       data: dataMov,
       ordineId: form.ordineId || null,
       lottoId: form.lottoId || null,
+      ddtNum: movRichiedeDDT(form.tipo) ? String(form.ddtNum || "").trim() : (form.ddtNum || null),
+      ddtDoc: movRichiedeDDT(form.tipo) ? (form.ddtDoc || null) : (form.ddtDoc || null),
       auto: false,
       skuId: form.magId,
       timestamp: Date.now()
@@ -13201,6 +13238,9 @@ function Magazzino({
     }, {
       k: "movimenti",
       l: `Movimenti (${(dati.movimenti || []).length})`
+    }, {
+      k: "ddt",
+      l: `🚚 Archivio DDT (${(dati.movimenti || []).filter(mv => movRichiedeDDT(mv.tipo) && (mv.ddtNum || (mv.ddtDoc && mv.ddtDoc.path))).length})`
     }, {
       k: "rettifiche",
       l: "✏️ Rettifiche"
@@ -13672,6 +13712,119 @@ function Magazzino({
       })
     );
   })(),
+  tab === "ddt" && (() => {
+    // Archivio DDT: tutti i movimenti di entrata/uscita che richiedono DDT, con numero + documento.
+    // I movimenti gated privi di DDT sono evidenziati come "da regolarizzare".
+    const movDDT = (dati.movimenti || [])
+      .filter(mv => movRichiedeDDT(mv.tipo))
+      .map(mv => {
+        const sku = dati.magazzino.find(s => s.id === (mv.skuId || mv.magId));
+        const ord = mv.ordineId && (dati.ordini || []).find(o => o.id === mv.ordineId);
+        return { ...mv, dir: movDirezioneDDT(mv.tipo), skuObj: sku, ordObj: ord };
+      });
+    const conDDT = movDDT.filter(mv => mv.ddtNum || (mv.ddtDoc && mv.ddtDoc.path));
+    const senzaDDT = movDDT.filter(mv => !(mv.ddtNum || (mv.ddtDoc && mv.ddtDoc.path)));
+    const filtrati = movDDT
+      .filter(mv => ddtDir === "tutti" || mv.dir === ddtDir)
+      .filter(mv => {
+        if (!ddtSearch) return true;
+        const q = ddtSearch.toLowerCase();
+        return String(mv.ddtNum || "").toLowerCase().includes(q)
+          || (mv.skuObj && (`${mv.skuObj.prodotto} ${mv.skuObj.formato} ${mv.skuObj.annata}`).toLowerCase().includes(q))
+          || (mv.ordObj && String(mv.ordObj.numero || "").toLowerCase().includes(q));
+      })
+      .sort((a, b) => (b.timestamp || new Date(b.data || 0).getTime() || 0) - (a.timestamp || new Date(a.data || 0).getTime() || 0));
+    return /*#__PURE__*/React.createElement(React.Fragment, null,
+      /*#__PURE__*/React.createElement("div", {
+        style: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }
+      },
+        /*#__PURE__*/React.createElement("div", {
+          style: { flex: 1, minWidth: 160, background: "#e8f5e9", border: "1px solid #2e7d32", borderRadius: 8, padding: "10px 14px" }
+        }, /*#__PURE__*/React.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: "#2e7d32" } }, conDDT.length),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, fontWeight: 600 } }, "DDT archiviati")),
+        /*#__PURE__*/React.createElement("div", {
+          style: { flex: 1, minWidth: 160, background: senzaDDT.length ? "#ffebee" : "#f5f5f5", border: `1px solid ${senzaDDT.length ? "#c62828" : C.grigio200}`, borderRadius: 8, padding: "10px 14px" }
+        }, /*#__PURE__*/React.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: senzaDDT.length ? "#c62828" : C.grigio400 } }, senzaDDT.length),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, fontWeight: 600 } }, "Movimenti senza DDT (da regolarizzare)"))
+      ),
+      /*#__PURE__*/React.createElement("div", {
+        style: { display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 8, alignItems: "end", padding: "0 4px 10px 4px" }
+      },
+        /*#__PURE__*/React.createElement(Sel, {
+          label: "Direzione",
+          v: ddtDir,
+          on: v => setDdtDir(v),
+          opts: [{ v: "tutti", l: "Tutte" }, { v: "entrata", l: "📥 Entrate" }, { v: "uscita", l: "📤 Uscite" }]
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Cerca (numero DDT / SKU / ordine)",
+          v: ddtSearch,
+          on: v => setDdtSearch(v),
+          ph: "es. 42/2026"
+        }),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: () => { setDdtDir("tutti"); setDdtSearch(""); },
+          style: { padding: "8px 14px", borderRadius: 6, border: "1px solid #d4d2cc", background: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#5f5e5a" }
+        }, "✕ Reset")
+      ),
+      /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 11, color: C.grigio600, padding: "0 4px 8px 4px" }
+      }, `${filtrati.length} movimenti`),
+      /*#__PURE__*/React.createElement(Card, {
+        ch: /*#__PURE__*/React.createElement(Tbl, {
+          cols: ["Data", "Dir.", "N° DDT", "Movimento", "SKU", "Qtà", "Ordine", "Documento"],
+          data: filtrati,
+          renderRow: mov => {
+            const tipoInfo = TIPI_MOV.find(t => t.v === mov.tipo);
+            const hasDoc = mov.ddtDoc && mov.ddtDoc.path;
+            const hasNum = !!String(mov.ddtNum || "").trim();
+            const manca = !hasDoc && !hasNum;
+            return /*#__PURE__*/React.createElement(TR, {
+              key: mov.id,
+              ch: /*#__PURE__*/React.createElement(React.Fragment, null,
+                /*#__PURE__*/React.createElement(TD, { ch: fmtD(mov.data) }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: /*#__PURE__*/React.createElement("span", {
+                    style: { fontSize: 11, fontWeight: 700, color: mov.dir === "entrata" ? "#2e7d32" : "#1565c0" }
+                  }, mov.dir === "entrata" ? "📥 IN" : "📤 OUT")
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: hasNum
+                    ? /*#__PURE__*/React.createElement("strong", { style: { fontSize: 12, color: C.olivaScuro } }, mov.ddtNum)
+                    : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "#c62828", fontWeight: 700 } }, "⚠ mancante")
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, fontWeight: 600 } }, tipoInfo?.l || mov.tipo)
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: mov.skuObj
+                    ? /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, mov.skuObj.formato), " ", /*#__PURE__*/React.createElement("span", { style: { color: C.grigio400 } }, "R.", mov.skuObj.annata))
+                    : "—"
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: /*#__PURE__*/React.createElement("strong", { style: { color: C.olivaScuro } }, mov.qta, " pz")
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: mov.ordObj
+                    ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, background: "#e3f2fd", color: "#1565c0", borderRadius: 4, padding: "2px 6px", fontWeight: 600 } }, "📋 ", mov.ordObj.numero || mov.ordObj.id.slice(0, 6))
+                    : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio400 } }, "—")
+                }),
+                /*#__PURE__*/React.createElement(TD, {
+                  ch: hasDoc
+                    ? /*#__PURE__*/React.createElement("button", {
+                        onClick: () => window.tnbStorage.openDocumento(mov.ddtDoc),
+                        title: mov.ddtDoc.nomeOriginale || "Apri documento DDT",
+                        style: { background: "#e3f2fd", border: "1px solid #1565c0", borderRadius: 5, padding: "4px 10px", fontSize: 11, cursor: "pointer", color: "#1565c0", fontWeight: 600 }
+                      }, "🚚 Apri")
+                    : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: manca ? "#c62828" : C.grigio400, fontWeight: manca ? 700 : 400 } }, manca ? "⚠ assente" : "—")
+                })
+              )
+            });
+          }
+        })
+      })
+    );
+  })(),
   tab === "rettifiche" && /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 16 } },
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: C.grigio600 } },
@@ -13823,7 +13976,54 @@ function Magazzino({
         nota: v
       })),
       ph: "es. Ordine 1006/2026 \u2014 GLS consegna prevista 28/03"
-    }), /*#__PURE__*/React.createElement("div", {
+    }), movRichiedeDDT(form.tipo) && /*#__PURE__*/React.createElement("div", {
+      style: {
+        border: "1.5px solid #1565c0",
+        background: "#e3f2fd",
+        borderRadius: 8,
+        padding: "12px 14px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, fontWeight: 700, color: "#1565c0", letterSpacing: .3 }
+    }, "\ud83d\ude9a DDT obbligatorio \u2014 ", movDirezioneDDT(form.tipo) === "entrata" ? "merce in ENTRATA" : "merce in USCITA"),
+      /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 11, color: "#5f5e5a" }
+      }, "Nessun movimento di entrata/uscita pu\u00f2 essere registrato senza numero DDT e documento archiviato."),
+      /*#__PURE__*/React.createElement(Inp, {
+        label: "Numero DDT",
+        v: form.ddtNum || "",
+        on: v => setForm(f => ({ ...f, ddtNum: v })),
+        ph: "es. 42/2026",
+        req: true
+      }),
+      /*#__PURE__*/React.createElement("div", {
+        style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }
+      }, /*#__PURE__*/React.createElement("label", {
+        style: {
+          display: "inline-flex", alignItems: "center", gap: 6,
+          background: ddtUploading ? "#bdbdbd" : "#1565c0", color: "#fff",
+          borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 600,
+          cursor: ddtUploading ? "wait" : "pointer"
+        }
+      }, ddtUploading ? "\u23f3 Caricamento\u2026" : (form.ddtDoc && form.ddtDoc.path ? "\ud83d\udd04 Sostituisci documento" : "\ud83d\udcce Carica documento DDT"),
+        /*#__PURE__*/React.createElement("input", {
+          type: "file",
+          accept: "image/*,application/pdf",
+          disabled: ddtUploading,
+          style: { display: "none" },
+          onChange: e => { const fl = e.target.files && e.target.files[0]; if (fl) handleUploadDDT(fl); e.target.value = ""; }
+        })
+      ), form.ddtDoc && form.ddtDoc.path
+        ? /*#__PURE__*/React.createElement("span", {
+            style: { fontSize: 11, color: "#2e7d32", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }
+          }, "\u2705 ", form.ddtDoc.nomeOriginale || "documento allegato")
+        : /*#__PURE__*/React.createElement("span", {
+            style: { fontSize: 11, color: "#c62828", fontWeight: 600 }
+          }, "\u26a0 Nessun documento allegato"))
+    ), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         justifyContent: "flex-end",
