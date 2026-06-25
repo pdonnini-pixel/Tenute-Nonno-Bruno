@@ -10828,6 +10828,48 @@ function Ordini({
     }));
     if (window.tnbToast) window.tnbToast("Stato → " + (STATO_ORDINE[nuovoStato]?.l || nuovoStato));
   };
+  // FIX (auto) tkt_1782399543952: conferma consegna/fatturazione persistente.
+  // Il wizard di transizione chiamava solo updateStatoForm, che aggiorna SOLO lo
+  // stato locale del form. Se l'utente chiudeva il modale senza premere "Salva
+  // ordine" (o se saveOrdine veniva bloccato dalla validazione), la transizione e i
+  // documenti allegati (fatture/DDT) andavano persi: l'ordine non risultava
+  // "fatturato". Qui persistiamo direttamente in `dati` lo stato + i documenti,
+  // come già fa annullaOrdineDiretto.
+  const confermaTransizioneOrdine = (tipo) => {
+    const oid = form.id;
+    // Ordine non ancora salvato: aggiorna solo il form (sarà persistito al primo save)
+    if (!oid) { updateStatoForm(tipo, { trigger: "btn_" + tipo }); setTransizioneModal(null); return; }
+    if (!form.stato || form.stato === tipo) { setTransizioneModal(null); return; }
+    const now = new Date().toISOString();
+    // 1) Aggiorna il form locale (UI: timeline stato, badge, toast)
+    updateStatoForm(tipo, { trigger: "btn_" + tipo });
+    // 2) Persistenza diretta in `dati`: stato + documenti/note caricati nel wizard
+    setDati(d => {
+      const ord = (d.ordini || []).find(o => o.id === oid);
+      if (!ord) return d;
+      const vecchio = ord.stato;
+      const ordineAgg = {
+        ...ord,
+        stato: tipo,
+        statoLog: [...(ord.statoLog || []), {
+          stato: tipo,
+          data: now,
+          utente: (currentUser && currentUser.username) || "irene",
+          auto: false,
+          trigger: "btn_" + tipo,
+          prev: vecchio
+        }],
+        ddt: Array.isArray(form.ddt) ? form.ddt : (form.ddt ? [form.ddt] : (ord.ddt || [])),
+        fatture: Array.isArray(form.fatture) ? form.fatture : (ord.fatture || []),
+        ddtNote: form.ddtNote != null ? form.ddtNote : ord.ddtNote,
+        fattureNote: form.fattureNote != null ? form.fattureNote : ord.fattureNote
+      };
+      const d1 = { ...d, ordini: d.ordini.map(o => o.id === oid ? ordineAgg : o) };
+      return ord.pregresso ? d1 : applicaTransizioneOrdineMagazzino(d1, ordineAgg, vecchio);
+    });
+    if (logAction) logAction("Stato → " + (STATO_ORDINE[tipo]?.l || tipo), "ordini", form.numero || form.id);
+    setTransizioneModal(null);
+  };
   // FIX (auto) tkt_1780044655058: annullamento diretto e persistente.
   // Il pulsante "Annulla ordine" nel form usava updateStatoForm che modifica solo lo
   // stato locale del form: per ordini che falliscono la validazione di saveOrdine
@@ -12648,10 +12690,7 @@ function Ordini({
         }),
         /*#__PURE__*/React.createElement(Btn, {
           ch: "✓ Conferma " + labelOk,
-          onClick: () => {
-            updateStatoForm(transizioneModal.tipo, { trigger: "btn_" + transizioneModal.tipo });
-            setTransizioneModal(null);
-          },
+          onClick: () => confermaTransizioneOrdine(transizioneModal.tipo),
           style: { background: C.olivaScuro, color: "#fff" }
         })
       ),
