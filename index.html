@@ -8615,7 +8615,29 @@ function Clienti({
         borderRadius: 4,
         padding: "1px 6px"
       }
-    }, o.modalita === "conto_vendita" ? "C.V." : "Vendita")), /*#__PURE__*/React.createElement("div", {
+    }, o.modalita === "conto_vendita" ? "C.V." : "Vendita"),
+    /* tkt_1782400330482: Rif. Excel (numeroEsterno) modificabile inline dalla pagina cliente, in qualsiasi stato (anche ordini firmati) */
+    /*#__PURE__*/React.createElement("div", {
+      style: { marginTop: 4, display: "flex", alignItems: "center", gap: 6, fontSize: 11 }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: { color: C.grigio400 }
+    }, "Rif. Excel:"), /*#__PURE__*/React.createElement("input", {
+      type: "text",
+      defaultValue: o.numeroEsterno || "",
+      placeholder: "—",
+      title: "Riferimento esterno (numero del file Excel). Modificabile in qualsiasi stato dell'ordine.",
+      style: { fontSize: 11, padding: "2px 6px", border: `1px solid ${C.grigio200}`, borderRadius: 4, width: 130, color: "#7a6c2e", fontWeight: 700, background: "#fff" },
+      onClick: e => e.stopPropagation(),
+      onKeyDown: e => { if (e.key === "Enter") e.target.blur(); },
+      onBlur: e => {
+        const nuovo = e.target.value.trim();
+        const attuale = o.numeroEsterno || "";
+        if (nuovo === attuale) return;
+        setDati(d => ({ ...d, ordini: d.ordini.map(x => x.id === o.id ? { ...x, numeroEsterno: nuovo || undefined } : x) }));
+        if (logAction) logAction("Rif. Excel aggiornato", "ordini", (o.numero || o.id) + " → " + (nuovo || "(vuoto)"));
+        if (window.tnbToast) window.tnbToast("✏️ Rif. Excel aggiornato");
+      }
+    }))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 8,
