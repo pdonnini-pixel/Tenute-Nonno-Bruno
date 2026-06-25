@@ -6839,7 +6839,7 @@ function Pipeline({
   const ROWS_PER_PAGE = 50;
   const pNome = (p) => p.tipo === "Privato" ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato" : (p.insegna || p.ragioneSociale || "—");
   const pCitta = (p) => { var a = (p.indirizzo || ""); var parts = a.split(","); return parts.length > 1 ? parts[parts.length-1].trim() : a.trim(); };
-  const pUltimoContatto = (p) => { var cc = (p.calls || []); if (!cc.length) return ""; var last = cc[cc.length-1]; return typeof last === "string" ? last : (last.data || ""); };
+  const pUltimoContatto = (p) => { var cc = (p.calls || []); if (!cc.length) return ""; var ds = cc.map(function(c){ return typeof c === "string" ? c : (c && c.data) || ""; }).filter(Boolean); if (!ds.length) return ""; ds.sort(function(a,b){ return (b||"").localeCompare(a||""); }); return ds[0]; };
   const pProssimaAzione = (p) => (p.nextCall && p.nextCall.data) ? p.nextCall.data : "";
   const ESITI_CALL = [
     { v: "interessato", l: "Interessato", stato: "interessato" },
@@ -21655,7 +21655,7 @@ function ReportAIPage({ dati }) {
           telefono: p.telefono || "",
           email: p.email || "",
           calls: (p.calls || []).length,
-          ultimaCall: (p.calls || []).length > 0 ? p.calls[p.calls.length - 1].data : null,
+          ultimaCall: (p.calls || []).length > 0 ? (p.calls.map(function(c){ return typeof c === "string" ? c : (c && c.data) || ""; }).filter(Boolean).sort(function(a,b){ return (b||"").localeCompare(a||""); })[0] || null) : null,
           followUp: p.followUp || null,
           nextCall: p.nextCall || null,
           note: p.note || "",
