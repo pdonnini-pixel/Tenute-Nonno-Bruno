@@ -11115,12 +11115,12 @@ function Ordini({
           /*#__PURE__*/React.createElement("div", {
             style: { fontSize: 10, color: C.grigio400, marginBottom: 4 }
           }, fmtD(o.data)),
-          o.numeroEsterno && /*#__PURE__*/React.createElement("div", {
-            style: { fontSize: 10, color: "#7a6c2e", marginBottom: 4, fontWeight: 600 },
-            title: "Numero esterno (riferimento Excel)"
-          }, "rif. " + o.numeroEsterno),
           /*#__PURE__*/React.createElement(TimelineStato, { stato: o.stato, statoLog: o.statoLog, compact: true })
         )
+      }), /*#__PURE__*/React.createElement(TD, {
+        ch: o.numeroEsterno
+          ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "#7a6c2e", fontWeight: 700, whiteSpace: "nowrap" }, title: "Numero d'ordine dal file Excel" }, o.numeroEsterno)
+          : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: C.grigio300 }, title: "Nessun riferimento Excel — numero assegnato dal gestionale" }, "—")
       }), /*#__PURE__*/React.createElement(TD, {
         ch: /*#__PURE__*/React.createElement("span", {
           style: {
@@ -11351,7 +11351,7 @@ function Ordini({
         )
       })
     );
-  })(), tab !== "consegne" && (()=>{const totFn=tab==="da_liquidare"?(o)=>totOrdine(o)-(o.importoLiquidazione||0):tab==="da_pagare"?(o)=>totFinale(o):(o)=>totOrdine(o);const totale=lista.reduce((s,o)=>s+totFn(o),0);const labelMap={tutti:"Totale ordini:",vendita:"Totale fatturato vendite:",cv:"Totale ordini CV:",da_pagare:"Totale da riscuotere:",da_liquidare:"Totale da liquidare:"};const label=labelMap[tab]||"Totale filtro:";return /*#__PURE__*/React.createElement("div",{style:{background:"#f4f3ef",borderRadius:8,padding:"10px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,color:"#3a3a3a"}},/*#__PURE__*/React.createElement("div",null,/*#__PURE__*/React.createElement("span",{style:{fontWeight:700}},label," "),/*#__PURE__*/React.createElement("span",{style:{fontWeight:700,color:"#4a5c2f"}},fmt(totale))),/*#__PURE__*/React.createElement("div",{style:{color:"#7a7a7a"}},lista.length," ",tab==="cv"||tab==="da_liquidare"?"contratti":"ordini"));})(),tab !== "consegne" && viewMode==="gruppo"&&/*#__PURE__*/React.createElement("div",{style:{background:"#fff",borderRadius:10,border:"0.5px solid #e8e6e0",overflow:"hidden"}},/*#__PURE__*/React.createElement("table",{style:{width:"100%",borderCollapse:"collapse"}},/*#__PURE__*/React.createElement("thead",null,/*#__PURE__*/React.createElement("tr",{style:{background:"#f4f3ef"}},["Cliente","Ordini","Alert","Totale","N° Ordini"].map(h=>/*#__PURE__*/React.createElement("th",{key:h,style:{padding:"8px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:"#5f5e5a"}},h)))),/*#__PURE__*/React.createElement("tbody",null,gruppiClienti.map(renderGruppoCliente)))),tab !== "consegne" && viewMode==="lista"&&/*#__PURE__*/React.createElement(Card,{ch:/*#__PURE__*/React.createElement(Tbl,{cols:["N° Ordine","Cliente","Tipo","Prodotti","Totale","Pagamento","Date","Azioni"],data:lista,renderRow:renderOrdine})}), pdfInvioModal && /*#__PURE__*/React.createElement(Modal, {
+  })(), tab !== "consegne" && (()=>{const totFn=tab==="da_liquidare"?(o)=>totOrdine(o)-(o.importoLiquidazione||0):tab==="da_pagare"?(o)=>totFinale(o):(o)=>totOrdine(o);const totale=lista.reduce((s,o)=>s+totFn(o),0);const labelMap={tutti:"Totale ordini:",vendita:"Totale fatturato vendite:",cv:"Totale ordini CV:",da_pagare:"Totale da riscuotere:",da_liquidare:"Totale da liquidare:"};const label=labelMap[tab]||"Totale filtro:";return /*#__PURE__*/React.createElement("div",{style:{background:"#f4f3ef",borderRadius:8,padding:"10px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,color:"#3a3a3a"}},/*#__PURE__*/React.createElement("div",null,/*#__PURE__*/React.createElement("span",{style:{fontWeight:700}},label," "),/*#__PURE__*/React.createElement("span",{style:{fontWeight:700,color:"#4a5c2f"}},fmt(totale))),/*#__PURE__*/React.createElement("div",{style:{color:"#7a7a7a"}},lista.length," ",tab==="cv"||tab==="da_liquidare"?"contratti":"ordini"));})(),tab !== "consegne" && viewMode==="gruppo"&&/*#__PURE__*/React.createElement("div",{style:{background:"#fff",borderRadius:10,border:"0.5px solid #e8e6e0",overflow:"hidden"}},/*#__PURE__*/React.createElement("table",{style:{width:"100%",borderCollapse:"collapse"}},/*#__PURE__*/React.createElement("thead",null,/*#__PURE__*/React.createElement("tr",{style:{background:"#f4f3ef"}},["Cliente","Ordini","Alert","Totale","N° Ordini"].map(h=>/*#__PURE__*/React.createElement("th",{key:h,style:{padding:"8px 12px",textAlign:"left",fontSize:11,fontWeight:700,color:"#5f5e5a"}},h)))),/*#__PURE__*/React.createElement("tbody",null,gruppiClienti.map(renderGruppoCliente)))),tab !== "consegne" && viewMode==="lista"&&/*#__PURE__*/React.createElement(Card,{ch:/*#__PURE__*/React.createElement(Tbl,{cols:["N° Gestionale","Rif. Excel","Cliente","Tipo","Prodotti","Totale","Pagamento","Date","Azioni"],data:lista,renderRow:renderOrdine})}), pdfInvioModal && /*#__PURE__*/React.createElement(Modal, {
     title: pdfInvioModal.isCV ? "Ordine Conto Vendita — Anteprima & Invio" : "Conferma Ordine — Anteprima & Invio",
     onClose: () => { if (pdfInvioModal.blobUrl) { try { URL.revokeObjectURL(pdfInvioModal.blobUrl); } catch(_) {} } setPdfInvioModal(null); },
     wide: true,
@@ -11752,7 +11752,7 @@ function Ordini({
     })), (form.righe || []).length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "grid",
-        gridTemplateColumns: form.campione ? "2fr 1fr 80px 70px 40px 36px" : "2fr 1fr 80px 70px 90px 80px 70px 40px 36px",
+        gridTemplateColumns: form.campione ? "minmax(0,2fr) minmax(0,1fr) 80px 70px 40px 36px" : "minmax(0,2fr) minmax(0,1fr) 80px 70px 90px 80px 70px 40px 36px",
         gap: 8,
         padding: "0 0 6px 0",
         borderBottom: `1px solid ${C.grigio200}`,
@@ -11772,7 +11772,7 @@ function Ordini({
       key: i,
       style: {
         display: "grid",
-        gridTemplateColumns: form.campione ? "2fr 1fr 80px 70px 40px 36px" : "2fr 1fr 80px 70px 90px 80px 70px 40px 36px",
+        gridTemplateColumns: form.campione ? "minmax(0,2fr) minmax(0,1fr) 80px 70px 40px 36px" : "minmax(0,2fr) minmax(0,1fr) 80px 70px 90px 80px 70px 40px 36px",
         gap: 8,
         marginBottom: 8,
         alignItems: "end"
