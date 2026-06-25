@@ -21753,7 +21753,7 @@ function ReportAIPage({ dati }) {
     var azienda = dati.azienda || {};
     var contesto = (azienda.nome || "Tenute Nonno Bruno") + " — " + (azienda.settore || "olio EVO e vino") + ", " + (azienda.citta || "Bagno a Ripoli") + " (" + (azienda.provincia || "FI") + ")";
 
-    fetch("/.netlify/functions/report-ai", {
+    fetch("https://gestionaletnb.netlify.app/.netlify/functions/report-ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
