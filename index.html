@@ -13005,22 +13005,56 @@ function Magazzino({
     if (Number(form.soglia) < 0) { window.alert('⚠ La soglia non può essere negativa'); return; }
     if (Number(form.prezzoListino) < 0) { window.alert('⚠ Il prezzo non può essere negativo'); return; }
     const isNew = !form.id;
-    const sku = {
-      ...form,
-      id: form.id || uid(),
-      giacenza: form.giacenza || {
-        disponibile: 0,
-        in_frantoio: 0,
-        da_etichettare: 0,
-        in_confezionamento: 0,
-        riservato: 0,
-        in_spedizione: 0
-      }
+    const skuId = form.id || uid();
+    const giacenzaDesiderata = form.giacenza || {
+      disponibile: 0,
+      in_frantoio: 0,
+      da_etichettare: 0,
+      in_confezionamento: 0,
+      riservato: 0,
+      in_spedizione: 0
     };
-    setDati(d => ({
-      ...d,
-      magazzino: isNew ? [...d.magazzino, sku] : d.magazzino.map(m => m.id === sku.id ? sku : m)
-    }));
+    const sku = { ...form, id: skuId, giacenza: giacenzaDesiderata };
+    setDati(d => {
+      // tkt_magazzino-riserva: il magazzino è event-sourced — `ricalcolaGiacenza` ricostruisce
+      // la giacenza SOLO dai movimenti. La giacenza digitata a mano nel form non deriva da alcun
+      // movimento, quindi al primo movimento (es. una "riserva") il ricalcolo ripartirebbe da zero
+      // e azzererebbe la disponibilità invece di sottrarre la quantità. Per coerenza emettiamo/
+      // aggiorniamo un movimento "apertura" (timestamp=0) pari al delta tra la giacenza voluta e
+      // quella ricostruita dai soli movimenti reali, esattamente come fa la migrazione v49.
+      const movTutti = d.movimenti || [];
+      const movRealiSku = movTutti.filter(mv => (mv.skuId || mv.magId) === skuId && mv.tipo !== "apertura");
+      const calc = ricalcolaGiacenza(movRealiSku);
+      const delta = {};
+      let hasDelta = false;
+      STATI_MAG_ORDINE.forEach(k => {
+        const dlt = (Number(giacenzaDesiderata[k]) || 0) - (Number(calc[k]) || 0);
+        if (dlt !== 0) { delta[k] = dlt; hasDelta = true; }
+      });
+      // Rimuovi eventuali aperture precedenti dello SKU, poi reinseriscine una aggiornata se serve.
+      let movimenti = movTutti.filter(mv => !((mv.skuId || mv.magId) === skuId && mv.tipo === "apertura"));
+      if (hasDelta) {
+        movimenti = [{
+          id: uid(),
+          tipo: "apertura",
+          qta: 0,
+          stati: delta,
+          data: "1970-01-01",
+          nota: isNew ? "Apertura giacenza iniziale SKU" : "Riconciliazione giacenza manuale SKU",
+          ordineId: null,
+          lottoId: null,
+          auto: true,
+          skuId: skuId,
+          magId: skuId,
+          timestamp: 0
+        }, ...movimenti];
+      }
+      return {
+        ...d,
+        movimenti,
+        magazzino: isNew ? [...d.magazzino, sku] : d.magazzino.map(m => m.id === sku.id ? sku : m)
+      };
+    });
     if (logAction) logAction(isNew ? "Nuovo SKU" : "Modifica SKU", "magazzino", `${sku.prodotto} ${sku.formato} ${sku.annata}`);
     setModal(null);
   };
