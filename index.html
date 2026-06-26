@@ -10624,7 +10624,14 @@ function Ordini({
       modalita: isCamp ? "vendita" : form.modalita,
       modalitaPagamento: isCamp ? "" : form.modalitaPagamento,
       statoPagamento: isCamp ? "n_a" : form.statoPagamento,
-      stato: form.pregresso ? "consegnato" : (form.stato || "da_firmare"),
+      // FIX (auto) tkt_1782454786043 / tkt_1782454910130 / tkt_1782399543952:
+      // Per gli ordini PREGRESSI saveOrdine forzava SEMPRE stato="consegnato",
+      // sovrascrivendo la transizione a "fatturato" appena confermata dal wizard.
+      // Ora preserviamo "fatturato" (e "annullato"); per i nuovi pregressi o quelli
+      // ancora in fase pre-consegna resta il default storico "consegnato".
+      stato: form.pregresso
+        ? ((form.stato === "fatturato" || form.stato === "annullato") ? form.stato : "consegnato")
+        : (form.stato || "da_firmare"),
       statoLog: statoLogFinal,
       modalitaFattura: form.modalitaFattura || "unica",
       righe: (form.righe || []).map(r => {
