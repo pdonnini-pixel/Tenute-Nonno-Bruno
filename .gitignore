@@ -2,5 +2,6 @@
 deploy.sh
 tnb_deploy.sh
 backup_live_pre_*.html
+perf-test.html
 .claude/
 .env.local

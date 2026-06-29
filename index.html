@@ -6854,7 +6854,9 @@ function Pipeline({
     return true;
   };
   const saveProspect = () => {
-    if (_saveProspectData()) { setModal(null); window.alert('✅ Prospect salvato'); }
+    // PERF: niente più window.alert bloccante (congelava il thread fino al click OK
+    // ad ogni salvataggio); usa il toast non-bloccante standard dell'app.
+    if (_saveProspectData()) { setModal(null); if (window.tnbToast) window.tnbToast('✅ Prospect salvato'); }
   };
   const saveProspectSilent = () => { _saveProspectData(); };
   // UX3.2 — moveStato with auto-follow-up
@@ -6923,16 +6925,47 @@ function Pipeline({
     }
     var esito = ESITI_CALL.find(e => e.v === logCallForm.esito);
     var nota = (esito ? esito.l : "Chiamata") + (logCallForm.nota ? " — " + logCallForm.nota : "");
-    addCall(logCallId, nota, logCallForm.dataCall || "");
-    // add azione
     var azTipo = logCallForm.esito === "campione" ? "campionatura" : "richiamare";
-    addAzione(logCallId, azTipo, nota);
-    // update stato if mapped
-    if (esito && esito.stato) { moveStato(logCallId, esito.stato); }
-    // update nextCall if provided
-    if (logCallForm.prossimaCall) {
-      setDati(d => ({ ...d, prospect: d.prospect.map(p => p.id !== logCallId ? p : { ...p, nextCall: { data: logCallForm.prossimaCall, nota: logCallForm.nota || "" } }) }));
-    }
+    // PERF: coalescing — un tempo qui partivano fino a 4 setDati separati
+    // (addCall + addAzione + moveStato + nextCall) = 4 re-render + 4 upload dell'intero
+    // dataset. Ora un'unica setDati applica tutte le mutazioni al prospect target in un
+    // solo passaggio. La logica di moveStato è replicata fedelmente (autoFollow, azzeramento
+    // nextCall su non_interessato/acquisito) e l'override nextCall resta l'ultimo, come prima.
+    setDati(d => ({
+      ...d,
+      prospect: d.prospect.map(p => {
+        if (p.id !== logCallId) return p;
+        var updated = { ...p };
+        // 1) addCall (stesso default data di addCall: dataCall || oggi)
+        updated.calls = [...(updated.calls || []), { data: (logCallForm.dataCall || todayStr()), nota: nota || "" }];
+        // 2) addAzione
+        updated.azioni = [...(updated.azioni || []), { id: uid(), tipo: azTipo, aperta: todayStr(), chiusa: null, nota: nota || "" }];
+        // 3) moveStato (solo se l'esito mappa uno stato) — logica identica a moveStato()
+        if (esito && esito.stato) {
+          var oldStato = p.stato;
+          var newStato = esito.stato;
+          var autoFollowDays = 0;
+          if (oldStato === "da_contattare" && newStato === "interessato") autoFollowDays = 3;
+          else if (oldStato === "interessato" && newStato === "in_trattativa") autoFollowDays = 7;
+          updated.stato = newStato;
+          if (newStato === "non_interessato" || newStato === "acquisito") { updated.nextCall = null; }
+          if (autoFollowDays > 0) {
+            var hasFuture = updated.nextCall && updated.nextCall.data && updated.nextCall.data > todayStr();
+            if (!hasFuture) {
+              var dt = new Date(); dt.setDate(dt.getDate() + autoFollowDays);
+              var fuData = dt.toISOString().slice(0, 10);
+              updated.nextCall = { data: fuData, nota: "Follow-up automatico" };
+              setTimeout(function() { if (window.tnbToast) window.tnbToast("📅 Follow-up automatico creato per " + fmtD(fuData)); }, 100);
+            }
+          }
+        }
+        // 4) override nextCall esplicito (resta l'ultimo, come nell'ordine originale)
+        if (logCallForm.prossimaCall) {
+          updated.nextCall = { data: logCallForm.prossimaCall, nota: logCallForm.nota || "" };
+        }
+        return updated;
+      })
+    }));
     // Log globale con contenuto (esito + nota + date)
     var _prc = (dati.prospect || []).find(p => p.id === logCallId);
     if (logAction) logAction("Chiamata", "pipeline",
@@ -18575,9 +18608,26 @@ function App() {
   // ── ALL HOOKS MUST BE BEFORE ANY CONDITIONAL RETURN ──
   const setDatiSave = useCallback(upd => {
     setDati(prev => {
+      // PERF: cattura silenziosa del breakdown salvataggio (diagnostica sul deploy reale).
+      // Invisibile in uso normale; logga in console solo se un salvataggio è anomalo.
+      // Ispezionabile con window.__tnbSavePerf in console.
+      const __t0 = performance.now();
       const next = typeof upd === "function" ? upd(prev) : upd;
+      const __updMs = performance.now() - __t0;
       setSaving(true);
-      window.storage.set("tnb-pro-v2", JSON.stringify(next)).finally(() => setSaving(false));
+      const __ts = performance.now();
+      const __json = JSON.stringify(next);
+      const __strMs = performance.now() - __ts;
+      const __post0 = performance.now();
+      window.storage.set("tnb-pro-v2", __json).finally(() => {
+        setSaving(false);
+        try {
+          const rec = { updMs: Math.round(__updMs), strMs: Math.round(__strMs), postMs: Math.round(performance.now() - __post0), kb: Math.round(__json.length / 1024) };
+          (window.__tnbSavePerf = window.__tnbSavePerf || []).push(rec);
+          if (window.__tnbSavePerf.length > 30) window.__tnbSavePerf.shift();
+          if (rec.updMs + rec.strMs > 200 || rec.postMs > 3000) console.warn("[TNB perf] salvataggio lento", rec);
+        } catch (_) {}
+      });
       // v53-golive (GL2): tieni allineato lo stash window._tnbAzienda usato da
       // PDF/email generators che non hanno accesso al React state.
       try {
