@@ -1231,8 +1231,8 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260623-v64-ux
-window.__TNB_BUILD__ = "2026-06-23 15:59"; // data/ora di pubblicazione di questa versione (aggiornare ad ogni deploy)
+</script><script>// TNB-BUILD-20260629-v69-sidebar-icone-divisori
+window.__TNB_BUILD__ = "2026-06-29 12:24"; // data/ora di pubblicazione di questa versione (aggiornare ad ogni deploy)
 // ═══════════════════════════════════════════════════════════════════════════
 // v48.3 (build v64) — Report drill-down: niente più dettaglio ripetuto. Cliccando
 //   la riga il dettaglio si espande in-place (non troncato); il pannello mostra solo
@@ -4818,6 +4818,29 @@ const CANALE_COLOR = { horeca: "#7b1fa2", retail: "#2e7d32", distribuzione: "#02
 
 // ─── ICONE SVG ────────────────────────────────────────────────────────────────
 const I = {
+  gear: () => /*#__PURE__*/React.createElement("svg", {
+    width: "16", height: "16", fill: "none", stroke: "currentColor", strokeWidth: "1.8", viewBox: "0 0 24 24"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "12", cy: "12", r: "3"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+  })),
+  book: () => /*#__PURE__*/React.createElement("svg", {
+    width: "16", height: "16", fill: "none", stroke: "currentColor", strokeWidth: "1.8", viewBox: "0 0 24 24"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"
+  })),
+  registro: () => /*#__PURE__*/React.createElement("svg", {
+    width: "16", height: "16", fill: "none", stroke: "currentColor", strokeWidth: "1.8", viewBox: "0 0 24 24"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M14 2v6h6"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M16 13H8M16 17H8M10 9H8"
+  })),
   dash: () => /*#__PURE__*/React.createElement("svg", {
     width: "16",
     height: "16",
@@ -6796,6 +6819,12 @@ function Pipeline({
         setTimeout(function() { if (window.tnbToast) window.tnbToast("📦 Campionatura registrata"); }, 100);
       }
 
+      // FIX azioni: stati senza follow-up attivo (non interessato / acquisito) NON devono
+      // trascinarsi una prossima azione scaduta che resterebbe visibile e fuorviante in pipeline.
+      if (formToSave.stato === "non_interessato" || formToSave.stato === "acquisito") {
+        formToSave.nextCall = null;
+      }
+
       return {
         ...d,
         prospect: formToSave.id ? d.prospect.map(function(p) { return p.id === formToSave.id ? formToSave : p; }) : [...d.prospect, {
@@ -6843,6 +6872,10 @@ function Pipeline({
       prospect: d.prospect.map(p => {
         if (p.id !== id) return p;
         var updated = { ...p, stato: stato };
+        // FIX azioni: i pulsanti rapidi di stato verso "non interessato"/"acquisito" devono
+        // azzerare la prossima azione (anche se scaduta), come fanno conversione e salvataggio
+        // scheda — così non resta un'azione fuorviante in pipeline.
+        if (stato === "non_interessato" || stato === "acquisito") { updated.nextCall = null; }
         // UX3.2: auto-set nextCall only if no future nextCall exists
         if (autoFollowDays > 0) {
           var hasFuture = p.nextCall && p.nextCall.data && p.nextCall.data > todayStr();
@@ -6984,7 +7017,7 @@ function Pipeline({
           _fromProspectId: p.id,
           _conversionDate: todayStr()
         }],
-        prospect: (d.prospect || []).map(x => x.id === p.id ? { ...x, stato: "acquisito", dataConversione: todayStr() } : x)
+        prospect: (d.prospect || []).map(x => x.id === p.id ? { ...x, stato: "acquisito", dataConversione: todayStr(), nextCall: null } : x)
       }));
       if (logAction) logAction("Prospect → Cliente", "pipeline", p.ragioneSociale + (dup ? " (FORZATO con doppione)" : ""));
       if (window.tnbToast) window.tnbToast("✅ " + p.ragioneSociale + " convertito in cliente");
@@ -7499,6 +7532,27 @@ function Pipeline({
       sz: "sm",
       onClick: () => { delProspect(detail.id); setDetailId(null); }
     })),
+    // FIX azioni: "Rimuovi prossima azione" — disponibile in QUALSIASI stato quando esiste
+    // una prossima azione programmata. Azzera nextCall senza obbligare a crearne una nuova.
+    (detail.nextCall && detail.nextCall.data) && /*#__PURE__*/React.createElement("div", { style: { borderTop: `1px solid ${C.grigio200}`, paddingTop: 10, marginTop: 4 } },
+      /*#__PURE__*/React.createElement(Btn, {
+        ch: "✕ Rimuovi prossima azione",
+        v: "sec",
+        sz: "sm",
+        onClick: () => {
+          const _doRemove = () => {
+            setDati(d => ({ ...d, prospect: d.prospect.map(p => p.id === detail.id ? { ...p, nextCall: null } : p) }));
+            if (logAction) logAction("Prossima azione rimossa", "pipeline", detail.ragioneSociale + (detail.nextCall && detail.nextCall.data ? " (era " + fmtD(detail.nextCall.data) + ")" : ""));
+            if (window.tnbToast) window.tnbToast("✕ Prossima azione rimossa");
+          };
+          if (window.tnbConfirm) window.tnbConfirm("Rimuovere la prossima azione programmata (" + fmtD(detail.nextCall.data) + ") per '" + detail.ragioneSociale + "'? Non verrà creata una nuova azione.", _doRemove, { title: "Rimuovi prossima azione", okLabel: "Rimuovi", danger: false });
+          else _doRemove();
+        }
+      }),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 6, marginLeft: 2 } },
+        "Azzera l'azione programmata (attualmente " + fmtD(detail.nextCall.data) + ") senza doverne pianificare un'altra."
+      )
+    ),
     // v53-golive (GL4): "Converti in Cliente" disponibile da QUALSIASI stato attivo
     // (escluso "non_interessato"). Etichetta cambia se il prospect è già acquisito.
     detail.stato !== "non_interessato" && /*#__PURE__*/React.createElement("div", { style: { borderTop: `1px solid ${C.grigio200}`, paddingTop: 10, marginTop: 4 } },
@@ -18624,6 +18678,7 @@ function App() {
     }
   }, "\uD83E\uDED2"), "Caricamento gestionale\u2026");
   const ALL_NAV = [{
+    // ── Operatività quotidiana ──
     k: "oggi",
     l: "📅 Agenda & Azioni",
     icon: /*#__PURE__*/React.createElement(I.dash, null)
@@ -18644,6 +18699,7 @@ function App() {
     l: "Ordini & CV",
     icon: /*#__PURE__*/React.createElement(I.ord, null)
   }, {
+    // ── Operations / filiera ──
     k: "magazzino",
     l: "Magazzino",
     icon: /*#__PURE__*/React.createElement(I.mag, null)
@@ -18656,18 +18712,15 @@ function App() {
     l: "Fornitori",
     icon: /*#__PURE__*/React.createElement(I.forn, null)
   }, {
+    k: "contratti",
+    l: "📝 Accordi Fornitori",
+    icon: /*#__PURE__*/React.createElement(I.ord, null)
+  }, {
     k: "costi",
     l: "Costi & Margini",
     icon: /*#__PURE__*/React.createElement(I.costi, null)
   }, {
-    k: "report",
-    l: "Report Periodo",
-    icon: /*#__PURE__*/React.createElement(I.ord, null)
-  }, {
-    k: "utenti",
-    l: "Utenti",
-    icon: /*#__PURE__*/React.createElement(I.crm, null)
-  }, {
+    // ── Strumenti commerciali ──
     k: "listino",
     l: "📋 Listino",
     icon: /*#__PURE__*/React.createElement(I.ord, null)
@@ -18684,30 +18737,44 @@ function App() {
     l: "📧 Mailing",
     icon: /*#__PURE__*/React.createElement(I.ord, null)
   }, {
-    k: "contratti",
-    l: "📝 Accordi Fornitori",
-    icon: /*#__PURE__*/React.createElement(I.ord, null)
-  }, {
-    k: "log",
-    l: "📊 Report Attività",
-    icon: /*#__PURE__*/React.createElement(I.alert, null)
-  }, {
-    k: "impostazioni",
-    l: "⚙ Impostazioni",
-    icon: /*#__PURE__*/React.createElement(I.alert, null)
-  }, {
-    k: "guida",
-    l: "📖 Guida",
-    icon: /*#__PURE__*/React.createElement(I.alert, null)
-  }, {
-    k: "ticket",
-    l: "🐛 Ticket",
+    // ── Analisi & Report ──
+    k: "report",
+    l: "📊 Report Periodo",
     icon: /*#__PURE__*/React.createElement(I.ord, null)
   }, {
     k: "report_ai",
     l: "🤖 Report AI",
     icon: /*#__PURE__*/React.createElement(I.ord, null)
+  }, {
+    // ── Amministrazione & sistema ──
+    k: "utenti",
+    l: "Utenti",
+    icon: /*#__PURE__*/React.createElement(I.crm, null)
+  }, {
+    k: "impostazioni",
+    l: "⚙ Impostazioni",
+    icon: /*#__PURE__*/React.createElement(I.gear, null)
+  }, {
+    k: "log",
+    l: "📜 Registro Attività",
+    icon: /*#__PURE__*/React.createElement(I.registro, null)
+  }, {
+    k: "guida",
+    l: "📖 Guida",
+    icon: /*#__PURE__*/React.createElement(I.book, null)
+  }, {
+    k: "ticket",
+    l: "🐛 Ticket",
+    icon: /*#__PURE__*/React.createElement(I.ord, null)
   }];
+  // Gruppi logici della sidebar: una linea divisoria separa un gruppo dal successivo.
+  const NAV_GROUP = {
+    oggi: 0, dashboard: 0, pipeline: 0, clienti: 0, ordini: 0,
+    magazzino: 1, produzione: 1, fornitori: 1, contratti: 1, costi: 1,
+    listino: 2, alerts: 2, marketing: 2, mailing: 2,
+    report: 3, report_ai: 3,
+    utenti: 4, impostazioni: 4, log: 4, guida: 4, ticket: 4
+  };
   const access = ROLE_ACCESS[currentUser.role] || [];
   const NAV = ALL_NAV.filter(n => access.includes(n.k));
   const alerts = [dati.magazzino.filter(m => giacenzaDisp(m) <= m.soglia).length, dati.ordini.filter(o => o.stato !== "annullato" && o.statoPagamento === "da_pagare" && o.modalita === "vendita").length, dati.ordini.filter(o => o.stato !== "annullato" && o.scadenzaCV && o.scadenzaCV < todayStr() && o.statoPagamento !== "pagato").length].reduce((s, n) => s + n, 0);
@@ -18789,8 +18856,15 @@ function App() {
       padding: "10px 0",
       overflowY: "auto"
     }
-  }, NAV.map(n => /*#__PURE__*/React.createElement("button", {
-    key: n.k,
+  }, NAV.map((n, _i) => /*#__PURE__*/React.createElement(React.Fragment, {
+    key: n.k
+  }, _i > 0 && NAV[_i - 1] && NAV_GROUP[NAV[_i - 1].k] !== NAV_GROUP[n.k] && /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 1,
+      background: "rgba(255,255,255,.12)",
+      margin: sideOpen ? "8px 18px" : "8px 10px"
+    }
+  }), /*#__PURE__*/React.createElement("button", {
     onClick: () => setModuloNav(n.k),
     title: !sideOpen ? n.l : undefined,
     style: {
@@ -18841,7 +18915,7 @@ function App() {
         fontSize: 10, fontWeight: 800
       }
     }, conRisposta.length);
-  })()))), /*#__PURE__*/React.createElement("div", {
+  })())))), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: sideOpen ? "12px 18px" : "12px 0",
       borderTop: `1px solid rgba(255,255,255,.1)`,
@@ -19024,7 +19098,7 @@ function App() {
     currentUser: currentUser,
     logAction: logAction,
     setModulo: setModulo
-  }), modulo === "report" && /*#__PURE__*/React.createElement(ReportPeriodo, {
+  }), modulo === "report" && /*#__PURE__*/React.createElement(ReportSezione, {
     dati: dati
   }), modulo === "log" && /*#__PURE__*/React.createElement(ActivityLog, {
     currentUser: currentUser
@@ -21297,6 +21371,161 @@ function ClientiCommerciale({
       rows: 2
     })))
   }));
+}
+
+// ─── REPORT ULTIMO DDT / FATTURA PER CLIENTE ─────────────────────────────────
+function ReportUltimiDocCliente({
+  dati
+}) {
+  const [dal, setDal] = useState("2000-01-01");
+  const [al, setAl] = useState(todayStr());
+  const [q, setQ] = useState("");
+  const passes = e => {
+    const d = e && e.data;
+    if (!d) return true; // documenti senza data: sempre inclusi (non filtrabili per data)
+    return d >= dal && d <= al;
+  };
+  const nomeCli = c => (c && (c.insegna || c.ragioneSociale)) || "—";
+  const numVal = n => {
+    const m = String(n == null ? "" : n).match(/\d+/);
+    return m ? parseInt(m[0], 10) : -1;
+  };
+  // "ultimo" = più recente per data; a parità di data (o senza data) vince il numero più alto
+  const pickUltimo = arr => {
+    let best = null;
+    arr.forEach(e => {
+      if (!best) { best = e; return; }
+      const da = e.data || "";
+      const db = best.data || "";
+      if (da > db || (da === db && numVal(e.numero) > numVal(best.numero))) best = e;
+    });
+    return best;
+  };
+  const rows = (dati.clienti || []).map(c => {
+    const ordCli = (dati.ordini || []).filter(o => o.clienteId === c.id);
+    const ddtArr = [];
+    const fatArr = [];
+    ordCli.forEach(o => {
+      (o.ddt || []).forEach(d => {
+        if (String(d.numero || "").trim() && passes(d)) ddtArr.push({ numero: d.numero, data: d.data || "", ordine: o.numero });
+      });
+      (o.fatture || []).forEach(f => {
+        if (String(f.numero || "").trim() && passes(f)) fatArr.push({ numero: f.numero, data: f.data || "", ordine: o.numero });
+      });
+    });
+    return {
+      id: c.id,
+      cliente: nomeCli(c),
+      ddt: pickUltimo(ddtArr),
+      ddtCount: ddtArr.length,
+      fat: pickUltimo(fatArr),
+      fatCount: fatArr.length
+    };
+  }).filter(r => r.ddt || r.fat);
+  const filtered = rows
+    .filter(r => r.cliente.toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a, b) => a.cliente.localeCompare(b.cliente, "it"));
+  const exportXlsx = () => {
+    const aoa = [["Cliente", "Ultimo DDT n.", "Data DDT", "DDT nel periodo", "Ultima Fattura n.", "Data Fattura", "Fatture nel periodo"]];
+    filtered.forEach(r => aoa.push([
+      r.cliente,
+      (r.ddt && r.ddt.numero) || "",
+      (r.ddt && r.ddt.data) || "",
+      r.ddtCount,
+      (r.fat && r.fat.numero) || "",
+      (r.fat && r.fat.data) || "",
+      r.fatCount
+    ]));
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "UltimiDoc");
+    XLSX.writeFile(wb, "TNB_UltimoDDT_Fattura_per_cliente_" + dal + "_" + al + ".xlsx");
+  };
+  const cellDoc = (doc, count) => /*#__PURE__*/React.createElement("div", null,
+    /*#__PURE__*/React.createElement("div", {
+      style: { fontWeight: 700, fontSize: 13, color: doc ? C.grigio800 : C.grigio400 }
+    }, doc && doc.numero ? doc.numero : "—"),
+    /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 11, color: C.grigio500 }
+    }, doc && doc.data ? doc.data : (doc ? "(senza data)" : "")),
+    count > 1 ? /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 10.5, color: C.grigio400 }
+    }, count + " nel periodo") : null
+  );
+  return /*#__PURE__*/React.createElement("div", null,
+    /*#__PURE__*/React.createElement(SH, {
+      title: "📄 Ultimo DDT e Fattura per cliente"
+    }),
+    /*#__PURE__*/React.createElement(Card, {
+      style: { marginBottom: 16, padding: 16 },
+      ch: /*#__PURE__*/React.createElement("div", {
+        style: { display: "flex", gap: 16, alignItems: "flex-end", flexWrap: "wrap" }
+      },
+        /*#__PURE__*/React.createElement(Inp, { label: "Dal", type: "date", v: dal, on: setDal }),
+        /*#__PURE__*/React.createElement(Inp, { label: "Al", type: "date", v: al, on: setAl }),
+        /*#__PURE__*/React.createElement("div", {
+          style: { display: "flex", gap: 6, flexWrap: "wrap" }
+        }, [{
+          l: "Tutto",
+          f: () => { setDal("2000-01-01"); setAl(todayStr()); }
+        }, {
+          l: "Anno corrente",
+          f: () => { const n = new Date(); setDal(n.getFullYear() + "-01-01"); setAl(todayStr()); }
+        }, {
+          l: "Ultimi 90gg",
+          f: () => { const n = new Date(); n.setDate(n.getDate() - 90); setDal(n.toISOString().slice(0, 10)); setAl(todayStr()); }
+        }].map((b, i) => /*#__PURE__*/React.createElement(Btn, {
+          key: i, v: "sec", sz: "sm", onClick: b.f, ch: b.l
+        }))),
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 180 } },
+          /*#__PURE__*/React.createElement(Inp, { label: "Cerca cliente", v: q, on: setQ, ph: "nome cliente…", full: true })
+        ),
+        /*#__PURE__*/React.createElement(Btn, { v: "pri", sz: "sm", onClick: exportXlsx, ch: "⬇️ Esporta Excel", dis: !filtered.length })
+      )
+    }),
+    /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, color: C.grigio500, marginBottom: 10 }
+    }, filtered.length + " clienti con almeno un DDT o una fattura nel periodo selezionato"),
+    /*#__PURE__*/React.createElement(Card, {
+      ch: /*#__PURE__*/React.createElement(Tbl, {
+        cols: ["Cliente", "Ultimo DDT", "Ultima Fattura"],
+        data: filtered,
+        empty: "Nessun documento nel periodo selezionato",
+        renderRow: r => /*#__PURE__*/React.createElement(TR, {
+          key: r.id,
+          ch: [
+            /*#__PURE__*/React.createElement(TD, { key: "c", ch: /*#__PURE__*/React.createElement("span", { style: { fontWeight: 600 } }, r.cliente) }),
+            /*#__PURE__*/React.createElement(TD, { key: "d", ch: cellDoc(r.ddt, r.ddtCount) }),
+            /*#__PURE__*/React.createElement(TD, { key: "f", ch: cellDoc(r.fat, r.fatCount) })
+          ]
+        })
+      })
+    })
+  );
+}
+
+// ─── REPORT (contenitore con sotto-viste) ────────────────────────────────────
+function ReportSezione({
+  dati
+}) {
+  const [sub, setSub] = useState("periodo");
+  const tabBtn = (k, label) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    onClick: () => setSub(k),
+    style: {
+      padding: "8px 16px", borderRadius: 8, border: "none", cursor: "pointer",
+      fontWeight: 700, fontSize: 13,
+      background: sub === k ? C.oliva : C.grigio100,
+      color: sub === k ? "#fff" : C.grigio700
+    }
+  }, label);
+  return /*#__PURE__*/React.createElement("div", null,
+    /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }
+    }, tabBtn("periodo", "📊 Riepilogo periodo"), tabBtn("documenti", "📄 Ultimo DDT / Fattura per cliente")),
+    sub === "periodo" && /*#__PURE__*/React.createElement(ReportPeriodo, { dati: dati }),
+    sub === "documenti" && /*#__PURE__*/React.createElement(ReportUltimiDocCliente, { dati: dati })
+  );
 }
 
 // ─── REPORT PERIODO ───────────────────────────────────────────────────────────
@@ -25196,7 +25425,7 @@ const GUIDA_CONTENUTI = {
   ruoli: {
     titolo: "Ruoli e permessi",
     icona: "👥",
-    corpo: "Il gestionale ha 4 ruoli.\n\nSUPERADMIN\nAccesso completo. È l'unico che vede il modulo Impostazioni con la zona pericolosa (reset dati, cancellazione ordini, reset go-live). Il Report Attività resta comunque permanente e non cancellabile da nessuno.\n\nADMIN\nStesso accesso del SuperAdmin tranne il modulo Impostazioni. Può creare, modificare ed eliminare dati normalmente.\n\nCOMMERCIALE\nFocalizzato sulla vendita: Agenda, Dashboard, Pipeline, Clienti, Ordini, Report Periodo, Listino, Alert, Marketing, Mailing, Report AI, Ticket, Guida. Non vede Magazzino, Produzione, Fornitori, Costi, Report Attività, Utenti e Impostazioni.\n\nTESTER\nProfilo per i collaudi: ampio accesso operativo (Agenda, Dashboard, Pipeline, Clienti, Ordini, Magazzino, Produzione, Fornitori, Costi, Report Periodo, Listino, Alert, Report Attività, Marketing, Mailing, Ticket, Report AI). Non vede Utenti, Impostazioni né la Guida.\n\nCOME VERIFICARE IL TUO RUOLO\nIl tuo nome e ruolo sono visibili in alto a destra. Se ti mancano dei moduli, chiedi al SuperAdmin di adeguare il tuo ruolo (gli accessi sono definiti nel codice sorgente).\n\nSUGGERIMENTI\n• Il commerciale ha tutto ciò che serve per vendere — non ha bisogno dei moduli gestionali.\n• L'admin è il profilo ideale per il responsabile operativo.\n• Limita il SuperAdmin a 1-2 persone: è l'unico che accede alla zona pericolosa."
+    corpo: "Il gestionale ha 4 ruoli.\n\nSUPERADMIN\nAccesso completo. È l'unico che vede il modulo Impostazioni con la zona pericolosa (reset dati, cancellazione ordini, reset go-live). Il Registro Attività resta comunque permanente e non cancellabile da nessuno.\n\nADMIN\nStesso accesso del SuperAdmin tranne il modulo Impostazioni. Può creare, modificare ed eliminare dati normalmente.\n\nCOMMERCIALE\nFocalizzato sulla vendita: Agenda, Dashboard, Pipeline, Clienti, Ordini, Report Periodo, Listino, Alert, Marketing, Mailing, Report AI, Ticket, Guida. Non vede Magazzino, Produzione, Fornitori, Costi, Registro Attività, Utenti e Impostazioni.\n\nTESTER\nProfilo per i collaudi: ampio accesso operativo (Agenda, Dashboard, Pipeline, Clienti, Ordini, Magazzino, Produzione, Fornitori, Costi, Report Periodo, Listino, Alert, Registro Attività, Marketing, Mailing, Ticket, Report AI). Non vede Utenti, Impostazioni né la Guida.\n\nCOME VERIFICARE IL TUO RUOLO\nIl tuo nome e ruolo sono visibili in alto a destra. Se ti mancano dei moduli, chiedi al SuperAdmin di adeguare il tuo ruolo (gli accessi sono definiti nel codice sorgente).\n\nSUGGERIMENTI\n• Il commerciale ha tutto ciò che serve per vendere — non ha bisogno dei moduli gestionali.\n• L'admin è il profilo ideale per il responsabile operativo.\n• Limita il SuperAdmin a 1-2 persone: è l'unico che accede alla zona pericolosa."
   },
   oggi: {
     titolo: "Agenda & Azioni",
@@ -25276,11 +25505,11 @@ const GUIDA_CONTENUTI = {
   report: {
     titolo: "Report Periodo",
     icona: "📈",
-    corpo: "Reportistica configurabile per qualsiasi intervallo temporale.\n\nCOME FUNZIONA\nSeleziona un periodo (date 'dal' e 'al') e il sistema calcola automaticamente: KPI di attività (chiamate, risposte, clienti attivi, ordini, fatturato — il fatturato conta solo gli ordini di Vendita, non il Conto Vendita), performance per canale, dettaglio chiamate.\n\nCOME SI USA\n1. Imposta le date 'Dal' e 'Al'. Preset disponibili: questo mese, ultimi 30gg, 90gg, anno corrente.\n2. I KPI si aggiornano istantaneamente.\n3. La tabella 'Attività per canale' mostra le performance di ogni canale commerciale.\n4. La tabella 'Dettaglio chiamate' elenca ogni chiamata nel periodo con data, orario, cliente, canale, esito e nota.\n\nSUGGERIMENTI\n• Usa il report settimanale (ultimi 7gg) per la riunione del lunedì mattina.\n• Confronta due periodi per capire i trend: es. questo mese vs mese scorso.\n• Il report anno corrente è ideale per le review trimestrali."
+    corpo: "Reportistica configurabile per qualsiasi intervallo temporale.\n\nLa sezione ha due schede: 'Riepilogo periodo' (KPI e canali, descritto qui sotto) e 'Ultimo DDT / Fattura per cliente', che mostra per ogni cliente — nel periodo scelto — il numero e la data dell'ultimo DDT e dell'ultima fattura emessi, con ricerca per cliente ed export in Excel.\n\nCOME FUNZIONA\nSeleziona un periodo (date 'dal' e 'al') e il sistema calcola automaticamente: KPI di attività (chiamate, risposte, clienti attivi, ordini, fatturato — il fatturato conta solo gli ordini di Vendita, non il Conto Vendita), performance per canale, dettaglio chiamate.\n\nCOME SI USA\n1. Imposta le date 'Dal' e 'Al'. Preset disponibili: questo mese, ultimi 30gg, 90gg, anno corrente.\n2. I KPI si aggiornano istantaneamente.\n3. La tabella 'Attività per canale' mostra le performance di ogni canale commerciale.\n4. La tabella 'Dettaglio chiamate' elenca ogni chiamata nel periodo con data, orario, cliente, canale, esito e nota.\n\nSUGGERIMENTI\n• Usa il report settimanale (ultimi 7gg) per la riunione del lunedì mattina.\n• Confronta due periodi per capire i trend: es. questo mese vs mese scorso.\n• Il report anno corrente è ideale per le review trimestrali."
   },
   log: {
-    titolo: "Report Attività",
-    icona: "📊",
+    titolo: "Registro Attività",
+    icona: "📜",
     corpo: "Registro cronologico di tutte le azioni nel gestionale.\n\nCOME FUNZIONA\nOgni azione significativa viene registrata automaticamente: chi l'ha fatta, quando, in quale modulo, cosa ha fatto. Il log è salvato separatamente dai dati (chiave tnb-log su Supabase) ed è PERMANENTE: ogni voce resta per sempre, senza limite di numero e senza possibilità di cancellazione.\n\nCOME SI USA\n1. Filtra per testo: cerca un'azione o un dettaglio specifico.\n2. Filtra per modulo: vedi solo le azioni di un modulo specifico.\n3. Filtra per utente: chi ha fatto cosa.\n4. Filtra per mese o per tipo (Chiamate/Email/Ordini) con le chip in alto.\n5. Clicca una riga per espandere il dettaglio: oltre a chi/quando/dove, vedi i singoli campi modificati (valore precedente → nuovo).\n\nSUGGERIMENTI\n• Usa il log per verificare chi ha modificato un ordine o un cliente.\n• Il report NON viene mai cancellato: sopravvive anche ai reset dati (D0 e Go-Live).\n• Nessun tetto massimo: tutte le voci vengono conservate per sempre."
   },
   impostazioni: {
