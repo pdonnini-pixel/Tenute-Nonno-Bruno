@@ -676,6 +676,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
 const SUPA_URL = 'https://njwtfmiviijszzxschll.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qd3RmbWl2aWlqc3p6eHNjaGxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMjg0MzksImV4cCI6MjA5MDcwNDQzOX0.jp94knI8L-e5ytwslvIuVcGGguD49OPddcamXiQ62LU';
 
+const SUPA_BUCKET = 'tnb-firme'; // nome bucket Supabase Storage — unica fonte
 const _supaHeaders = {
   'apikey': SUPA_KEY,
   'Authorization': 'Bearer ' + SUPA_KEY,
@@ -759,7 +760,7 @@ window.tnbStorage = {
     const ts = Date.now();
     const path = ordineId + '/' + ts + (ext ? '.' + ext : '');
     const resp = await fetch(
-      SUPA_URL + '/storage/v1/object/tnb-firme/' + path,
+      SUPA_URL + '/storage/v1/object/' + SUPA_BUCKET + '/' + path,
       {
         method: 'POST',
         headers: {
@@ -785,7 +786,7 @@ window.tnbStorage = {
   getSignedUrl: async function(path, ttlSeconds) {
     ttlSeconds = ttlSeconds || 3600;
     const resp = await fetch(
-      SUPA_URL + '/storage/v1/object/sign/tnb-firme/' + path,
+      SUPA_URL + '/storage/v1/object/sign/' + SUPA_BUCKET + '/' + path,
       {
         method: 'POST',
         headers: {
@@ -806,7 +807,7 @@ window.tnbStorage = {
   deleteFirma: async function(path) {
     try {
       const resp = await fetch(
-        SUPA_URL + '/storage/v1/object/tnb-firme/' + path,
+        SUPA_URL + '/storage/v1/object/' + SUPA_BUCKET + '/' + path,
         { method: 'DELETE', headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY } }
       );
       return resp.ok;
@@ -822,7 +823,7 @@ window.tnbStorage = {
     const safePrefix = (prefix || 'doc').replace(/[^a-z0-9_-]/gi, '');
     const path = safePrefix + '/' + ordineId + '/' + ts + (ext ? '.' + ext : '');
     const resp = await fetch(
-      SUPA_URL + '/storage/v1/object/tnb-firme/' + path,
+      SUPA_URL + '/storage/v1/object/' + SUPA_BUCKET + '/' + path,
       {
         method: 'POST',
         headers: {
@@ -9404,8 +9405,8 @@ const _TNB_ANAG_FALLBACK = {
   web: "www.tenutenonnobruno.it"
 };
 const getTnbAnag = () => ({ ..._TNB_ANAG_FALLBACK, ...(window._tnbAzienda_anag || {}) });
-const getTnbIban = () => (window._tnbAzienda && window._tnbAzienda.iban) || "IT93S0306937720100000005807";
-const TNB_IBAN = "IT93S0306937720100000005807"; // legacy alias (mantenuto se referenziato altrove)
+const getTnbIban = () => (window._tnbAzienda && window._tnbAzienda.iban) || AZIENDA_DEFAULTS.iban;
+const TNB_IBAN = AZIENDA_DEFAULTS.iban; // legacy alias (mantenuto se referenziato altrove) — deriva dall'unica fonte
 const TNB_C_DARK = [48, 52, 50];
 const TNB_C_OLIVE = [191, 198, 113];
 const TNB_C_TEXT = [45, 45, 45];
@@ -22434,7 +22435,7 @@ function ReportAIPage({ dati }) {
     var azienda = dati.azienda || {};
     var contesto = (azienda.nome || "Tenute Nonno Bruno") + " — " + (azienda.settore || "olio EVO e vino") + ", " + (azienda.citta || "Bagno a Ripoli") + " (" + (azienda.provincia || "FI") + ")";
 
-    fetch("https://gestionaletnb.netlify.app/.netlify/functions/report-ai", {
+    fetch("/.netlify/functions/report-ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

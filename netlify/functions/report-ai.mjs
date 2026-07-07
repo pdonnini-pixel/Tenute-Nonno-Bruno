@@ -87,7 +87,7 @@ Genera il report richiesto basandoti su questi dati.`;
         "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
         max_tokens: 2500,
         stream: true,
         system: systemPrompt,
