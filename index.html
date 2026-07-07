@@ -9393,16 +9393,19 @@ const LISTINO_PDF = {
 // fallback ai valori storici. getTnbAnag() legge da window._tnbAzienda_anag,
 // popolato a load + ogni save. Compatibilità retro: getTnbAnag() restituisce
 // la stessa shape che TNB_ANAG aveva prima.
+// Derivato da AZIENDA_DEFAULTS (unica fonte anagrafica) con la formattazione attesa dai PDF:
+// P.IVA senza prefisso "IT", sede legale composta su una riga, web con "www.".
+// Output identico ai valori precedentemente hardcoded (verificato campo per campo).
 const _TNB_ANAG_FALLBACK = {
-  ragioneSociale: "Nonno Bruno Soc. Agricola Sas",
-  sedeLegale: "Via del Fornaccio 40 — 50012 Bagno a Ripoli (FI)",
-  piva: "07267640485",
-  rea: "FI-691528",
-  capSoc: "€ 3.870,00",
-  email: "info@tenutenonnobruno.it",
-  pec: "aziendaagricolanonnobruno@pec.it",
-  tel: "+39 334 9907855",
-  web: "www.tenutenonnobruno.it"
+  ragioneSociale: AZIENDA_DEFAULTS.ragioneSocialeLunga,
+  sedeLegale: AZIENDA_DEFAULTS.via + " — " + AZIENDA_DEFAULTS.cap + " " + AZIENDA_DEFAULTS.citta + " (" + AZIENDA_DEFAULTS.provincia + ")",
+  piva: (AZIENDA_DEFAULTS.partitaIva || "").replace(/^IT/i, ""),
+  rea: AZIENDA_DEFAULTS.rea,
+  capSoc: AZIENDA_DEFAULTS.capitaleSociale,
+  email: AZIENDA_DEFAULTS.email,
+  pec: AZIENDA_DEFAULTS.pec,
+  tel: AZIENDA_DEFAULTS.telefono,
+  web: "www." + AZIENDA_DEFAULTS.sito
 };
 const getTnbAnag = () => ({ ..._TNB_ANAG_FALLBACK, ...(window._tnbAzienda_anag || {}) });
 const getTnbIban = () => (window._tnbAzienda && window._tnbAzienda.iban) || AZIENDA_DEFAULTS.iban;

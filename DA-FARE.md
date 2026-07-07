@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-07
+Ultimo aggiornamento: 2026-07-07 (dedup anagrafica PDF completata)
 
 ---
 
@@ -29,13 +29,10 @@ Ultimo aggiornamento: 2026-07-07
 - La function `netlify/functions/report-ai.mjs` legge il modello da `process.env.ANTHROPIC_MODEL` con fallback `claude-sonnet-4-6`.
 - Impostare la variabile su Netlify **solo** se si vuole cambiare modello, senza ridistribuire codice.
 
-### 4. Deduplicazione `_TNB_ANAG_FALLBACK` (rischio output PDF)
-- **Dove:** `index.html` (~riga 9395) — duplica i dati azienda di `AZIENDA_DEFAULTS` (~riga 1515) ma con **valori volutamente diversi** (es. P.IVA `07267640485` **senza** prefisso `IT`, usata nei PDF).
-- **Nota:** deduplicare cambierebbe l'output dei documenti → intervenire solo dopo aver verificato che i PDF restino identici.
-
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-07** — deduplicazione anagrafica per PDF: `_TNB_ANAG_FALLBACK` (`index.html` ~9395) ora **deriva** da `AZIENDA_DEFAULTS` (unica fonte) con le trasformazioni di formato attese (P.IVA senza `IT`, sede legale composta, web con `www.`). Verificato campo per campo: **output identico** ai valori hardcoded precedenti → nessun cambiamento nei documenti.
 - **2026-07-07 (commit `1504a29`)** — rimozione hardcode sicuri (nessun cambio di comportamento), poi merge su `main` e deploy in produzione:
   - `report-ai` fetch su path **relativo** `/.netlify/functions/report-ai` (prima URL Netlify assoluto).
   - Modello AI da env var `ANTHROPIC_MODEL` (fallback invariato).
