@@ -13085,6 +13085,7 @@ function Magazzino({
   const [filtroA, setFiltroA] = useState("");
   const [filtroAuto, setFiltroAuto] = useState("tutti");     // tutti | auto | manuali
   const [filtroOrdine, setFiltroOrdine] = useState("");
+  const [filtroSku, setFiltroSku] = useState("");           // v54-mag: filtro movimenti per formato/SKU
   const [ddtDir, setDdtDir] = useState("tutti");             // tutti | entrata | uscita
   const [ddtSearch, setDdtSearch] = useState("");
   const [rettForm, setRettForm] = useState({});
@@ -13799,11 +13800,12 @@ function Magazzino({
       .filter(mv => !filtroDa || (mv.data || "") >= filtroDa)
       .filter(mv => !filtroA || (mv.data || "") <= filtroA)
       .filter(mv => filtroAuto === "tutti" || (filtroAuto === "auto" ? !!mv.auto : !mv.auto))
+      .filter(mv => !filtroSku || (mv.skuId || mv.magId) === filtroSku)
       .filter(mv => !filtroOrdine || String(mv.ordineId || "").toLowerCase().includes(String(filtroOrdine).toLowerCase()) || (mv.ordineId && (dati.ordini || []).find(o => o.id === mv.ordineId && String(o.numero || "").toLowerCase().includes(String(filtroOrdine).toLowerCase()))))
       .sort((a, b) => (b.timestamp || new Date(b.data || 0).getTime() || 0) - (a.timestamp || new Date(a.data || 0).getTime() || 0));
     return /*#__PURE__*/React.createElement(React.Fragment, null,
       /*#__PURE__*/React.createElement("div", {
-        style: { display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr 1fr auto", gap: 8, alignItems: "end", padding: "8px 4px", marginBottom: 6 }
+        style: { display: "grid", gridTemplateColumns: "1.4fr 1.2fr 1fr 1fr 1fr 1fr auto", gap: 8, alignItems: "end", padding: "8px 4px", marginBottom: 6 }
       },
         /*#__PURE__*/React.createElement(Sel, {
           label: "Tipo",
@@ -13829,6 +13831,12 @@ function Magazzino({
           on: v => setFiltroAuto(v),
           opts: [{ v: "tutti", l: "Tutti" }, { v: "auto", l: "🤖 Solo automatici" }, { v: "manuali", l: "✋ Solo manuali" }]
         }),
+        /*#__PURE__*/React.createElement(Sel, {
+          label: "Formato",
+          v: filtroSku,
+          on: v => setFiltroSku(v),
+          opts: [{ v: "", l: "Tutti i formati" }].concat((dati.magazzino || []).map(s => ({ v: s.id, l: `${s.formato} R.${s.annata}` })))
+        }),
         /*#__PURE__*/React.createElement(Inp, {
           label: "Ordine",
           v: filtroOrdine,
@@ -13836,7 +13844,7 @@ function Magazzino({
           ph: "numero / id"
         }),
         /*#__PURE__*/React.createElement("button", {
-          onClick: () => { setFiltroTipo(""); setFiltroDa(""); setFiltroA(""); setFiltroAuto("tutti"); setFiltroOrdine(""); },
+          onClick: () => { setFiltroTipo(""); setFiltroDa(""); setFiltroA(""); setFiltroAuto("tutti"); setFiltroOrdine(""); setFiltroSku(""); },
           style: { padding: "8px 14px", border: "1px solid #d4d2cc", background: "#fff", color: "#5f5e5a", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", height: 38 },
           title: "Reset filtri"
         }, "✕ Reset")
@@ -13844,6 +13852,21 @@ function Magazzino({
       /*#__PURE__*/React.createElement("div", {
         style: { fontSize: 11, color: C.grigio600, padding: "0 4px 8px 4px" }
       }, `${movimentiFiltrati.length} movimenti${movimentiFiltrati.length !== tuttiMovimenti.length ? ` (su ${tuttiMovimenti.length} totali)` : ""}`),
+      filtroSku && (() => {
+        // v54-mag: riepilogo movimentazione per il formato selezionato (venduto = scarichi per ordine)
+        const skuSel = (dati.magazzino || []).find(s => s.id === filtroSku);
+        const venduto = movimentiFiltrati.filter(mv => mv.tipo === "scarico_ordine").reduce((a, mv) => a + Math.abs(Number(mv.qta) || 0), 0);
+        const carico = movimentiFiltrati.filter(mv => mv.tipo === "carico" || mv.tipo === "carico_produzione").reduce((a, mv) => a + Math.abs(Number(mv.qta) || 0), 0);
+        const nClienti = new Set(movimentiFiltrati.filter(mv => mv.tipo === "scarico_ordine" && mv.ordineId).map(mv => { const o = (dati.ordini || []).find(x => x.id === mv.ordineId); return o && o.clienteId; }).filter(Boolean)).size;
+        return /*#__PURE__*/React.createElement("div", {
+          style: { display: "flex", gap: 16, flexWrap: "wrap", background: "#f1f8e9", border: "1px solid #c5e1a5", borderRadius: 8, padding: "8px 14px", margin: "0 4px 10px 4px", fontSize: 12 }
+        },
+          /*#__PURE__*/React.createElement("span", { style: { fontWeight: 700, color: C.olivaScuro } }, skuSel ? `${skuSel.formato} R.${skuSel.annata}` : "Formato"),
+          /*#__PURE__*/React.createElement("span", null, "📤 Venduto: ", /*#__PURE__*/React.createElement("strong", null, venduto, " pz")),
+          /*#__PURE__*/React.createElement("span", null, "📥 Caricato: ", /*#__PURE__*/React.createElement("strong", null, carico, " pz")),
+          /*#__PURE__*/React.createElement("span", null, "👤 Clienti serviti: ", /*#__PURE__*/React.createElement("strong", null, nClienti))
+        );
+      })(),
       /*#__PURE__*/React.createElement(Card, {
         ch: /*#__PURE__*/React.createElement(Tbl, {
           cols: ["Data", "Origine", "Tipo", "SKU", "Qtà", "Riferimento", "Nota"],
@@ -13852,6 +13875,8 @@ function Magazzino({
             const tipoInfo = TIPI_MOV.find(t => t.v === mov.tipo);
             const ordRef = mov.ordineId && (dati.ordini || []).find(o => o.id === mov.ordineId);
             const lotRef = mov.lottoId && (dati.lotti || []).find(l => l.id === mov.lottoId);
+            const clRef = ordRef && (dati.clienti || []).find(c => c.id === ordRef.clienteId);
+            const ddtRef = mov.ddtNum ? String(mov.ddtNum) : "";
             const qtaColor = mov.qta < 0 ? C.rosso : C.olivaScuro;
             return /*#__PURE__*/React.createElement(TR, {
               key: mov.id,
@@ -13878,10 +13903,13 @@ function Magazzino({
                 }),
                 /*#__PURE__*/React.createElement(TD, {
                   ch: ordRef
-                    ? /*#__PURE__*/React.createElement("span", {
-                        style: { fontSize: 11, background: "#e3f2fd", color: "#1565c0", borderRadius: 4, padding: "2px 6px", fontWeight: 600 },
-                        title: `Ordine ${ordRef.numero || ordRef.id}`
-                      }, "📋 ", ordRef.numero || ordRef.id.slice(0, 6))
+                    ? /*#__PURE__*/React.createElement("span", null,
+                        /*#__PURE__*/React.createElement("span", {
+                          style: { fontSize: 11, background: "#e3f2fd", color: "#1565c0", borderRadius: 4, padding: "2px 6px", fontWeight: 600 },
+                          title: `Ordine ${ordRef.numero || ordRef.id}`
+                        }, "📋 ", ordRef.numero || ordRef.id.slice(0, 6)),
+                        clRef && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio600, marginTop: 2 } }, "👤 ", clRef.ragioneSociale),
+                        ddtRef && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 1 } }, "🚚 DDT ", ddtRef))
                     : lotRef
                       ? /*#__PURE__*/React.createElement("span", {
                           style: { fontSize: 11, background: "#e8f5e9", color: "#2e7d32", borderRadius: 4, padding: "2px 6px", fontWeight: 600 },
