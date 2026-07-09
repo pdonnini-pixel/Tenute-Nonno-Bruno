@@ -17,11 +17,11 @@ Ultimo aggiornamento: 2026-07-09 (specifica ridisegno Magazzino concordata con P
 **Specifica (8 punti) — come dovrà funzionare:**
 1. **L'olio nasce in Produzione** (regola madre di inserimento): ogni raccolta crea il lotto con i litri. Il magazzino non crea olio, lo eredita dal lotto.
 2. **Il magazzino gestisce due unità**: litri (olio sfuso) **e** pezzi (bottiglie). Oggi solo pezzi.
-3. **Invio al frantoio = movimento magazzino in litri**: es. 100 L → uscita verso frantoio; al rientro dell'olio molito → movimento di rientro.
-4. **Imbottigliamento = i litri diventano bottiglie**: scarico litri dal lotto + carico bottiglie. Passaggio **interno** (già esiste come `carico_produzione`).
+3. **Frantoio conto lavorazione = è il FRANTOIO che imbottiglia** (non noi): esce olio sfuso in **litri** (uscita, DDT) e **rientrano bottiglie** nei vari formati (entrata, DDT). Es. 100 L → X×500ml + Y×250ml… La conversione litri→bottiglie avviene **al frantoio (esterno)**, NON internamente. Il rientro bottiglie è un'entrata con DDT (rivedere `carico_produzione`, oggi pensato come passaggio interno).
+4. **Riconciliazione litri↔bottiglie**: dai litri usciti si ricavano le bottiglie rientrate; l'eventuale differenza = **calo/sfrido di lavorazione**. ⚠️ **DA CONFERMARE** con Patrizio: registrarlo come movimento di scarico "calo lavorazione" così i litri quadrano?
 5. **Uscite bottiglie tracciate per tipo**: vendita cliente (scarico auto da ordine), omaggio cliente, campione gratuito (già esiste), **omaggio interno azienda**. L'omaggio interno si registra **senza ordine collegato**, con nota/campo "assegnato a" (es. Enrico, Lucia). Omaggi e campioni escono con **DDT interno**.
 6. **Regola DDT unica**: su entrate/uscite reali (frantoio, acquisti, vendite) il **numero DDT resta obbligatorio**; il **file cartaceo diventa FACOLTATIVO** (oggi bloccante — modifica in `saveMov`). ⚠️ Era regola voluta dalla proprietà: cambio consapevole.
-7. **Passaggi interni SENZA DDT**: imbottigliamento ed etichettatura non devono più richiedere il DDT (oggi `carico_produzione` è in `MOV_RICHIEDE_DDT` — da rivedere).
+7. **Passaggi interni SENZA DDT**: solo spostamenti realmente interni (riserva, confezionamento). NB: l'imbottigliamento **non è interno** — avviene al frantoio → ha DDT (vedi punto 3).
 8. **Pregresso al 31/12/2025 + ricostruzione dal 01/01/2026** (Irene reinserisce movimenti e DDT). Foto di partenza (serve voce **"Apertura/saldo iniziale"** senza DDT nel form):
    - Bottiglie 2024: 865×500ml, 46×5L, 57×3L
    - Bottiglie 2025: 583×250ml, 61×500ml, 125×3L, 99×5L
