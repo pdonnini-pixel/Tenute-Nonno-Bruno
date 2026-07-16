@@ -19,8 +19,10 @@ Ultimo aggiornamento: 2026-07-16 (analisi ordine Shopify #1011 + scoperta schema
 - **Contesto:** Shopify **non è integrato** nel gestionale (nessun import). Ogni ordine dal sito va inserito a mano: prima il cliente in **Clienti**, poi l'ordine collegato.
 - **Ordine #1011 del 14/07/2026, spedito il 16/07/2026.** Dati pronti (mappati sui campi dell'app):
   - **Cliente (privato):** Ragione sociale `Francesco Grimaldi` · tipo `altro` · indirizzo `Via Gaetano Donizetti 7` · CAP `00198` · città `Roma` · prov. `RM` · tel `+39 347 4417180` · **email: MANCANTE nella mail ricevuta** (chiedere a Elisa/recuperare da Shopify per le conferme).
-  - **Ordine:** 1 × Olio Fata Morgana **500 ml** annata **2025** a **€28,00** (prezzo pubblico a listino) · spedizione standard **€9,90** (Roma = fuori provincia) · pagamento **Shopify Payments → pagato** · nel campo note: "Shopify #1011 del 14/07/2026". Numero interno assegnato in automatico (prossimo ~`1021/2026`).
-- **Stato:** in attesa. Consigliato inserimento da UI (validazioni + numerazione automatiche). NON inserito nelle tabelle relazionali (vedi punto 0).
+  - **Ordine:** 1 × Olio della Fata Morgana **500 ml** annata **2025** · spedizione **€9,90** (Personalizzato) · pagato · note "Shopify #1011 del 14/07/2026, spedito il 16/07". Numero interno automatico (prossimo ~`1021/2026`).
+  - **Prezzo — DECISIONE:** l'auto-compilazione mette **€19,50** (prezzo B2B a collo del listino); il cliente ha però pagato **€28,00** sul sito (prezzo pubblico). Da confermare quale registrare — consigliato €28,00 (valore reale incassato).
+  - **Magazzino:** SKU 500 ml 2025 ("Raccolta 2025 - Olio della Fata Morgana", id `vxb55prf`) = **110 disponibili** → nessun blocco. Lo scarico di 1 pz **scatta in automatico** solo al passaggio a stato **"Firmato"** (non "Consegnato"). Quindi creare l'ordine già come **Firmato**; poi verificare giacenza 110→109. Fallback se non scala: Magazzino → ⚡ Movimento → "⚠️ Scarico manuale".
+- **Stato:** in attesa. Inserimento da UI (validazioni + numerazione + scarico magazzino automatici). NON usare le tabelle relazionali (vedi punto 0). Manca l'**email del cliente** (serve per la conferma d'ordine automatica).
 
 
 ### 1. Autenticazione: password in chiaro + auth lato client — CRITICO
