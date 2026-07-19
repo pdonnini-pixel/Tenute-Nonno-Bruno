@@ -18881,10 +18881,18 @@ function App() {
         localStorage.removeItem('tnb__tnb-session');
       }
     } catch (e) {}
+    // Audit D#125: traccia l'accesso nel Report Attività. L'utente è passato
+    // esplicitamente via extra perché currentUser nello stato non è ancora
+    // aggiornato quando logAction costruisce la voce.
+    logAction("Login", "auth", `${user.nome || user.username} (${ROLE_LABELS[user.role] || user.role})${remember ? " · ricordami" : ""}`,
+      { userId: user.id, userName: user.nome, userRole: user.role });
     const access = ROLE_ACCESS[user.role];
     setModuloNav(access.includes("oggi") ? "oggi" : access.includes("dashboard") ? "dashboard" : access[0]);
   };
   const handleLogout = async () => {
+    // Audit D#125: registra l'uscita PRIMA di azzerare currentUser (la voce
+    // viene costruita subito, la scrittura è accodata da logAction).
+    if (currentUser) logAction("Logout", "auth", `${currentUser.nome || currentUser.username} (${ROLE_LABELS[currentUser.role] || currentUser.role})`);
     setCurrentUser(null);
     try {
       localStorage.removeItem('tnb__tnb-session');
