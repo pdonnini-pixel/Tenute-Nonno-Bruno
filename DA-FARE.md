@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetto A in produzione; Pacchetto B — integrità magazzino: finding #5, #15, #17, #19, #56 corretti sul branch, merge da decidere)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A e B dell'audit in produzione su decisione esplicita di Patrizio)
 
 ---
 
@@ -53,7 +53,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetto A in produzione; Pacchetto B — int
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto B audit (integrità magazzino): finding #5 (critico), #15, #17, #19, #56 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge su `main` da decidere esplicitamente):
+- **2026-07-19 — Pacchetto B audit (integrità magazzino): finding #5 (critico), #15, #17, #19, #56 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio; consigliata una prova su un ordine reale: firma → annullo → riapertura → controllo giacenze):
   - **#5** — scarico/riaccredito simmetrici nel replay: annullo_ordine e resa_cv riaccreditano al massimo quanto EFFETTIVAMENTE scaricato per quell'ordine (scarichi clampati e annulli doppi non fabbricano più pezzi). Invariato per movimenti manuali senza ordine e ordini senza scarichi a log. Limite residuo documentato al punto 3b.
   - **#17** — saveMov blocca i movimenti in uscita oltre la giacenza dello stato di origine (scarichi/riserve da disponibile, consegnato da in spedizione, affido da riservato+confezionamento) con messaggio chiaro in italiano.
   - **#15** — guard di idempotenza sul NETTO scarichi−annulli: riaprire un ordine annullato rigenera lo scarico (righe correnti, previo check disponibilità) e il secondo annullo compensa esattamente il residuo.
