@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F7 dell'audit in produzione su decisione esplicita di Patrizio — 102 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F7 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F8 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 112 finding su 145 chiusi)
 
 ---
 
@@ -57,6 +57,18 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F7 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F8 (blocco omogeneo "coerenza codice, robustezza e hooks"): finding #100, #101, #102, #108, #109, #110, #111, #114, #120, #123 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio). Prevalentemente pulizia interna a comportamento invariato; due punti toccano aree a rischio (segnalati) e uno cambia leggermente dei numeri:
+  - **#100** — aliquota IVA 4% in un'unica costante `IVA_ALIQUOTA` (prima duplicata inline in 6+ punti: PDF, liquidazione CV, preventivi, contratti). Valori identici.
+  - **#120** — rimossa la funzione morta `generateModuloPDF` (~108 righe, mai chiamata, con bug latenti su omaggi/totale): ⚠️ area PDF ma solo eliminazione di codice non attivo; i PDF reali passano da `_generaPdfModulo`, invariato.
+  - **#111** — ⚠️ area persistenza: `storage.delete`/`storage.list` ora hanno un esito onesto (delete respinta → `deleted:false`+error invece di `deleted:true`; list in errore → `keys:null`+error). NESSUN chiamante usa questi metodi (impatto reale nullo), si chiude un contratto ingannevole.
+  - **#110** — ⚠️ edge function: `report-ai.mjs` valida il body (400 se non oggetto o `domanda` mancante) e limita domanda (2000 char) e dati (~500 KB) con 413, sempre con header CORS. Prima un body `null` faceva un 500 criptico. Streaming invariato.
+  - **#114** — costi struttura: mesi prorati sui giorni reali (`mesiFrazionari`). ⚠️ Numeri: i margini netti di CostiMargini per costi struttura non allineati al mese possono cambiare leggermente — è la correzione della distorsione (un costo dal 30/04 non conta più tutto aprile). Mese intero = 1, anno = 12 restano identici.
+  - **#101** — logica auto-prezzo riga estratta in `applicaListinoRiga` condivisa tra Ordini e wizard Pipeline (prima due copie divergenti); riga di default con prezzo coerente col flag confezione (`nuovaRigaOrdine`): 500 ml senza confezione → 17,50 € invece di 19,50 € pieno con nota "senza conf.".
+  - **#102** — ordine del funnel reso coerente: `STATO_FUNNEL` riordinato (interessato prima di in_trattativa) e l'array UI derivato da `STATI_PROGRESSIONE` + stati fuori-flusso. Prima colonne/filtri contraddicevano il pulsante "avanza stato".
+  - **#108** — `useMemo` con dipendenze reali: `gruppiClienti` (Ordini) su `[dati.ordini, dati.clienti, tab, navTarget]` + Map cliente invece di find nel loop; `filtered` (Pipeline) memoizzato sui dati sorgente. Meno ricalcoli a ogni battitura nei filtri.
+  - **#109** — `clearTimeout` nei quattro nav-effect cross-modulo (Ordini, Pipeline, Magazzino, Produzione): cambiando subito modulo non si perde più in silenzio una navigazione appena richiesta.
+  - **#123** — `maxLength` sui campi (`Inp`): 200 per gli input di testo, 2000 per le textarea (numerici esclusi). Evita che un incolla accidentale gonfî permanentemente il blob `tnb-pro-v2`. Non tronca i valori esistenti.
+  - **Verifica:** 19 controlli in Chromium con backend simulato: unit su IVA_ALIQUOTA/totIVA/ivaOrdine, `mesiFrazionari` (mese=1, anno=12, mezzo mese ~0.484, 1 giorno×2mesi ~0.066 vs 2 prima), ordine `STATO_FUNNEL`/`STATI_PROGRESSIONE`, helper `applicaListinoRiga`/`nuovaRigaOrdine` (riga 500 ml → 17,50), `storage.delete`/`list` con fetch mockato (esito onesto), rimozione `generateModuloPDF`; UI: maxLength sui campi editabili, Pipeline+Ordini "Per cliente"+CostiMargini renderizzati senza errori JS.
 - **2026-07-19 — Pacchetto F7 (blocco omogeneo "accessibilità e usabilità", completa l'area): finding #89, #91, #92, #93, #94, #131 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Tutti fix a comportamento invariato che migliorano leggibilità e uso su tablet:
   - **#89** — le conferme di eliminazione (ordini, clienti, SKU, fornitori, reset ordini) ora danno il focus a "Annulla", non al pulsante rosso, e Invio non conferma più: premere Invio per abitudine non cancella più nulla di irreversibile. I confirm non-distruttivi mantengono Invio come scorciatoia.
   - **#91** — il componente Btn ora passa `title` e `aria-label` al pulsante (prima li scartava): tornano i tooltip già scritti nel codice e i pulsanti-icona (matita, cestino, X di chiusura) hanno un nome. Aggiunto title "Chiudi" alla X dei modali.
