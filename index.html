@@ -5890,6 +5890,11 @@ const SPEDIZIONE = {
   firenze_provincia: 0,
   fuori_provincia: 15.00
 };
+// Audit F#115/F#116/F#67: elenco UNICO dei formati vendibili — prima era
+// copiato a mano in 6 punti (wizard, Ordini, form SKU, CostiMargini,
+// Preventivi, Contratti) con copie già divergenti (CostiMargini e Contratti
+// senza "Aceto 20 ml"). Un nuovo formato si aggiunge SOLO qui.
+const FORMATI_VENDITA = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml", "Aceto 20 ml"];
 // v52-costi1: prezzo listino unificato. Legge da dati.listino[] se presente, altrimenti
 // fallback alla const LISTINO. Ritorna { pubblico, horeca/scaglioni }.
 const getListino = (formato, dati) => {
@@ -8527,7 +8532,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
     // ── Step 3: Form ordine semplificato ──
     ordineWizard.step === 3 && ordineWizard.ordineForm && function() {
       var of = ordineWizard.ordineForm;
-      var WIZ_FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml", "Aceto 20 ml"];
+      var WIZ_FORMATI = FORMATI_VENDITA; // audit F#115: lista unica
       // Audit E#29: annate dai dati reali, come nel form ordini
       var WIZ_ANNATE = annateDisponibili(dati);
       var clienteLabel = function() {
@@ -11651,7 +11656,7 @@ function Ordini({
   };
   const renderGruppoCliente = (gruppo) => { const cl = gruppo.cliente; const cid = cl?.id || '__nessuno__'; const isOpen = !!expandedClients[cid]; const ordini = gruppo.ordini; const totale = ordini.reduce((s,o) => s + totFinale(o), 0); const nDaPagare = ordini.filter(o => o.statoPagamento==='da_pagare'||o.statoPagamento==='parziale').length; const nDaFirmare = ordini.filter(o => o.stato==='da_firmare').length; const nCvScadute = ordini.filter(o => o.modalita==='conto_vendita'&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato').length; return React.createElement(React.Fragment, {key:cid}, React.createElement('tr',{onClick:()=>toggleClient(cid),style:{cursor:'pointer',background:isOpen?'#f0f4e8':((nDaPagare+nDaFirmare+nCvScadute>0)?'#fffbf0':'#fafaf8'),borderBottom:'1.5px solid #e8e6e0'}}, React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,color:'#2e3a1c'}},React.createElement('span',{style:{marginRight:8,fontSize:12}},isOpen?'▼':'▶'),cl?.insegna||cl?.ragioneSociale||'—'), React.createElement('td',{style:{padding:'10px 12px'}},React.createElement('span',{style:{background:'#e8f5e9',color:'#2e7d32',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11}},ordini.length+(ordini.length===1?' ordine':' ordini'))), React.createElement('td',{style:{padding:'10px 12px'}},nDaPagare>0&&React.createElement('span',{style:{background:'#fff3e0',color:'#e65100',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'💶 '+nDaPagare+' da pagare'),nDaFirmare>0&&React.createElement('span',{style:{background:'#e3f2fd',color:'#1565c0',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'✍️ '+nDaFirmare+' da firmare'),nCvScadute>0&&React.createElement('span',{style:{background:'#ffebee',color:'#c62828',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'⚠️ '+nCvScadute+' CV scadute')), React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,textAlign:'right'}},fmt(totale)), React.createElement('td',{style:{padding:'10px 12px',fontSize:11,color:'#888'}},ordini.map(o=>o.numero).join(' · '))), isOpen&&ordini.map(o=>{const isCV=o.modalita==='conto_vendita';const tot=totFinale(o);const scaduta=isCV&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato';const prodotti=(o.righe||[]).map(formatRigaConIcona).join(' · ')||'—';return React.createElement('tr',{key:o.id,style:{background:'#fafbf6',borderBottom:'1px solid #ececec'}},React.createElement('td',{colSpan:5,style:{padding:'10px 18px 10px 36px'}},React.createElement('div',{style:{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}},React.createElement('div',{style:{minWidth:140}},React.createElement('div',{style:{fontWeight:700,fontSize:12,color:'#2e3a1c'}},o.numero||'—'),React.createElement('div',{style:{fontSize:10,color:'#888',marginBottom:3}},fmtD(o.data)),React.createElement(TimelineStato,{stato:o.stato,statoLog:o.statoLog,compact:true})),React.createElement('span',{style:{fontSize:10,background:isCV?'#7d4799':'#7a8c52',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},isCV?'C.Vendita':'Vendita'),React.createElement('div',{style:{flex:1,minWidth:140,fontSize:11,color:'#5f5e5a'}},prodotti),React.createElement('div',{style:{fontWeight:700,fontSize:13,color:'#2e3a1c',minWidth:90,textAlign:'right'}},o.campione?React.createElement('span',{style:{background:'#f3e8ff',color:'#7c3aed',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:600,whiteSpace:'nowrap'}},'🎁 Campione'):fmt(tot)),!o.campione&&React.createElement('span',{style:{fontSize:10,background:o.statoPagamento==='pagato'?'#2e7d32':o.statoPagamento==='parziale'?'#f57c00':'#c62828',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},o.statoPagamento==='pagato'?'PAGATO':o.statoPagamento==='parziale'?'PARZIALE':'DA PAGARE'),scaduta&&React.createElement('span',{style:{fontSize:10,background:'#fff3e0',color:'#e65100',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},'⚠ Scaduta'),React.createElement('div',{style:{display:'flex',gap:6,alignItems:'center'}},o.firma&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openFirma(o.firma);},title:'Vedi firma allegata',style:{background:'#e8f5e9',border:'1px solid #2e7d32',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#2e7d32',fontWeight:600}},'📎'),(Array.isArray(o.ddt)?o.ddt:(o.ddt?[o.ddt]:[])).length>0&&React.createElement('button',{onClick:e=>{e.stopPropagation();const arr=Array.isArray(o.ddt)?o.ddt:[o.ddt];window.tnbStorage.openDocumento(arr[0]);},title:(Array.isArray(o.ddt)?o.ddt:[o.ddt]).length+' DDT allegat'+((Array.isArray(o.ddt)?o.ddt:[o.ddt]).length===1?'o':'i'),style:{background:'#e3f2fd',border:'1px solid #1565c0',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#1565c0',fontWeight:600}},'🚚'+((Array.isArray(o.ddt)?o.ddt:[o.ddt]).length>1?(Array.isArray(o.ddt)?o.ddt:[o.ddt]).length:'')),(o.fatture||[]).length>0&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openDocumento(o.fatture[0]);},title:(o.fatture||[]).length+' fattur'+((o.fatture||[]).length===1?'a':'e')+' allegat'+((o.fatture||[]).length===1?'a':'e'),style:{background:'#f3e5f5',border:'1px solid #6a1b9a',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#6a1b9a',fontWeight:600}},'📄'+((o.fatture||[]).length>1?(o.fatture||[]).length:'')),React.createElement('button',{onClick:e=>{e.stopPropagation();handleGeneraPDF(o);},title:'Stampa PDF',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 10px',fontSize:11,cursor:'pointer',color:'#5f5e5a',fontWeight:600}},'PDF'),React.createElement('button',{onClick:e=>{e.stopPropagation();setForm({...o});setModal('edit');},title:'Modifica ordine',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer'}},'✎'),isSuperAdmin&&React.createElement('button',{onClick:e=>{e.stopPropagation();deleteOrdine(o);},title:'Elimina ordine (Super Admin)',style:{background:'#fff',border:'1px solid #c0392b',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#c0392b',fontWeight:600}},'🗑'),React.createElement('select',{value:o.statoPagamento||'da_pagare',onChange:e=>{e.stopPropagation();setDati(d=>({...d,ordini:d.ordini.map(x=>x.id===o.id?{...x,statoPagamento:e.target.value}:x)}));},onClick:e=>e.stopPropagation(),style:{fontSize:11,padding:'4px 6px',border:'1px solid #d4d2cc',borderRadius:5,background:'#fff'}},React.createElement('option',{value:'da_pagare'},'Da pagare'),React.createElement('option',{value:'parziale'},'Parziale'),React.createElement('option',{value:'pagato'},'Pagato'))))));})); };
 
-  const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml", "Aceto 20 ml"];
+  const FORMATI = FORMATI_VENDITA; // audit F#115: lista unica
   // Audit E#29: annate dai dati reali (nuove annate selezionabili senza toccare il codice)
   const ANNATE = annateDisponibili(dati);
   const renderOrdine = o => {
@@ -14861,7 +14866,7 @@ function Magazzino({
         formato: v
       })),
       req: true,
-      opts: ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml", "Aceto 20 ml"]
+      opts: FORMATI_VENDITA // audit F#115: lista unica
     }), /*#__PURE__*/React.createElement(Sel, {
       label: "Annata",
       v: form.annata || "2025",
@@ -17518,7 +17523,9 @@ function CostiMargini({
     // v52-costi1: fix annata hardcoded. Usa l'annata della campagna selezionata (campagnaSel+1
     // perché la campagna inizia a novembre dell'anno N e copre l'olio prodotto in autunno N).
     const annataTarget = String(Number(campagnaSel) + 1);
-    const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml"];
+    // Audit F#67/F#115: lista unica — prima mancava "Aceto 20 ml" (mai
+    // analizzato) e "Olio 20 ml" non trovava SKU/listino (chiave "20 ml").
+    const FORMATI = FORMATI_VENDITA;
     return FORMATI.map(fmt => {
       // Prezzo: prima cerca in dati.listino (fonte v52), poi fallback magazzino.prezzoListino
       const listEntry = getListino(fmt, dati);
@@ -24664,7 +24671,7 @@ function PreventiviTab(p2){
   var dati=p2.dati,setDati=p2.setDati,logAction=p2.logAction;
   var _s=useState({clienteId:"",righe:[],spedizione:"firenze",modalitaPagamento:"bonifico_anticipato",note:""});
   var fPv=_s[0],setFPv=_s[1];
-  var FMT_PV=["100 ml","250 ml","500 ml","3 L (latta)","5 L (latta)","Olio 20 ml","Aceto 20 ml"];
+  var FMT_PV=FORMATI_VENDITA; // audit F#115: lista unica
   var addR=function(){setFPv(function(f){return{...f,righe:[...f.righe,{formato:"500 ml",qta:1,prezzoUnitario:0,annata:"2025"}]};});};
   var remR=function(i){setFPv(function(f){return{...f,righe:f.righe.filter(function(_,j){return j!==i;})};});};
   var updR=function(i,k,v){setFPv(function(f){return{...f,righe:f.righe.map(function(r,j){return j!==i?r:{...r,[k]:v};})};});};
@@ -25072,7 +25079,7 @@ Data: ___/___/______                      Data: ___/___/______
       c: C.rosso
     }
   };
-  const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml"];
+  const FORMATI = FORMATI_VENDITA; // audit F#116/F#115: ora include "Aceto 20 ml"
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83D\uDCDD Contratti",
     action: READONLY_MODE ? null : /*#__PURE__*/React.createElement(Btn, {
