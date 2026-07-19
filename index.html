@@ -18705,6 +18705,40 @@ function App() {
   };
 
   // ── ALL HOOKS MUST BE BEFORE ANY CONDITIONAL RETURN ──
+  // Audit #3: esito dei salvataggi. syncErr ≠ null → banner persistente
+  // "modifiche NON salvate sul server"; retry automatico con backoff.
+  const [syncErr, setSyncErr] = useState(null);
+  const _retryRef = React.useRef({ timer: null, json: null, delay: 5000 });
+  const _onSaveResult = useCallback(function handle(res, json) {
+    const r = _retryRef.current;
+    if (res && res.ok) {
+      if (r.json != null && window.tnbToast) window.tnbToast("✅ Modifiche sincronizzate sul server");
+      if (r.timer) clearTimeout(r.timer);
+      r.timer = null; r.json = null; r.delay = 5000;
+      setSyncErr(null);
+      return;
+    }
+    if (res && res.conflict) {
+      // Audit #2: un altro utente ha salvato dopo di noi — la nostra
+      // scrittura NON è avvenuta. Avvisa e ricarica dai dati del server.
+      alert("⚠️ CONFLITTO DI SALVATAGGIO\n\nUn altro utente (o un'altra scheda del browser) ha salvato dati più recenti sul server.\nPer non sovrascriverli, la tua ultima modifica NON è stata salvata.\n\nLa pagina verrà ricaricata con i dati aggiornati: dopo il caricamento ripeti la modifica.");
+      window.location.reload();
+      return;
+    }
+    // Offline / errore server: la modifica esiste solo su questo dispositivo.
+    setSyncErr("Modifiche NON salvate sul server (" + ((res && res.error) || "errore di rete") + "). Restano solo su questo dispositivo: riprovo automaticamente…");
+    r.json = json;
+    if (!r.timer) {
+      const fire = () => {
+        r.timer = null;
+        const j = r.json;
+        if (j == null) return;
+        r.delay = Math.min(r.delay * 2, 60000);
+        window.storage.set("tnb-pro-v2", j).then(res2 => handle(res2, j));
+      };
+      r.timer = setTimeout(fire, r.delay);
+    }
+  }, []);
   const setDatiSave = useCallback(upd => {
     setDati(prev => {
       // PERF: cattura silenziosa del breakdown salvataggio (diagnostica sul deploy reale).
@@ -18726,13 +18760,9 @@ function App() {
           if (window.__tnbSavePerf.length > 30) window.__tnbSavePerf.shift();
           if (rec.updMs + rec.strMs > 200 || rec.postMs > 3000) console.warn("[TNB perf] salvataggio lento", rec);
         } catch (_) {}
-        // Audit #2: conflitto di concorrenza — un altro utente ha salvato dopo
-        // di noi. La nostra scrittura NON è avvenuta: avvisa e ricarica per
-        // ripartire dai dati aggiornati del server.
-        if (res && res.conflict) {
-          alert("⚠️ CONFLITTO DI SALVATAGGIO\n\nUn altro utente (o un'altra scheda del browser) ha salvato dati più recenti sul server.\nPer non sovrascriverli, la tua ultima modifica NON è stata salvata.\n\nLa pagina verrà ricaricata con i dati aggiornati: dopo il caricamento ripeti la modifica.");
-          window.location.reload();
-        }
+        // Audit #2/#3: gestisci l'esito (conflitto → avviso+ricarica;
+        // offline → banner persistente + retry con backoff).
+        _onSaveResult(res, __json);
       });
       // v53-golive (GL2): tieni allineato lo stash window._tnbAzienda usato da
       // PDF/email generators che non hanno accesso al React state.
@@ -18744,7 +18774,7 @@ function App() {
       } catch (_) {}
       return next;
     });
-  }, []);
+  }, [_onSaveResult]);
   const logAction = useCallback(async (azione, modulo, dettaglio, extra) => {
     try {
       const raw = await window.storage.get("tnb-log");
@@ -18763,7 +18793,12 @@ function App() {
       };
       logs.unshift(entry);
       // Policy: il log attività è APPEND-ONLY — nessuna voce viene mai cancellata.
-      await window.storage.set("tnb-log", JSON.stringify(logs));
+      // Audit #3: l'esito non è più ignorato del tutto. Con il controllo di
+      // concorrenza (audit #2) un conflitto qui significa voce persa ma senza
+      // sovrascrivere quelle degli altri utenti (limite del blob unico:
+      // vedi DA-FARE.md, pacchetto D).
+      const resLog = await window.storage.set("tnb-log", JSON.stringify(logs));
+      if (!resLog || !resLog.ok) console.warn("[TNB] voce del report attività NON sincronizzata sul server", resLog);
     } catch (e) {}
   }, [currentUser]);
   const isReadonly = mod => (ROLE_READONLY[currentUser?.role] || []).includes(mod);
@@ -18782,13 +18817,8 @@ function App() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
-  const [supaWarn, setSupaWarn] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (window._supaOk === false) setSupaWarn(true);
-    }, 3000);
-    return () => clearTimeout(t);
-  }, []);
+  // (rimosso il vecchio check window._supaOk: era codice morto — il flag non
+  //  veniva mai impostato. Il banner ora è pilotato da syncErr, vedi sopra.)
 
   // ── CONDITIONAL RENDERS (after all hooks) ──
   // Audit #1: errore di caricamento → schermata bloccante. Nessun dato in stato,
@@ -18958,15 +18988,16 @@ function App() {
   const access = ROLE_ACCESS[currentUser.role] || [];
   const NAV = ALL_NAV.filter(n => access.includes(n.k));
   const alerts = [dati.magazzino.filter(m => giacenzaDisp(m) <= m.soglia).length, dati.ordini.filter(o => o.stato !== "annullato" && o.statoPagamento === "da_pagare" && o.modalita === "vendita").length, dati.ordini.filter(o => o.stato !== "annullato" && o.scadenzaCV && o.scadenzaCV < todayStr() && o.statoPagamento !== "pagato").length].reduce((s, n) => s + n, 0);
-  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("style", null, css), supaWarn && /*#__PURE__*/React.createElement("div", {
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("style", null, css), syncErr && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
-      background: "#f57c00", color: "#fff",
+      background: "#c0392b", color: "#fff",
       padding: "7px 16px", fontSize: 12, fontWeight: 600,
       display: "flex", justifyContent: "space-between", alignItems: "center"
     }
-  }, /*#__PURE__*/React.createElement("span", null, "\u26A0\uFE0F  Supabase non raggiungibile \u2014 salvataggio solo locale (controlla la chiave API)"), /*#__PURE__*/React.createElement("button", {
-    onClick: function() { setSupaWarn(false); },
+  }, /*#__PURE__*/React.createElement("span", null, "\u26A0\uFE0F  " + syncErr), /*#__PURE__*/React.createElement("button", {
+    onClick: function() { setSyncErr(null); },
+    title: "Nascondi (riapparir\u00E0 se il prossimo salvataggio fallisce)",
     style: { background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 16, fontWeight: 700, lineHeight: 1 }
   }, "\u2715")), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -25294,14 +25325,14 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
                 "🔴 CONFERMA DEFINITIVA: lo stato attuale verrà perso (non puoi annullare). Continuare?",
                 async () => {
                   // BUG FIX v53-golive: persist esplicito su Supabase PRIMA di aggiornare
-                  // React state, con await + try/catch. Previene il caso in cui il
-                  // fire-and-forget interno di setDatiSave fallisca silenziosamente
-                  // lasciando i vecchi dati sul DB (e quindi al prossimo refresh
-                  // ritornano i dati pre-import).
-                  try {
-                    await window.storage.set("tnb-pro-v2", JSON.stringify(datiNuovi));
-                  } catch (eP) {
-                    if (window.tnbToast) window.tnbToast("❌ Errore persist Supabase: " + (eP.message || eP), "err");
+                  // React state. Audit #3: storage.set ora restituisce l'esito
+                  // esplicito (non lancia più) — se la scrittura remota non è
+                  // avvenuta l'import viene ANNULLATO.
+                  const resImp = await window.storage.set("tnb-pro-v2", JSON.stringify(datiNuovi));
+                  if (!resImp || !resImp.ok) {
+                    if (window.tnbToast) window.tnbToast(resImp && resImp.conflict
+                      ? "❌ Import annullato: un altro utente ha salvato dati più recenti sul server. Ricarica la pagina e riprova."
+                      : "❌ Import annullato: server non raggiungibile (" + ((resImp && resImp.error) || "errore di rete") + "). Nessun dato modificato sul server.", "err");
                     return;
                   }
                   // Aggiorna stash globale azienda
@@ -25568,12 +25599,15 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
                         nuovo.log = [];
                         nuovo.costiConfig = { costiStruttura: [], vociExtra: [] };
                         // Persist esplicito su Supabase PRIMA di aggiornare React state.
-                        // Se questo fallisce, vediamo il toast d'errore e abortiamo.
-                        try {
-                          await window.storage.set("tnb-pro-v2", JSON.stringify(nuovo));
-                          // Policy: il report attività (tnb-log) NON viene azzerato — traccia permanente.
-                        } catch (eP) {
-                          if (window.tnbToast) window.tnbToast("❌ Errore persist Supabase: " + (eP.message || eP), "err");
+                        // Audit #3: storage.set restituisce l'esito esplicito (non
+                        // lancia più) — se la scrittura remota non è avvenuta il
+                        // reset viene ANNULLATO.
+                        // Policy: il report attività (tnb-log) NON viene azzerato — traccia permanente.
+                        const resReset = await window.storage.set("tnb-pro-v2", JSON.stringify(nuovo));
+                        if (!resReset || !resReset.ok) {
+                          if (window.tnbToast) window.tnbToast(resReset && resReset.conflict
+                            ? "❌ Reset annullato: un altro utente ha salvato dati più recenti sul server. Ricarica la pagina e riprova."
+                            : "❌ Reset annullato: server non raggiungibile (" + ((resReset && resReset.error) || "errore di rete") + "). Nessun dato modificato sul server.", "err");
                           setDangerBusy(null);
                           return;
                         }
