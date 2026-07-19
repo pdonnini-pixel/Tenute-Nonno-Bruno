@@ -6006,6 +6006,36 @@ const getPrezzoListino = (formato, qta, conConfezione = true, dati = null) => {
   if (!conConfezione && l.scontoSenzaConfezione) prezzo -= l.scontoSenzaConfezione;
   return Math.round(prezzo * 100) / 100;
 };
+// Audit F#101: logica auto-prezzo riga ordine CONDIVISA tra Ordini (updRiga) e
+// wizard Pipeline (updateRiga), prima duplicate e già divergenti. Ritorna la
+// riga aggiornata applicando prezzo (dal listino editabile) e annata coerenti.
+const applicaListinoRiga = (riga, key, val, dati) => {
+  const numKey = key === "qta" || key === "prezzoUnitario" || key === "omaggio" || key === "colliManuale";
+  const r = Object.assign({}, riga, { [key]: numKey ? (val === "" || val === null ? "" : Number(val)) : val });
+  if (key === "formato" || key === "qta") {
+    const fmt = key === "formato" ? val : r.formato;
+    const qty = key === "qta" ? Number(val) : r.qta;
+    const p = getPrezzoListino(fmt, qty, r.confezione !== false, dati);
+    if (p) r.prezzoUnitario = p;
+    if (key === "formato") r.annata = annataDefaultPerFormato(dati, fmt) || r.annata;
+  }
+  if (key === "confezione") {
+    const p = getPrezzoListino(r.formato, r.qta, val, dati);
+    if (p) r.prezzoUnitario = p;
+  }
+  return r;
+};
+// Riga ordine di default con prezzo COERENTE col flag confezione (audit F#101):
+// prima nasceva con confezione:false ma prezzoUnitario 19.50 (prezzo CON
+// confezione), così un ordine salvato senza toccare qta/formato stampava
+// "senza conf." a prezzo pieno. Ora il prezzo è derivato dal listino.
+const nuovaRigaOrdine = (dati, formato) => {
+  const fmt = formato || "500 ml";
+  const base = { formato: fmt, annata: annataDefaultPerFormato(dati, fmt), qta: 1, colliManuale: "", prezzoUnitario: 19.50, confezione: false, omaggio: 0 };
+  const p = getPrezzoListino(fmt, 1, false, dati);
+  if (p) base.prezzoUnitario = p;
+  return base;
+};
 // Audit F#143: rimossa getScaglioneLabel — mai chiamata, e leggeva solo la
 // const LISTINO hardcoded ignorando il listino editabile dati.listino.
 const STATO_OF = {
@@ -8107,7 +8137,7 @@ function Pipeline({
               clienteId: existingClienteId,
               clienteForm: null,
               ordineForm: {
-                righe: [{ formato: "500 ml", annata: annataDefaultPerFormato(dati, "500 ml"), qta: 1, prezzoUnitario: 19.50, confezione: false, omaggio: 0 }],
+                righe: [nuovaRigaOrdine(dati, "500 ml")],
                 condizioniPagamento: (cl && cl.condizioniPagamentoDefault) || "",
                 modalitaPagamento: "bonifico",
                 note: ""
@@ -8633,7 +8663,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
               clienteId: newClienteId,
               _didConvert: true,
               ordineForm: {
-                righe: [{ formato: "500 ml", annata: annataDefaultPerFormato(dati, "500 ml"), qta: 1, prezzoUnitario: 19.50, confezione: false, omaggio: 0 }],
+                righe: [nuovaRigaOrdine(dati, "500 ml")],
                 condizioniPagamento: cf.condizioniPagamentoDefault || "",
                 modalitaPagamento: "bonifico",
                 note: ""
@@ -8658,23 +8688,11 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
       var updateOrdineForm = function(patch) {
         setOrdineWizard(function(w) { return Object.assign({}, w, { ordineForm: Object.assign({}, w.ordineForm, patch) }); });
       };
+      // Audit F#101: stessa logica di Ordini via applicaListinoRiga condivisa.
       var updateRiga = function(idx, key, val) {
         setOrdineWizard(function(w) {
           var righe = (w.ordineForm.righe || []).map(function(r, i) {
-            if (i !== idx) return r;
-            var updated = Object.assign({}, r, { [key]: key === "qta" || key === "prezzoUnitario" || key === "omaggio" || key === "colliManuale" ? (val === "" || val === null ? "" : Number(val)) : val });
-            // Auto-price from listino
-            if (key === "formato" || key === "qta") {
-              var fmt = key === "formato" ? val : updated.formato;
-              var qty = key === "qta" ? Number(val) : updated.qta;
-              var p = getPrezzoListino(fmt, qty, updated.confezione !== false, dati); // audit F#32
-              if (p) updated.prezzoUnitario = p;
-              if (key === "formato") {
-                // Audit F#72: annata dagli SKU reali (vedi updRiga in Ordini)
-                updated.annata = annataDefaultPerFormato(dati, fmt) || updated.annata;
-              }
-            }
-            return updated;
+            return i !== idx ? r : applicaListinoRiga(r, key, val, dati);
           });
           return Object.assign({}, w, { ordineForm: Object.assign({}, w.ordineForm, { righe: righe }) });
         });
@@ -8682,7 +8700,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
       var addRigaWiz = function() {
         setOrdineWizard(function(w) {
           return Object.assign({}, w, { ordineForm: Object.assign({}, w.ordineForm, {
-            righe: [...(w.ordineForm.righe || []), { formato: "500 ml", annata: annataDefaultPerFormato(dati, "500 ml"), qta: 1, colliManuale: "", prezzoUnitario: 19.50, confezione: false, omaggio: 0 }]
+            righe: [...(w.ordineForm.righe || []), nuovaRigaOrdine(dati, "500 ml")] // audit F#101: prezzo coerente col flag confezione
           }) });
         });
       };
@@ -11611,43 +11629,16 @@ function Ordini({
     if (deltaRese > 0 && window.tnbToast) window.tnbToast(`↩️ Resa CV: +${deltaRese} pz rientrati in magazzino`);
     setCvModal(null);
   };
+  // Audit F#101: riga di default con prezzo coerente col flag confezione.
   const addRiga = () => setForm(f => ({
     ...f,
-    righe: [...(f.righe || []), {
-      formato: "500 ml",
-      // Audit E#29: default = annata più vecchia con stock per il formato (rotazione)
-      annata: annataDefaultPerFormato(dati, "500 ml"),
-      qta: 1,
-      colliManuale: "",
-      prezzoUnitario: 19.50,
-      confezione: false,
-      omaggio: 0
-    }]
+    righe: [...(f.righe || []), nuovaRigaOrdine(dati, "500 ml")]
   }));
+  // Audit F#101: usa l'helper condiviso applicaListinoRiga (stessa logica del
+  // wizard Pipeline). Prezzo dal listino editabile (F#32) e annata reale (F#72).
   const updRiga = (i, k, v) => setForm(f => {
     const r = [...(f.righe || [])];
-    r[i] = {
-      ...r[i],
-      [k]: k === "qta" || k === "prezzoUnitario" || k === "omaggio" || k === "colliManuale" ? (v === "" || v === null ? "" : Number(v)) : v
-    };
-    // Auto-price from listino when format or qty changes
-    if (k === "formato" || k === "qta") {
-      const fmt2 = k === "formato" ? v : r[i].formato;
-      const qty = k === "qta" ? Number(v) : r[i].qta;
-      const conConf = r[i].confezione !== false;
-      const p = getPrezzoListino(fmt2, qty, conConf, dati); // audit F#32
-      if (p) r[i].prezzoUnitario = p;
-      if (k === "formato") {
-        // Audit F#72: annata dagli SKU reali (più vecchia con stock, fallback
-        // più recente) — la const LISTINO proponeva annate non a magazzino
-        // (es. 5 L → 2024 con solo la 2025 disponibile → "SKU non trovato").
-        r[i].annata = annataDefaultPerFormato(dati, fmt2) || r[i].annata;
-      }
-    }
-    if (k === "confezione") {
-      const p = getPrezzoListino(r[i].formato, r[i].qta, v, dati); // audit F#32
-      if (p) r[i].prezzoUnitario = p;
-    }
+    r[i] = applicaListinoRiga(r[i], k, v, dati);
     return {
       ...f,
       righe: r
