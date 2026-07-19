@@ -24,15 +24,15 @@ Finché mancano questi due dati, **l'operazione non si può registrare**. In que
 | Movimento | Quando si usa |
 |---|---|
 | **Carico (nuova produzione)** | Ingresso di prodotto finito nuovo |
-| **Carico da produzione interna** | Carico in magazzino dei lotti imbottigliati |
+| **Carico da produzione** | Carico in magazzino dei lotti imbottigliati |
 | **Resa conto vendita** | Reso di merce da un cliente in conto vendita |
 | **Annullo scarico ordine** | Rientro merce per annullamento di un ordine firmato |
 
 ### 📤 Uscite (la merce lascia il magazzino)
 | Movimento | Quando si usa |
 |---|---|
-| **Affido allo spedizioniere** | La merce viene consegnata al corriere |
-| **Scarico per ordine** | Scarico automatico alla firma dell'ordine |
+| **Affidato allo spedizioniere** | La merce viene consegnata al corriere |
+| **Scarico automatico per ordine** | Scarico automatico alla firma dell'ordine |
 | **Consegnato al cliente** | Conferma di avvenuta consegna |
 
 ---
