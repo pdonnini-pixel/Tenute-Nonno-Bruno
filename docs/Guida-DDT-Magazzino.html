@@ -81,7 +81,7 @@
   <table>
     <tr><th>Movimento</th><th>Quando si usa</th></tr>
     <tr><td>Affidato allo spedizioniere</td><td>La merce viene consegnata al corriere</td></tr>
-    <tr><td>Scarico automatico per ordine</td><td>Scarico automatico alla firma dell'ordine</td></tr>
+    <tr><td>Scarico automatico per ordine</td><td>Scarico automatico alla firma dell'ordine. <em>Eredita il DDT dell'ordine se già allegato; altrimenti (caso normale, il DDT si allega alla consegna) nasce senza DDT e compare in Archivio come « mancante ».</em></td></tr>
     <tr><td>Consegnato al cliente</td><td>Conferma di avvenuta consegna</td></tr>
   </table>
 
@@ -138,7 +138,7 @@
     <li><strong>Filtri:</strong> per direzione (📥 Entrate / 📤 Uscite) e ricerca per numero DDT, SKU o numero ordine.</li>
     <li><strong>Per ogni riga:</strong> data, direzione, numero DDT, tipo movimento, SKU, quantità, ordine collegato e pulsante <strong>🚚 Apri</strong> per il documento.</li>
   </ul>
-  <div class="note ok">I movimenti in <strong>rosso « ⚠ mancante / assente »</strong> sono operazioni registrate <em>prima</em> dell'attivazione della regola, o ordini ancora privi di DDT: vanno regolarizzati allegando il documento.</div>
+  <div class="note ok">I movimenti in <strong>rosso « ⚠ mancante / assente »</strong> sono operazioni registrate <em>prima</em> dell'attivazione della regola, o scarichi automatici di ordini ancora privi di DDT. Restano solo <strong>segnalati</strong>: non esiste una funzione per allegare il documento a un movimento già registrato. Per gli scarichi da ordine il DDT si aggiorna da solo quando lo alleghi all'ordine e lo confermi consegnato.</div>
 
   <h2>8. Domande frequenti</h2>
   <dl class="faq">
@@ -151,7 +151,7 @@
     <dt>Una perdita/rottura richiede il DDT?</dt>
     <dd>No. Lo « Scarico manuale / perdita » non è un trasporto, quindi non richiede DDT.</dd>
     <dt>Cosa succede ai movimenti vecchi senza DDT?</dt>
-    <dd>Restano validi ma sono segnalati nell'Archivio DDT come « da regolarizzare », così puoi recuperarli con calma allegando il documento.</dd>
+    <dd>Restano validi ma sono segnalati nell'Archivio DDT come « da regolarizzare ». È solo una segnalazione: non c'è una funzione per allegare a posteriori il documento a un movimento storico. Fanno eccezione gli scarichi da ordine, il cui DDT si aggiorna da solo quando alleghi il documento all'ordine e lo confermi consegnato.</dd>
   </dl>
 
   <footer>Tenute Nonno Bruno — Gestionale Pro · Guida DDT Magazzino · Per assistenza contattare il referente tecnico.</footer>

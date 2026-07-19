@@ -32,7 +32,7 @@ Finché mancano questi due dati, **l'operazione non si può registrare**. In que
 | Movimento | Quando si usa |
 |---|---|
 | **Affidato allo spedizioniere** | La merce viene consegnata al corriere |
-| **Scarico automatico per ordine** | Scarico automatico alla firma dell'ordine |
+| **Scarico automatico per ordine** | Scarico automatico alla firma dell'ordine. *Eredita il DDT dell'ordine se già allegato; se l'ordine non ha ancora un DDT (caso normale: si allega alla consegna) il movimento nasce senza DDT e compare nell'Archivio come « mancante ».* |
 | **Consegnato al cliente** | Conferma di avvenuta consegna |
 
 ---
@@ -99,7 +99,7 @@ In **Magazzino → 🚚 Archivio DDT** trovi l'elenco completo di tutte le entra
 - **Filtri:** per direzione (📥 Entrate / 📤 Uscite) e ricerca per numero DDT, SKU o numero ordine.
 - **Per ogni riga:** data, direzione, numero DDT, tipo movimento, SKU, quantità, ordine collegato e pulsante **🚚 Apri** per visualizzare il documento.
 
-I movimenti evidenziati in **rosso « ⚠ mancante / assente »** sono operazioni di entrata/uscita registrate **prima** dell'attivazione di questa regola, oppure ordini ancora privi di DDT: vanno regolarizzati allegando il documento.
+I movimenti evidenziati in **rosso « ⚠ mancante / assente »** sono operazioni di entrata/uscita registrate **prima** dell'attivazione di questa regola, oppure scarichi automatici di ordini ancora privi di DDT. Restano solo **segnalati**: al momento non esiste una funzione per allegare il documento a un movimento già registrato. Per gli scarichi da ordine il DDT si aggiorna automaticamente quando lo alleghi all'ordine e lo confermi come consegnato.
 
 ---
 
@@ -118,7 +118,7 @@ No. Le rettifiche richiedono solo il **motivo** obbligatorio (es. inventario, ro
 No. Lo « Scarico manuale / perdita » non è un trasporto, quindi non richiede DDT.
 
 **Cosa succede ai movimenti vecchi senza DDT?**
-Restano validi ma vengono segnalati nell'Archivio DDT come « da regolarizzare », così puoi recuperarli con calma allegando il documento.
+Restano validi ma vengono segnalati nell'Archivio DDT come « da regolarizzare ». Sono solo una segnalazione: non c'è una funzione per allegare a posteriori il documento a un movimento storico. Fanno eccezione gli scarichi da ordine, il cui DDT si aggiorna da solo quando alleghi il documento all'ordine e lo confermi consegnato.
 
 ---
 
