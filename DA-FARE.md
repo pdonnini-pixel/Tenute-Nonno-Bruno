@@ -19,6 +19,16 @@ Ultimo aggiornamento: 2026-07-19 (audit completo del gestionale — vedi `docs/A
   5. Magazzino: clamp `Math.max(0,…)` sugli scarichi + riaccredito pieno di annullo/resa → **stock fantasma** (`index.html` ~2596).
 - **Stato:** solo analisi fatta, nessuna modifica al codice. Decidere priorità e piano di fix insieme (aree a rischio: login/persistenza/magazzino).
 
+### 0-bis. Piano di lavoro post-audit — pacchetti in ordine di priorità
+> Ogni pacchetto è pensato per essere affidato a una sessione di lavoro dedicata (prompt pronto in `docs/PROMPT-SESSIONE-FIX.md`). Dettaglio completo di ogni finding nel report `docs/AUDIT-Gestionale-2026-07-19.md`.
+
+- **Pacchetto A — Persistenza dati (i 4 critici, PRIMA DI TUTTO):** schermata di errore bloccante al posto del reset silenzioso a D0 (~18611); controllo di concorrenza sull'upsert Supabase (versione/timestamp, niente last-write-wins ~18649/709); avviso visibile quando la scrittura Supabase fallisce (~716); niente avvio da cache localStorage stantia senza conferma (~696). ⚠️ Tocca il cuore della persistenza: serve test end-to-end multi-dispositivo prima del merge.
+- **Pacchetto B — Integrità magazzino:** stock fantasma da clamp `Math.max(0,…)` + riaccredito pieno di annullo/resa (~2596, critico); `saveMov` senza controllo disponibilità in uscita (~13189); riapertura ordine annullato non rigenera lo scarico (~2844); rollback firma "Da firmare" non ripristina la giacenza (~11056); movimenti retrodatati con `timestamp=Date.now()` (~13208).
+- **Pacchetto C — Coerenza numeri (report/margini):** ordini annullati inclusi in ReportPeriodo (~21639), in CostiMargini "Per Ordine" (~16819) e nel P&L di campagna (~4712); sottotitolo KPI Dashboard (~6257); contatore "Distribuzione" sempre a 0 (~8529). Fix piccoli e a basso rischio: buon primo pacchetto se si vuole partire morbidi.
+- **Pacchetto D — Ruoli e log attività:** routing hash senza controllo `ROLE_ACCESS` + prop `readonly` non passata a Produzione/Fornitori/CostiMargini (~18706); log attività non realmente append-only (race read-modify-write, catch vuoto, ~18676-18693); login/logout non registrati nel log (~18616).
+- **Pacchetto E — Tracciabilità lotti e FIFO:** lo scarico ordine non registra il lotto → catena lotto→cliente interrotta (~2767); carichi manuali senza lotto obbligatorio (~13203); annate hardcoded nei form ordine (~11199); prelievo non guidato FIFO/scadenza.
+- **Pacchetti F+ — Medi e bassi:** 58 medi + 43 bassi nel report (UX, validazioni, guide, pulizia codice): da smaltire a lotti dopo A–E.
+
 ### 1. Autenticazione: password in chiaro + auth lato client — CRITICO
 - **Dove:** `index.html` — array `USERS` (~riga 19519) e verifica in `handleLogin` (~riga 19589).
 - **Problema:** username/password (`superadmin/tnb2026!`, `admin/azienda2026`, `irene/irene2026`) sono nel bundle e la verifica avviene nel browser → chiunque apra il sorgente legge le credenziali e può bypassare il login. Il codice stesso lo ammette (~riga 19859).
