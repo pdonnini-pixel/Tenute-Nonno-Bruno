@@ -2940,6 +2940,13 @@ const verificaDisponibilitaOrdine = (ordine, magazzino, movimenti, escludiOrdine
 // Estrae il riferimento DDT da un ordine (numero + documento) per stampare i movimenti
 // magazzino generati automaticamente, così compaiono nell'Archivio DDT. Il "numero" usa
 // la nota DDT manuale dell'ordine, con fallback al nome del file caricato.
+// Audit F#36: un documento (DDT/fattura) referenziato dai movimenti magazzino
+// (Archivio DDT) NON va cancellato da Storage all'annullamento dell'ordine —
+// il documento di trasporto di una consegna realmente avvenuta deve restare
+// consultabile. La firma non è mai referenziata dai movimenti: si cancella.
+const docReferenziatoDaMovimenti = (movimenti, path) =>
+  !!path && (movimenti || []).some(mv => mv && mv.ddtDoc && mv.ddtDoc.path === path);
+
 const ddtFromOrdine = (ordine) => {
   const arr = Array.isArray(ordine && ordine.ddt) ? ordine.ddt : (ordine && ordine.ddt ? [ordine.ddt] : []);
   const doc = arr.length ? arr[0] : null;
@@ -11318,14 +11325,15 @@ function Ordini({
     window.tnbConfirm(
       "Eliminare definitivamente l'ordine " + label + "? Verrà cancellata anche l'eventuale firma allegata. L'operazione è irreversibile.",
       function() {
-        // Cleanup firma + DDT + fatture su Supabase Storage (best-effort)
+        // Cleanup firma + DDT + fatture su Supabase Storage (best-effort).
+        // Audit F#36: i documenti referenziati dai movimenti (Archivio DDT) restano.
         if (window.tnbStorage) {
           if (o.firma && o.firma.path) window.tnbStorage.deleteFirma(o.firma.path).catch(_=>{});
           (Array.isArray(o.ddt) ? o.ddt : (o.ddt ? [o.ddt] : [])).forEach(d => {
-            if (d && d.path) window.tnbStorage.deleteDocumento(d.path).catch(_=>{});
+            if (d && d.path && !docReferenziatoDaMovimenti(dati.movimenti, d.path)) window.tnbStorage.deleteDocumento(d.path).catch(_=>{});
           });
           (o.fatture || []).forEach(fat => {
-            if (fat && fat.path) window.tnbStorage.deleteDocumento(fat.path).catch(_=>{});
+            if (fat && fat.path && !docReferenziatoDaMovimenti(dati.movimenti, fat.path)) window.tnbStorage.deleteDocumento(fat.path).catch(_=>{});
           });
         }
         setDati(d => ({ ...d, ordini: (d.ordini || []).filter(x => x.id !== o.id) }));
@@ -11353,14 +11361,15 @@ function Ordini({
     if (!form.stato || form.stato === nuovoStato) return;
     const now = new Date().toISOString();
     const vecchio = form.stato;
-    // Best-effort cleanup allegati su Storage se passa ad annullato
+    // Best-effort cleanup allegati su Storage se passa ad annullato.
+    // Audit F#36: i documenti referenziati dai movimenti restano su Storage.
     if (nuovoStato === "annullato" && window.tnbStorage) {
       if (form.firma && form.firma.path) window.tnbStorage.deleteFirma(form.firma.path).catch(_ => {});
       (Array.isArray(form.ddt) ? form.ddt : (form.ddt ? [form.ddt] : [])).forEach(d => {
-        if (d && d.path) window.tnbStorage.deleteDocumento(d.path).catch(_ => {});
+        if (d && d.path && !docReferenziatoDaMovimenti(dati.movimenti, d.path)) window.tnbStorage.deleteDocumento(d.path).catch(_ => {});
       });
       (form.fatture || []).forEach(fat => {
-        if (fat && fat.path) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
+        if (fat && fat.path && !docReferenziatoDaMovimenti(dati.movimenti, fat.path)) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
       });
     }
     setForm(f => ({
@@ -11436,12 +11445,13 @@ function Ordini({
       const ord = (d.ordini || []).find(o => o.id === oid);
       if (!ord) return d;
       if (window.tnbStorage) {
+        // Audit F#36: i documenti referenziati dai movimenti restano su Storage.
         if (ord.firma && ord.firma.path) window.tnbStorage.deleteFirma(ord.firma.path).catch(_ => {});
         (Array.isArray(ord.ddt) ? ord.ddt : (ord.ddt ? [ord.ddt] : [])).forEach(dd => {
-          if (dd && dd.path) window.tnbStorage.deleteDocumento(dd.path).catch(_ => {});
+          if (dd && dd.path && !docReferenziatoDaMovimenti(d.movimenti, dd.path)) window.tnbStorage.deleteDocumento(dd.path).catch(_ => {});
         });
         (ord.fatture || []).forEach(fat => {
-          if (fat && fat.path) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
+          if (fat && fat.path && !docReferenziatoDaMovimenti(d.movimenti, fat.path)) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
         });
       }
       const vecchio = ord.stato;
@@ -13071,14 +13081,15 @@ function Ordini({
             // sul `form` precedente e veniva bloccato dalla validazione di saveOrdine
             // (es. ordini €0 senza modalitaPagamento), quindi l'annullamento non veniva mai salvato.
             const oid = form.id;
-            // Cleanup best-effort allegati su Storage
+            // Cleanup best-effort allegati su Storage.
+            // Audit F#36: i documenti referenziati dai movimenti (Archivio DDT) restano.
             if (window.tnbStorage) {
               if (form.firma && form.firma.path) window.tnbStorage.deleteFirma(form.firma.path).catch(_ => {});
               (Array.isArray(form.ddt) ? form.ddt : (form.ddt ? [form.ddt] : [])).forEach(d => {
-                if (d && d.path) window.tnbStorage.deleteDocumento(d.path).catch(_ => {});
+                if (d && d.path && !docReferenziatoDaMovimenti(dati.movimenti, d.path)) window.tnbStorage.deleteDocumento(d.path).catch(_ => {});
               });
               (form.fatture || []).forEach(fat => {
-                if (fat && fat.path) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
+                if (fat && fat.path && !docReferenziatoDaMovimenti(dati.movimenti, fat.path)) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
               });
             }
             setDati(d => {
