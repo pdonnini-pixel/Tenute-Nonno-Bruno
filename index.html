@@ -18967,31 +18967,52 @@ function App() {
       return next;
     });
   }, [_onSaveResult]);
-  const logAction = useCallback(async (azione, modulo, dettaglio, extra) => {
-    try {
-      const raw = await window.storage.get("tnb-log");
-      const logs = raw ? JSON.parse(raw.value) : [];
-      const entry = {
-        id: Math.random().toString(36).slice(2, 10),
-        ts: new Date().toISOString(),
-        userId: currentUser?.id,
-        userName: currentUser?.nome,
-        userRole: currentUser?.role,
-        azione,
-        modulo,
-        dettaglio,
-        // extra: campi opzionali (es. { changes: [{campo, da, a}] }) per il drill-down nel report
-        ...(extra && typeof extra === "object" ? extra : {})
-      };
-      logs.unshift(entry);
-      // Policy: il log attività è APPEND-ONLY — nessuna voce viene mai cancellata.
-      // Audit #3: l'esito non è più ignorato del tutto. Con il controllo di
-      // concorrenza (audit #2) un conflitto qui significa voce persa ma senza
-      // sovrascrivere quelle degli altri utenti (limite del blob unico:
-      // vedi DA-FARE.md, pacchetto D).
-      const resLog = await window.storage.set("tnb-log", JSON.stringify(logs));
-      if (!resLog || !resLog.ok) console.warn("[TNB] voce del report attività NON sincronizzata sul server", resLog);
-    } catch (e) {}
+  // Audit D#9: le scritture del log sono SERIALIZZATE per tab (promise-chain) e
+  // il conflitto di concorrenza viene ritentato rileggendo il log: due azioni
+  // ravvicinate (stessa tab o utenti diversi) non si sovrascrivono più a vicenda.
+  // Gli errori non vengono più inghiottiti in silenzio (console.error).
+  // Limite architetturale residuo del blob unico documentato in DA-FARE.md.
+  const _logChainRef = React.useRef(Promise.resolve());
+  const logAction = useCallback((azione, modulo, dettaglio, extra) => {
+    // La voce è costruita SUBITO (timestamp/utente del momento dell'azione),
+    // la scrittura è accodata.
+    const entry = {
+      id: Math.random().toString(36).slice(2, 10),
+      ts: new Date().toISOString(),
+      userId: currentUser?.id,
+      userName: currentUser?.nome,
+      userRole: currentUser?.role,
+      azione,
+      modulo,
+      dettaglio,
+      // extra: campi opzionali (es. { changes: [{campo, da, a}] }) per il drill-down nel report
+      ...(extra && typeof extra === "object" ? extra : {})
+    };
+    const run = async () => {
+      try {
+        // Policy: il log attività è APPEND-ONLY — nessuna voce viene mai cancellata.
+        // Fino a 3 tentativi: un conflitto (altro utente ha scritto nel frattempo,
+        // audit #2) si risolve rileggendo il log e riappendendo la voce.
+        for (let tentativo = 0; tentativo < 3; tentativo++) {
+          const raw = await window.storage.get("tnb-log");
+          const logs = raw ? JSON.parse(raw.value) : [];
+          logs.unshift(entry);
+          const resLog = await window.storage.set("tnb-log", JSON.stringify(logs));
+          if (resLog && resLog.ok) return;
+          if (!(resLog && resLog.conflict)) {
+            console.error("[TNB] voce del report attività NON salvata sul server", resLog, entry);
+            return; // offline: la voce resta solo nella cache locale di questo dispositivo
+          }
+          // conflitto → riprova rileggendo
+        }
+        console.error("[TNB] report attività: conflitti ripetuti, voce non registrata", entry);
+      } catch (e) {
+        console.error("[TNB] report attività: registrazione fallita", e, entry);
+      }
+    };
+    const p = _logChainRef.current.then(run, run);
+    _logChainRef.current = p;
+    return p;
   }, [currentUser]);
   const isReadonly = mod => (ROLE_READONLY[currentUser?.role] || []).includes(mod);
   // Audit D#7: il routing (hash e navigazione programmatica) accetta solo moduli
