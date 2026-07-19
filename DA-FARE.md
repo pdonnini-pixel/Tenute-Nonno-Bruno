@@ -3,11 +3,21 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-07 (dedup anagrafica PDF completata)
+Ultimo aggiornamento: 2026-07-19 (audit completo del gestionale — vedi `docs/AUDIT-Gestionale-2026-07-19.md`)
 
 ---
 
 ## 🔴 Aperti — richiedono decisione o test (NON fare "al volo")
+
+### 0. Esiti audit 2026-07-19: 5 finding CRITICI su persistenza dati e magazzino
+- **Dove:** report completo in `docs/AUDIT-Gestionale-2026-07-19.md` (145 finding confermati: 5 critici, 39 alti, 58 medi, 43 bassi; ogni finding verificato da un revisore avversariale indipendente).
+- **I 5 critici, tutti da pianificare con test end-to-end (toccano persistenza/Supabase):**
+  1. Catch del caricamento iniziale → `setDati(D0)` silenzioso: al primo salvataggio può **sovrascrivere l'intero DB di produzione** con dati vuoti/demo (`index.html` ~18611).
+  2. Salvataggio intero stato con upsert **last-write-wins**: nessun controllo di concorrenza tra i 5+ utenti attivi (`index.html` ~18649/709).
+  3. `storage.set`: scrittura Supabase fallita **silenziata** — l'app finge il salvataggio riuscito (`index.html` ~716).
+  4. `storage.get`: al boot fallback su cache localStorage **stantia** → il primo salvataggio riporta indietro i dati di tutti (`index.html` ~696).
+  5. Magazzino: clamp `Math.max(0,…)` sugli scarichi + riaccredito pieno di annullo/resa → **stock fantasma** (`index.html` ~2596).
+- **Stato:** solo analisi fatta, nessuna modifica al codice. Decidere priorità e piano di fix insieme (aree a rischio: login/persistenza/magazzino).
 
 ### 1. Autenticazione: password in chiaro + auth lato client — CRITICO
 - **Dove:** `index.html` — array `USERS` (~riga 19519) e verifica in `handleLogin` (~riga 19589).
