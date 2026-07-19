@@ -9769,10 +9769,18 @@ const fmtPdf = n => fmt(Number(n) || 0);
 //   Scaglioni 2 e 4 colli = prezzo "1 collo" (NON sconto). 3, 5, 10 colli prezzi scontati.
 //   100ml e 20ml: solo 1 collo + 2+ colli (-10%).
 const LISTINO_PDF = {
-  "500 ml|2024": { pezziCollo: 12, scaglioni: { 1: 132, 2: 264, 3: 360, 4: 528, 5: 540, 10: 960 }, esaurimento: true },
-  "500 ml|2025": { pezziCollo: 12, scaglioni: { 1: 156, 2: 312, 3: 432, 4: 624, 5: 660, 10: 1200 } },
+  // Audit F#33/F#44: pezziCollo allineati agli scaglioni reali (i prezzi a
+  // collo qui sotto li presuppongono già: 156 € = 8×19,50; 144 € = 16×9,00).
+  // Prima il PDF stampava colli frazionari errati (8 pz da 500 ml → "0,67").
+  "500 ml|2024": { pezziCollo: 8, scaglioni: { 1: 132, 2: 264, 3: 360, 4: 528, 5: 540, 10: 960 }, esaurimento: true },
+  "500 ml|2025": { pezziCollo: 8, scaglioni: { 1: 156, 2: 312, 3: 432, 4: 624, 5: 660, 10: 1200 } },
   "250 ml|2025": { pezziCollo: 12, scaglioni: { 1: 156, 2: 312, 3: 414, 4: 624, 5: 600, 10: 1020 } },
-  "100 ml|2025": { pezziCollo: 12, scaglioni: { 1: 144, 2: 259.20 } },
+  "100 ml|2025": { pezziCollo: 16, scaglioni: { 1: 144, 2: 259.20 } },
+  // Audit F#34: chiavi con i formati che le righe ordine usano davvero —
+  // prima il lookup falliva e il PDF stampava colli = numero di pezzi.
+  // La chiave legacy "20 ml|2025" resta per eventuali righe storiche.
+  "Olio 20 ml|2025": { pezziCollo: 50, scaglioni: { 1: 100, 2: 180 } },
+  "Aceto 20 ml|2025": { pezziCollo: 50, scaglioni: { 1: 100, 2: 180 } },
   "20 ml|2025": { pezziCollo: 50, scaglioni: { 1: 100, 2: 180 } }
 };
 
