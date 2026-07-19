@@ -21513,8 +21513,18 @@ function OggiAzioni({
       }
       setDati(d => {
         const vecchioStato = a.ordine.stato;
-        const ordineFirmato = { ...a.ordine, stato: "firmato" };
-        const d1 = { ...d, ordini: d.ordini.map(o => o.id === a.ordine.id ? { ...o, stato: "firmato" } : o) };
+        // Audit F#119: la transizione entra in statoLog come tutti gli altri
+        // percorsi — la timeline dell'ordine mostra chi/quando ha firmato.
+        const logEntry = {
+          stato: "firmato",
+          data: new Date().toISOString(),
+          utente: (currentUser && currentUser.username) || "sconosciuto",
+          auto: false,
+          trigger: "quick_firma",
+          prev: vecchioStato
+        };
+        const ordineFirmato = { ...a.ordine, stato: "firmato", statoLog: [...(a.ordine.statoLog || []), logEntry] };
+        const d1 = { ...d, ordini: d.ordini.map(o => o.id === a.ordine.id ? { ...o, stato: "firmato", statoLog: [...(o.statoLog || []), logEntry] } : o) };
         // v49-mag1: auto-scarico magazzino al passaggio → firmato
         return applicaTransizioneOrdineMagazzino(d1, ordineFirmato, vecchioStato);
       });
