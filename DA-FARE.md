@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A, B, C in produzione; Pacchetto D — ruoli e log: finding #7, #9, #39, #125 corretti sul branch, merge da decidere)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A, B, C e D dell'audit in produzione su decisione esplicita di Patrizio)
 
 ---
 
@@ -53,7 +53,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A, B, C in produzione; Pacchetto D �
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto D audit (ruoli e log attività): finding #7, #9, #39, #125 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge su `main` da decidere esplicitamente). ⚠️ Il fix #125 tocca l'area login SOLO in aggiunta (logging): autenticazione invariata (il punto critico "auth lato client" resta aperto, vedi #1):
+- **2026-07-19 — Pacchetto D audit (ruoli e log attività): finding #7, #9, #39, #125 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Il fix #125 tocca l'area login SOLO in aggiunta (logging): autenticazione invariata (il punto critico "auth lato client" resta aperto, vedi #1). Da ora accessi e uscite compaiono nel Report Attività: la voce "Login/Logout · auth" è normale, non un'anomalia:
   - **#7** — il routing hash rispetta `ROLE_ACCESS`: digitare `#impostazioni`/`#produzione`/… con un ruolo non autorizzato mostra un avviso e riporta al modulo di fallback (vale anche per la sessione ricordata che riparte su un hash vietato). Per superadmin/admin nulla cambia.
   - **#39** — la prop `readonly` (ROLE_READONLY) è ora passata e gestita anche in Produzione, Fornitori e CostiMargini: in sola lettura ogni tentativo di modifica è bloccato con avviso "🔒" (guardia centrale su setDati). Oggi nessun utente reale ha ruolo `commerciale`, quindi è una cintura per il futuro.
   - **#9** — report attività: voce costruita al momento dell'azione, scritture serializzate per scheda, conflitti di concorrenza risolti con rilettura+retry (fino a 3), errori in console invece del catch vuoto. Limite strutturale residuo del blob unico documentato al punto 4.
