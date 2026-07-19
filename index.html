@@ -22197,7 +22197,9 @@ function ReportSezione({
 function ReportPeriodo({
   dati
 }) {
-  const [dal, setDal] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+  // Audit F#105: stringa locale — la conversione UTC del 1° gennaio locale
+  // dava il 31 dicembre dell'anno precedente (incoerente col preset "Anno corrente").
+  const [dal, setDal] = useState(`${new Date().getFullYear()}-01-01`);
   const [al, setAl] = useState(todayStr());
   const inRange = d => d && d >= dal && d <= al;
   // Audit C#6: gli ordini annullati non contano nel report (fatturato, conteggi,
@@ -22268,7 +22270,7 @@ function ReportPeriodo({
       f: () => {
         const n = new Date();
         n.setDate(n.getDate() - 30);
-        setDal(n.toISOString().slice(0, 10));
+        setDal(_dataLocaleStr(n)); // audit F#105: locale, non UTC
         setAl(todayStr());
       }
     }, {
@@ -22276,7 +22278,7 @@ function ReportPeriodo({
       f: () => {
         const n = new Date();
         n.setDate(n.getDate() - 90);
-        setDal(n.toISOString().slice(0, 10));
+        setDal(_dataLocaleStr(n)); // audit F#105: locale, non UTC
         setAl(todayStr());
       }
     }, {
