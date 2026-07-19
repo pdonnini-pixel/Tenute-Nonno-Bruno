@@ -20353,12 +20353,31 @@ function LoginScreen({
       flexDirection: "column",
       gap: 14
     }
-  }, /*#__PURE__*/React.createElement(Inp, {
-    label: "Username",
-    v: user,
-    on: setUser,
-    ph: "es. irene"
-  }), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", flexDirection: "column", gap: 3 }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: { fontSize: 11, fontWeight: 600, color: C.grigio600, letterSpacing: .5 }
+  }, "Username"), /*#__PURE__*/React.createElement("input", {
+    // Audit F#133: input nativo con name/autocomplete per i password manager
+    // e Invio-per-accedere anche dal campo username (il generico Inp non
+    // supportava né autocomplete né onKeyDown).
+    type: "text",
+    name: "username",
+    autoComplete: "username",
+    value: user,
+    onChange: e => setUser(e.target.value),
+    onKeyDown: e => e.key === "Enter" && doLogin(),
+    placeholder: "es. irene",
+    style: {
+      width: "100%",
+      border: `1.5px solid ${C.grigio200}`,
+      borderRadius: 6,
+      padding: "8px 10px",
+      fontSize: 13,
+      outline: "none",
+      boxSizing: "border-box"
+    }
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -20377,6 +20396,8 @@ function LoginScreen({
     }
   }, /*#__PURE__*/React.createElement("input", {
     type: show ? "text" : "password",
+    name: "password",
+    autoComplete: "current-password", // audit F#133
     value: pass,
     onChange: e => setPass(e.target.value),
     onKeyDown: e => e.key === "Enter" && doLogin(),
