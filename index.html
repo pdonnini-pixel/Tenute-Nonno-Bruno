@@ -11032,8 +11032,11 @@ function Ordini({
   const [cvForm, setCvForm] = useState({});
   const [pdfInvioModal, setPdfInvioModal] = useState(null);
   const oggi = todayStr();
+  // Audit F#83: Map clienteId→cliente costruita una sola volta per [dati.clienti]
+  // (prima nCl faceva un find lineare a ogni riga della tabella → O(ordini×clienti)).
+  const clientiById = React.useMemo(() => new Map((dati.clienti || []).map(c => [c.id, c])), [dati.clienti]);
   const nCl = id => {
-    const c = dati.clienti.find(x => x.id === id);
+    const c = clientiById.get(id);
     return c?.insegna || c?.ragioneSociale || "—";
   };
 
@@ -11702,17 +11705,26 @@ function Ordini({
       righe: r
     };
   });
-  const allOrdini = [...dati.ordini].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
-  const ordiniAttivi = allOrdini.filter(o => o.stato !== "annullato");
-  const views = {
-    tutti: ordiniAttivi,
-    vendita: ordiniAttivi.filter(o => o.modalita === "vendita" && !o.campione),
-    cv: ordiniAttivi.filter(o => o.modalita === "conto_vendita"),
-    da_pagare: ordiniAttivi.filter(o => o.modalita === "vendita" && !o.campione && (o.statoPagamento === "da_pagare" || o.statoPagamento === "parziale")),
-    da_liquidare: ordiniAttivi.filter(o => o.modalita === "conto_vendita" && o.statoPagamento !== "pagato"),
-    campione: ordiniAttivi.filter(o => o.campione),
-    annullati: allOrdini.filter(o => o.stato === "annullato")
-  };
+  // Audit F#83: allOrdini/ordiniAttivi/views memoizzati su [dati.ordini] — prima
+  // erano ricreati (spread+sort+6 filtri) a OGNI render, quindi anche a ogni tasto
+  // premuto nei form del modal (stesso componente). `lista` resta derivata (cheap).
+  const { allOrdini, ordiniAttivi, views, consegneCount } = React.useMemo(() => {
+    const allOrdini = [...dati.ordini].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+    const ordiniAttivi = allOrdini.filter(o => o.stato !== "annullato");
+    const views = {
+      tutti: ordiniAttivi,
+      vendita: ordiniAttivi.filter(o => o.modalita === "vendita" && !o.campione),
+      cv: ordiniAttivi.filter(o => o.modalita === "conto_vendita"),
+      da_pagare: ordiniAttivi.filter(o => o.modalita === "vendita" && !o.campione && (o.statoPagamento === "da_pagare" || o.statoPagamento === "parziale")),
+      da_liquidare: ordiniAttivi.filter(o => o.modalita === "conto_vendita" && o.statoPagamento !== "pagato"),
+      campione: ordiniAttivi.filter(o => o.campione),
+      annullati: allOrdini.filter(o => o.stato === "annullato")
+    };
+    // Audit F#83: conteggio consegne del tab calcolato una volta qui (prima
+    // consegnePianificate(ordiniAttivi) girava a ogni render solo per il badge).
+    const consegneCount = consegnePianificate(ordiniAttivi).length;
+    return { allOrdini, ordiniAttivi, views, consegneCount };
+  }, [dati.ordini]);
   const lista = navTarget ? allOrdini.filter(o => o.id === navTarget) : (views[tab] || allOrdini);
   const handleSetTab = (k) => { setNavTarget(null); setTab(k); };
   const toggleClient = (cid) => setExpandedClients(prev => ({...prev, [cid]: !prev[cid]}));
@@ -11912,7 +11924,7 @@ function Ordini({
         setModal("new");
       }
     })
-  }), /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginBottom:8,alignItems:"center",justifyContent:"space-between"}},/*#__PURE__*/React.createElement(Tab,{tabs:[{k:"tutti",l:"Tutti",n:ordiniAttivi.length},{k:"vendita",l:"Vendita"},{k:"cv",l:"Conto Vendita"},{k:"da_pagare",l:"⚠ Da pagare",n:views.da_pagare.length},{k:"da_liquidare",l:"💰 Da liquidare",n:views.da_liquidare.length},{k:"campione",l:"🎁 Campioni",n:views.campione.length},{k:"consegne",l:"📅 Consegne",n:consegnePianificate(ordiniAttivi).length},{k:"annullati",l:"🚫 Annullati",n:views.annullati.length}],active:navTarget?"__nav__":tab,onSelect:handleSetTab}),/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:4}},/*#__PURE__*/React.createElement(Btn,{ch:"👤 Per cliente",sz:"sm",style:{background:viewMode==="gruppo"?"#2e3a1c":"#e8e6e0",color:viewMode==="gruppo"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("gruppo")}),/*#__PURE__*/React.createElement(Btn,{ch:"☰ Lista",sz:"sm",style:{background:viewMode==="lista"?"#2e3a1c":"#e8e6e0",color:viewMode==="lista"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("lista")}))),tab === "consegne" && (() => {
+  }), /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginBottom:8,alignItems:"center",justifyContent:"space-between"}},/*#__PURE__*/React.createElement(Tab,{tabs:[{k:"tutti",l:"Tutti",n:ordiniAttivi.length},{k:"vendita",l:"Vendita"},{k:"cv",l:"Conto Vendita"},{k:"da_pagare",l:"⚠ Da pagare",n:views.da_pagare.length},{k:"da_liquidare",l:"💰 Da liquidare",n:views.da_liquidare.length},{k:"campione",l:"🎁 Campioni",n:views.campione.length},{k:"consegne",l:"📅 Consegne",n:consegneCount},{k:"annullati",l:"🚫 Annullati",n:views.annullati.length}],active:navTarget?"__nav__":tab,onSelect:handleSetTab}),/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:4}},/*#__PURE__*/React.createElement(Btn,{ch:"👤 Per cliente",sz:"sm",style:{background:viewMode==="gruppo"?"#2e3a1c":"#e8e6e0",color:viewMode==="gruppo"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("gruppo")}),/*#__PURE__*/React.createElement(Btn,{ch:"☰ Lista",sz:"sm",style:{background:viewMode==="lista"?"#2e3a1c":"#e8e6e0",color:viewMode==="lista"?"#fff":"#5f5e5a",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer"},onClick:()=>setViewMode("lista")}))),tab === "consegne" && (() => {
     const oggi = todayStr();
     const tutte = consegnePianificate(allOrdini);
     const filtrate = tutte.filter(filtroConsegne(oggi, consegneFiltro)).sort((a, b) => (a.dataPrev || "").localeCompare(b.dataPrev || ""));
