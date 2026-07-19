@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E in produzione; Pacchetto F1 — validazione input e feedback: 10 finding medi/bassi corretti sul branch, merge da decidere)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1 dell'audit in produzione su decisione esplicita di Patrizio)
 
 ---
 
@@ -53,7 +53,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E in produzione; Pacchetto F1 �
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F1 (blocco omogeneo "validazione input e feedback utente"): finding #42, #70, #75, #76, #77, #78, #105, #121, #122, #129 del report corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge da decidere esplicitamente):
+- **2026-07-19 — Pacchetto F1 (blocco omogeneo "validazione input e feedback utente"): finding #42, #70, #75, #76, #77, #78, #105, #121, #122, #129 del report corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio):
   - **#42** — niente più click "senza effetto": saveMov/saveSku/saveOF elencano i campi mancanti; movimento registrato → toast di conferma.
   - **#70** — `todayStr` e scadenze follow-up in ora LOCALE (prima, tra mezzanotte e le 2, movimenti/DDT/scadenze/numerazione slittavano al giorno prima). ⚠️ Tocca le date che finiscono nei PDF, nel senso che ora sono quelle corrette.
   - **#105** — Report Periodo: default "Dal" = 1° gennaio (non più 31/12 anno prima) e preset 30/90gg in locale.
