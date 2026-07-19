@@ -5049,6 +5049,31 @@ const campagnaRange = anno => ({
   inizio: `${anno}-11-01`,
   fine: `${anno+1}-10-31`
 });
+// Audit F#114: mesi di attività di un costo struttura prorati sui giorni reali
+// (prima si contava per interi anno+mese: un costo attivo dal 30/04 contava
+// tutto aprile, e uno attivo un solo giorno a cavallo di due mesi valeva 2
+// mensilità). Ritorna la somma delle frazioni mese nell'intervallo inclusivo
+// [startStr..endStr] (date YYYY-MM-DD; senza giorno → primo/ultimo del mese).
+const mesiFrazionari = (startStr, endStr) => {
+  const parse = (s, isEnd) => {
+    const p = String(s).split("-").map(Number);
+    const y = p[0], m = p[1];
+    const giorniMese = new Date(y, m, 0).getDate();
+    const d = p[2] || (isEnd ? giorniMese : 1);
+    return { y, m, d };
+  };
+  const a = parse(startStr, false), b = parse(endStr, true);
+  if (b.y < a.y || (b.y === a.y && b.m < a.m)) return 0;
+  let tot = 0, y = a.y, m = a.m, guard = 0;
+  while ((y < b.y || (y === b.y && m <= b.m)) && guard++ < 600) {
+    const giorniMese = new Date(y, m, 0).getDate();
+    const primo = (y === a.y && m === a.m) ? a.d : 1;
+    const ultimo = (y === b.y && m === b.m) ? b.d : giorniMese;
+    tot += Math.max(0, (ultimo - primo + 1)) / giorniMese;
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return tot;
+};
 const campagnaCorrente = (oggi = todayStr()) => dataToCampagna(oggi);
 const campagneAttive = (ordini = []) => {
   const set = new Set();
@@ -5090,12 +5115,10 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
     const dal = cs.attivoDal || range.inizio;
     const al = cs.attivoAl || range.fine;
     if (al < range.inizio || dal > range.fine) return s;
-    // Calcolo mesi precisi di sovrapposizione tra [dal..al] e [range.inizio..range.fine]
+    // Audit F#114: mesi di sovrapposizione prorati sui giorni reali
     const inizioOverlap = dal > range.inizio ? dal : range.inizio;
     const fineOverlap = al < range.fine ? al : range.fine;
-    const [yI, mI] = inizioOverlap.split("-").map(Number);
-    const [yF, mF] = fineOverlap.split("-").map(Number);
-    const mesiAttivi = (yF - yI) * 12 + (mF - mI) + 1; // +1 per includere mese inizio
+    const mesiAttivi = mesiFrazionari(inizioOverlap, fineOverlap);
     return s + (cs.importoMensile || 0) * Math.max(0, mesiAttivi);
   }, 0);
   const ricaviTotali = venditeRicavo + cvLiquidato;
