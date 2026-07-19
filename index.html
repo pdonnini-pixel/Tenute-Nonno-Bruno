@@ -2950,7 +2950,10 @@ const docReferenziatoDaMovimenti = (movimenti, path) =>
 const ddtFromOrdine = (ordine) => {
   const arr = Array.isArray(ordine && ordine.ddt) ? ordine.ddt : (ordine && ordine.ddt ? [ordine.ddt] : []);
   const doc = arr.length ? arr[0] : null;
-  const num = String((ordine && ordine.ddtNote) || "").trim() || (doc && doc.nomeOriginale) || "";
+  // Audit F#74: priorità al campo "Numero" compilato sulla voce DDT; poi le
+  // note manuali; il nome file solo come ultima spiaggia (prima l'Archivio
+  // DDT mostrava "IMG_1234.jpg" al posto del vero numero documento).
+  const num = (doc && String(doc.numero || "").trim()) || String((ordine && ordine.ddtNote) || "").trim() || (doc && doc.nomeOriginale) || "";
   return { ddtNum: num || null, ddtDoc: doc || null };
 };
 
@@ -11428,7 +11431,22 @@ function Ordini({
         ddtNote: form.ddtNote != null ? form.ddtNote : ord.ddtNote,
         fattureNote: form.fattureNote != null ? form.fattureNote : ord.fattureNote
       };
-      const d1 = { ...d, ordini: d.ordini.map(o => o.id === oid ? ordineAgg : o) };
+      let d1 = { ...d, ordini: d.ordini.map(o => o.id === oid ? ordineAgg : o) };
+      // Audit F#74: gli scarichi generati alla FIRMA nascono senza DDT (il
+      // documento viene allegato solo ora, alla consegna): backfill del
+      // riferimento sui movimenti dell'ordine ancora privi di DDT, così
+      // l'Archivio DDT non li mostra più per sempre come "⚠ mancante".
+      const ddtRefBack = ddtFromOrdine(ordineAgg);
+      if (ddtRefBack.ddtNum || ddtRefBack.ddtDoc) {
+        d1 = {
+          ...d1,
+          movimenti: (d1.movimenti || []).map(mv =>
+            mv.ordineId === oid && mv.tipo === "scarico_ordine" && !mv.ddtNum && !(mv.ddtDoc && mv.ddtDoc.path)
+              ? { ...mv, ddtNum: ddtRefBack.ddtNum, ddtDoc: ddtRefBack.ddtDoc }
+              : mv
+          )
+        };
+      }
       return ord.pregresso ? d1 : applicaTransizioneOrdineMagazzino(d1, ordineAgg, vecchio);
     });
     if (logAction) logAction("Stato → " + (STATO_ORDINE[tipo]?.l || tipo), "ordini", form.numero || form.id);
