@@ -18931,6 +18931,7 @@ function TicketDashboard(props) {
   var dati = props.dati;
   var setDati = props.setDati;
   var currentUser = props.currentUser;
+  var logAction = props.logAction; // audit F#82
   var CE = React.createElement;
 
   var isSuperadmin = currentUser && currentUser.role === "superadmin";
@@ -18993,11 +18994,16 @@ function TicketDashboard(props) {
   };
 
   var deleteTicket = function(id) {
+    // Audit F#82: solo il SuperAdmin può eliminare ticket (doppia sicurezza
+    // oltre al gating dei bottoni) e l'eliminazione lascia traccia nel log.
+    if (!isSuperadmin) { window.tnbToast("⛔ Operazione riservata al Super Admin", "err"); return; }
+    var tk = (dati.tickets || []).find(function(t) { return t.id === id; });
     window.tnbConfirm("Eliminare questo ticket definitivamente?", function() {
       setDati(function(d) {
         var tks = (d.tickets || []).filter(function(t) { return t.id !== id; });
         return Object.assign({}, d, { tickets: tks });
       });
+      if (logAction) logAction("Elimina ticket", "ticket", (tk && (tk.titolo || tk.descrizione)) || id);
       window.tnbToast("🗑 Ticket eliminato");
     }, { title: "Elimina ticket", okLabel: "Elimina", danger: true });
   };
@@ -19220,7 +19226,7 @@ function TicketDashboard(props) {
                 }, "Annulla")
               )
             ),
-            CE("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+            isSuperadmin && CE("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } }, // audit F#82: gestione ticket solo SuperAdmin
               t.stato === "aperto" && CE("button", {
                 onClick: function() { updateTicket(t.id, { stato: "in_corso" }); window.tnbToast("🔵 Ticket in lavorazione"); },
                 style: { padding: "5px 12px", borderRadius: 6, border: "1px solid #2196f3", background: "#e3f2fd", color: "#1565c0", fontSize: 11, fontWeight: 600, cursor: "pointer" }
@@ -20048,7 +20054,8 @@ function App() {
   }), modulo === "ticket" && /*#__PURE__*/React.createElement(TicketDashboard, {
     dati: dati,
     setDati: setDatiSave,
-    currentUser: currentUser
+    currentUser: currentUser,
+    logAction: logAction // audit F#82
   }), modulo === "report_ai" && /*#__PURE__*/React.createElement(ReportAIPage, {
     dati: dati,
     setDati: setDatiSave
