@@ -2961,21 +2961,29 @@ const _nettoScaricoOrdine = (movimenti, ordineId) => {
   return netto;
 };
 
+// Stati ordine che presuppongono lo scarico del magazzino (merce uscita o in uscita).
+// da_firmare e annullato NON lo presuppongono: un ordine in questi stati non deve
+// avere scarichi netti a suo carico.
+const STATI_ORDINE_CON_SCARICO = ["firmato", "consegnato", "fatturato"];
+
 // Hook unico di transizione magazzino su cambio stato ordine.
 // Da chiamare dentro setDati(d => applicaTransizioneOrdineMagazzino(d, ordine, vecchioStato)).
-// Idempotente sul NETTO scarichi−annulli per ordineId (audit B#15):
-// - passaggio → firmato con netto ≤ 0   → genera scarico_ordine per ogni riga
+// Idempotente sul NETTO scarichi−annulli per ordineId (audit B#15/#19):
+// - ingresso in uno stato "con scarico" con netto ≤ 0 → genera scarico_ordine per riga
 //   (vale anche per un ordine annullato e poi riaperto: gli scarichi vengono rigenerati)
-// - passaggio → annullato con netto > 0 → genera annullo_ordine per il netto residuo per SKU
+// - uscita dagli stati "con scarico" (annullato O retrocesso a da_firmare, es. per
+//   rimozione firma) con netto > 0 → genera annullo_ordine per il netto residuo per SKU
 const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
   if (!prevDati || !ordine || !ordine.id) return prevDati;
   const nuovoStato = ordine.stato;
   if (vecchioStato === nuovoStato) return prevDati;
+  const eraAttivo = STATI_ORDINE_CON_SCARICO.includes(vecchioStato);
+  const saraAttivo = STATI_ORDINE_CON_SCARICO.includes(nuovoStato);
   let newMov = Array.isArray(prevDati.movimenti) ? prevDati.movimenti : [];
   const skuToccati = new Set();
   let cambiato = false;
-  // Auto-scarico al passaggio → firmato (se non c'è già uno scarico netto attivo)
-  if (vecchioStato !== "firmato" && nuovoStato === "firmato") {
+  // Auto-scarico all'ingresso negli stati con scarico (se non c'è già un netto attivo)
+  if (!eraAttivo && saraAttivo) {
     const netto = _nettoScaricoOrdine(newMov, ordine.id);
     const nettoTot = Array.from(netto.values()).reduce((s, x) => s + x, 0);
     if (nettoTot <= 0) {
@@ -2987,21 +2995,25 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
       }
     }
   }
-  // Auto-annullo al passaggio → annullato: compensa il netto ancora scaricato per SKU.
-  // (Con cicli annullo→riapri→annullo genera sempre e solo la compensazione residua.)
-  if (vecchioStato !== "annullato" && nuovoStato === "annullato") {
+  // Auto-annullo all'uscita dagli stati con scarico: compensa il netto residuo per SKU.
+  // Copre sia l'annullamento sia il rollback a "da_firmare" (audit B#19: rimozione
+  // firma — la Guida promette che il magazzino viene ripristinato).
+  if (eraAttivo && !saraAttivo) {
     const netto = _nettoScaricoOrdine(newMov, ordine.id);
     const daAnnullare = Array.from(netto.entries()).filter(([, q]) => q > 0);
     if (daAnnullare.length > 0) {
       const dataAnn = todayStr();
       const ts0 = Date.now();
       const ddtRefAnn = ddtFromOrdine(ordine);
+      const notaAnn = nuovoStato === "annullato"
+        ? `Auto: annullo ordine ${ordine.numero || ordine.id}`
+        : `Auto: ripristino magazzino ordine ${ordine.numero || ordine.id} (tornato "Da firmare")`;
       const annulli = daAnnullare.map(([skuId, q], i) => ({
         id: uid(),
         tipo: "annullo_ordine",
         qta: q,
         data: dataAnn,
-        nota: `Auto: annullo ordine ${ordine.numero || ordine.id}`,
+        nota: notaAnn,
         ordineId: ordine.id,
         lottoId: null,
         ddtNum: ddtRefAnn.ddtNum,
@@ -10903,7 +10915,19 @@ function Ordini({
       );
     if (richiedeCheckStock) {
       if (window.TNB_DEBUG_MAG) console.log(`[TNB_DEBUG_MAG] saveOrdine check. ordineId=${ordine.id} stato=${ordine.stato} vecchio=${vecchioStato} righe=`, ordine.righe);
-      const check = verificaDisponibilitaOrdine(ordine, dati.magazzino);
+      // Audit B#19: se l'ordine ha ancora scarichi netti a proprio carico (es. firma
+      // appena rimossa → sta tornando "da firmare" e il magazzino verrà riaccreditato
+      // dalla transizione al salvataggio), ai fini del check quelle quantità vanno
+      // considerate disponibili — altrimenti l'ordine resterebbe bloccato da un falso
+      // "stock insufficiente" causato dal suo stesso scarico.
+      const nettoProprio = _nettoScaricoOrdine(dati.movimenti, ordine.id);
+      const magPerCheck = (dati.magazzino || []).map(m => {
+        const extra = nettoProprio.get(m.id) || 0;
+        return extra > 0
+          ? { ...m, giacenza: { ...(m.giacenza || {}), disponibile: ((m.giacenza && m.giacenza.disponibile) || 0) + extra } }
+          : m;
+      });
+      const check = verificaDisponibilitaOrdine(ordine, magPerCheck);
       if (!check.ok) {
         const stock = check.errors.filter(e => e.tipo === "stock");
         const missing = check.errors.filter(e => e.tipo === "sku_mancante");
@@ -11185,7 +11209,7 @@ function Ordini({
     const ridurraStato = STATI_RICHIEDONO_FIRMA.includes(form.stato);
     const labelAttuale = STATO_ORDINE[form.stato]?.l || form.stato;
     const msg = ridurraStato
-      ? "Rimuovere la firma da questo ordine? L'ordine tornerà allo stato “Da firmare” (attualmente “" + labelAttuale + "”) perché senza firma non è autorizzato. Il file verrà cancellato dallo storage."
+      ? "Rimuovere la firma da questo ordine? L'ordine tornerà allo stato “Da firmare” (attualmente “" + labelAttuale + "”) perché senza firma non è autorizzato. Al salvataggio dell'ordine lo scarico magazzino verrà ripristinato (le quantità tornano disponibili). Il file verrà cancellato dallo storage."
       : "Rimuovere la firma da questo ordine? Il file verrà cancellato dallo storage.";
     window.tnbConfirm(msg, function() {
       if (oldPath) window.tnbStorage.deleteDocumento(oldPath).catch(_=>{});
