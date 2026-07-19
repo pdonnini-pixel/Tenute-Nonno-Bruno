@@ -8710,7 +8710,11 @@ function Clienti({
     }, { okLabel: "Elimina", danger: true });
   };
   const saveCliente = () => {
-    if (!form.ragioneSociale) return;
+    // Audit F#78: niente return muto — messaggio esplicito se manca la ragione sociale
+    if (!form.ragioneSociale) {
+      if (window.tnbToast) window.tnbToast("⚠ Ragione sociale obbligatoria per salvare il cliente", "err");
+      return;
+    }
     var emailDup = dati.clienti.find(function(c){
       return c.id !== form.id && c.email && form.email && c.email.trim().toLowerCase() === (form.email||"").trim().toLowerCase();
     });
@@ -8723,13 +8727,30 @@ function Clienti({
       const pecRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!pecRe.test(form.pec.trim())) { window.tnbToast('⚠ PEC non valida: ' + form.pec, 'err'); return; }
     }
-    // Auto-generazione codiceCliente (v47) se vuoto
+    // Audit F#78: stessa validazione di formato anche per l'email ordinaria
+    // (usata per confronto duplicati e invio conferme ordine via Gmail).
+    if (form.email && form.email.trim()) {
+      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRe.test(form.email.trim())) { window.tnbToast('⚠ Email non valida: ' + form.email, 'err'); return; }
+    }
+    // Auto-generazione codiceCliente (v47) se vuoto.
+    // Audit F#77: progressivo = MAX dei suffissi esistenti + 1 (il conteggio
+    // creava duplicati dopo la cancellazione di un cliente) + guardia di unicità.
     let formFinal = form;
     if (!form.codiceCliente) {
       const anno = (todayStr() || "").slice(0, 4);
-      const counts = (dati.clienti || []).filter(c => c.codiceCliente && c.codiceCliente.startsWith("TNB-" + anno + "-")).length;
-      const progressivo = String(counts + 1).padStart(3, "0");
-      formFinal = { ...form, codiceCliente: "TNB-" + anno + "-" + progressivo };
+      const suffissi = (dati.clienti || [])
+        .map(c => String(c.codiceCliente || ""))
+        .filter(cc => cc.startsWith("TNB-" + anno + "-"))
+        .map(cc => parseInt(cc.slice(("TNB-" + anno + "-").length), 10))
+        .filter(n => !isNaN(n));
+      let progressivoN = (suffissi.length ? Math.max(...suffissi) : 0) + 1;
+      let codice = "TNB-" + anno + "-" + String(progressivoN).padStart(3, "0");
+      while ((dati.clienti || []).some(c => c.codiceCliente === codice)) {
+        progressivoN += 1;
+        codice = "TNB-" + anno + "-" + String(progressivoN).padStart(3, "0");
+      }
+      formFinal = { ...form, codiceCliente: codice };
     }
     const isNew = !form.id;
     const persisti = function() {
