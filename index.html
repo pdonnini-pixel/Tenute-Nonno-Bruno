@@ -11186,6 +11186,12 @@ function Ordini({
     // v49-mag1: per nuovi ordini, anticipo l'id qui per poter passarlo a applicaTransizioneOrdineMagazzino
     if (!ordine.id) ordine.id = uid();
     const vecchioStato = ordinePrev ? ordinePrev.stato : null;
+    // Audit F#37/F#43: anche il dropdown "Stato ordine" rispetta la regola
+    // DDT-o-note quando porta l'ordine a consegnato/fatturato.
+    if (["consegnato", "fatturato"].includes(ordine.stato) && !["consegnato", "fatturato"].includes(vecchioStato) &&
+        !ordine.pregresso && !_checkDocPerConsegna(ordine)) {
+      return;
+    }
     // v49-mag1: check stock applicato quando l'ordine deve "consumare" magazzino:
     // (a) stato da_firmare: verifica disponibilità prima di accettare l'ordine
     // (b) audit F#35: OGNI ingresso in uno stato con scarico (firmato/consegnato/
@@ -11330,53 +11336,16 @@ function Ordini({
       { title: "Conferma eliminazione ordine", okLabel: "Elimina", danger: true }
     );
   };
-  // ── G4: cambio stato ordine con statoLog tracking ──
-  const updateStato = (ordineId, nuovoStato, opts) => {
-    opts = opts || {};
-    const now = new Date().toISOString();
-    const ord = (dati.ordini || []).find(x => x.id === ordineId);
-    if (!ord) return;
-    const vecchio = ord.stato;
-    if (vecchio === nuovoStato) return;
-    // Regola proprietà: la merce non può uscire (consegna/fatturazione) senza un DDT
-    // archiviato sull'ordine. Blocca la transizione finché non c'è almeno un DDT allegato.
-    if ((nuovoStato === "consegnato" || nuovoStato === "fatturato")) {
-      const ddtArr = Array.isArray(ord.ddt) ? ord.ddt : (ord.ddt ? [ord.ddt] : []);
-      if (ddtArr.length === 0) {
-        if (window.tnbToast) window.tnbToast("⛔ Allega prima il DDT all'ordine: la merce non può uscire senza documento di trasporto.", "err");
-        return;
-      }
-    }
-    // Best-effort cleanup firma + DDT + fatture su Storage se passa ad annullato
-    if (nuovoStato === "annullato" && window.tnbStorage) {
-      if (ord.firma && ord.firma.path) window.tnbStorage.deleteFirma(ord.firma.path).catch(_ => {});
-      (Array.isArray(ord.ddt) ? ord.ddt : (ord.ddt ? [ord.ddt] : [])).forEach(d => {
-        if (d && d.path) window.tnbStorage.deleteDocumento(d.path).catch(_ => {});
-      });
-      (ord.fatture || []).forEach(fat => {
-        if (fat && fat.path) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
-      });
-    }
-    setDati(d => ({
-      ...d,
-      ordini: d.ordini.map(o => o.id !== ordineId ? o : {
-        ...o,
-        stato: nuovoStato,
-        statoLog: [...(o.statoLog || []), {
-          stato: nuovoStato,
-          data: now,
-          utente: (currentUser && currentUser.username) || "irene",
-          auto: !!opts.auto,
-          trigger: opts.trigger || "manual",
-          prev: vecchio
-        }],
-        firma: (nuovoStato === "annullato") ? null : o.firma,
-        ddt: (nuovoStato === "annullato") ? [] : o.ddt,
-        fatture: (nuovoStato === "annullato") ? [] : o.fatture
-      })
-    }));
-    if (logAction) logAction("Stato → " + (STATO_ORDINE[nuovoStato]?.l || nuovoStato), "ordini", ord.numero || ord.id);
-    if (window.tnbToast) window.tnbToast("Stato → " + (STATO_ORDINE[nuovoStato]?.l || nuovoStato));
+  // Audit F#37: rimossa updateStato (codice morto, mai chiamata). Il blocco
+  // "niente consegna senza DDT" che conteneva vive ora nei percorsi REALI:
+  // _checkDocPerConsegna qui sotto, usato da confermaTransizioneOrdine (wizard)
+  // e da saveOrdine (dropdown stato). Regola proprietà, ammorbidita come già
+  // prometteva il wizard: DDT allegato OPPURE note manuali di trasporto.
+  const _checkDocPerConsegna = (ord) => {
+    const ddtArr = Array.isArray(ord.ddt) ? ord.ddt : (ord.ddt ? [ord.ddt] : []);
+    if (ddtArr.length > 0 || String(ord.ddtNote || "").trim()) return true;
+    if (window.tnbToast) window.tnbToast("⛔ La merce non può risultare consegnata senza documento: allega il DDT all'ordine oppure compila le note manuali di trasporto.", "err");
+    return false;
   };
   // Variante per il modal aperto (modifica form locale invece di setDati)
   const updateStatoForm = (nuovoStato, opts) => {
@@ -11420,6 +11389,9 @@ function Ordini({
   // come già fa annullaOrdineDiretto.
   const confermaTransizioneOrdine = (tipo) => {
     const oid = form.id;
+    // Audit F#37/F#43: la consegna/fatturazione richiede DDT o note manuali,
+    // come promesso dalla guida (il controllo era in codice morto).
+    if ((tipo === "consegnato" || tipo === "fatturato") && !form.pregresso && !_checkDocPerConsegna(form)) return;
     // Ordine non ancora salvato: aggiorna solo il form (sarà persistito al primo save)
     if (!oid) { updateStatoForm(tipo, { trigger: "btn_" + tipo }); setTransizioneModal(null); return; }
     if (!form.stato || form.stato === tipo) { setTransizioneModal(null); return; }
@@ -26357,7 +26329,7 @@ const GUIDA_CONTENUTI = {
   magazzino: {
     titolo: "Magazzino",
     icona: "🏭",
-    corpo: "Il magazzino tiene il conto, sempre aggiornato, di quante bottiglie hai per ogni formato e in che fase si trovano. Ogni volta che qualcosa si muove, resta una traccia.\n\nLE 4 SCHEDE IN ALTO\n• Giacenze per SKU: una card per ogni formato/annata con le quantità. Le card rosse sono 'sotto soglia' (poche scorte). Clicca una card per aprirla.\n• Movimenti: l'elenco di tutto ciò che è entrato/uscito o cambiato stato. I movimenti 🤖 'auto' nascono dagli ordini, quelli ✋ 'manuali' li registri tu.\n• 🚚 Archivio DDT: tutti i documenti di trasporto di entrate e uscite (vedi sotto).\n• Rettifiche: per correggere i numeri dopo un inventario o una perdita.\n\nGLI STATI DI UNA BOTTIGLIA\nOgni formato può trovarsi in 6 stati: In frantoio → Da etichettare → In confezionamento → Disponibile (pronta da vendere) → Riservato (bloccata per un ordine firmato) → In spedizione (dal corriere).\nI pulsanti rapidi sulla card fanno avanzare le quantità da uno stato all'altro.\n\n⭐ LA REGOLA DEL DDT (importante)\nLa merce NON può entrare o uscire dal magazzino senza un DDT. Quando registri un'entrata o un'uscita, il sistema chiede sempre due cose obbligatorie:\n1) il NUMERO del DDT (es. 42/2026);\n2) il DOCUMENTO (PDF o foto del DDT), che viene archiviato.\nSenza tutti e due, il movimento non si salva. Così ogni movimento di merce è collegato al suo documento.\n\nChiedono il DDT: Carico (nuova merce), Carico da produzione, Resa conto vendita, Annullo ordine (entrate); Affido allo spedizioniere, Scarico per ordine, Consegnato (uscite).\nNON chiedono il DDT: i passaggi interni (frantoio, etichettatura, confezionamento), la Riserva, la Rettifica e lo Scarico per perdita/rottura.\n\nESEMPIO — entrata merce\nArrivano 600 bottiglie da 500 ml con il DDT n. 12/2026.\n1. Magazzino → ⚡ Movimento.\n2. SKU: Olio EVO 500 ml; Tipo: Carico; Quantità: 600.\n3. Nel riquadro azzurro 'DDT obbligatorio' scrivi 12/2026 e premi '📎 Carica documento DDT' (scegli il PDF o la foto).\n4. Premi 'Registra movimento'. Le 600 bottiglie entrano in 'Disponibile'.\n\nESEMPIO — uscita per un cliente\nDevi spedire 120 bottiglie con il DDT n. 58/2026.\n1. Sulla card dell'SKU premi il pulsante '🚛 Affido allo spedizioniere'.\n2. Inserisci la quantità (120), il numero DDT 58/2026 e carica il documento.\n3. Registra: le 120 bottiglie passano in 'In spedizione'.\n\n🚚 ARCHIVIO DDT\nÈ la scheda dove trovi tutti i DDT di entrata e uscita: numero, data, formato, quantità, ordine collegato e il pulsante '🚚 Apri' per rivedere il documento. In cima vedi quanti DDT sono archiviati e quanti movimenti sono ancora 'senza DDT (da regolarizzare)' — quelli vanno sistemati allegando il documento mancante.\n\nORDINI: come si lega al magazzino\nQuando firmi un ordine, il magazzino si scarica da solo. L'ordine però NON può passare a 'Consegnato' o 'Fatturato' se non hai prima allegato il DDT all'ordine: comparirà l'avviso di bloccare la consegna senza documento.\n\nRETTIFICHE (correzioni)\nServono dopo un inventario, una rottura o un ammanco. Inserisci SKU, quantità (+ aumenta, − diminuisce) e un motivo obbligatorio. Esempio: trovi 3 bottiglie rotte → quantità −3, motivo 'rottura magazzino'. La rettifica NON richiede DDT.\n\nIL TASTO '🔄 Ricalcola'\nSe un numero ti sembra sbagliato, premi 'Ricalcola': il sistema ricostruisce le giacenze da tutta la storia dei movimenti. Usalo come rete di sicurezza, almeno una volta al mese.\n\nCONSIGLI\n• Tieni pronto il file del DDT (PDF o foto) prima di registrare entrate/uscite.\n• Imposta le soglie minime per formato: gli alert di scorta scattano da soli.\n• Non scrivere le giacenze 'a mano': usa i movimenti o le rettifiche, così resta sempre la traccia.\n• Controlla ogni tanto l'Archivio DDT: se ci sono righe 'da regolarizzare', allega il documento mancante."
+    corpo: "Il magazzino tiene il conto, sempre aggiornato, di quante bottiglie hai per ogni formato e in che fase si trovano. Ogni volta che qualcosa si muove, resta una traccia.\n\nLE 4 SCHEDE IN ALTO\n• Giacenze per SKU: una card per ogni formato/annata con le quantità. Le card rosse sono 'sotto soglia' (poche scorte). Clicca una card per aprirla.\n• Movimenti: l'elenco di tutto ciò che è entrato/uscito o cambiato stato. I movimenti 🤖 'auto' nascono dagli ordini, quelli ✋ 'manuali' li registri tu.\n• 🚚 Archivio DDT: tutti i documenti di trasporto di entrate e uscite (vedi sotto).\n• Rettifiche: per correggere i numeri dopo un inventario o una perdita.\n\nGLI STATI DI UNA BOTTIGLIA\nOgni formato può trovarsi in 6 stati: In frantoio → Da etichettare → In confezionamento → Disponibile (pronta da vendere) → Riservato (bloccata per un ordine firmato) → In spedizione (dal corriere).\nI pulsanti rapidi sulla card fanno avanzare le quantità da uno stato all'altro.\n\n⭐ LA REGOLA DEL DDT (importante)\nLa merce NON può entrare o uscire dal magazzino senza un DDT. Quando registri un'entrata o un'uscita, il sistema chiede sempre due cose obbligatorie:\n1) il NUMERO del DDT (es. 42/2026);\n2) il DOCUMENTO (PDF o foto del DDT), che viene archiviato.\nSenza tutti e due, il movimento non si salva. Così ogni movimento di merce è collegato al suo documento.\n\nChiedono il DDT: Carico (nuova merce), Carico da produzione, Resa conto vendita, Annullo ordine (entrate); Affido allo spedizioniere, Scarico per ordine, Consegnato (uscite).\nNON chiedono il DDT: i passaggi interni (frantoio, etichettatura, confezionamento), la Riserva, la Rettifica e lo Scarico per perdita/rottura.\n\nESEMPIO — entrata merce\nArrivano 600 bottiglie da 500 ml con il DDT n. 12/2026.\n1. Magazzino → ⚡ Movimento.\n2. SKU: Olio EVO 500 ml; Tipo: Carico; Quantità: 600.\n3. Nel riquadro azzurro 'DDT obbligatorio' scrivi 12/2026 e premi '📎 Carica documento DDT' (scegli il PDF o la foto).\n4. Premi 'Registra movimento'. Le 600 bottiglie entrano in 'Disponibile'.\n\nESEMPIO — uscita per un cliente\nDevi spedire 120 bottiglie con il DDT n. 58/2026.\n1. Sulla card dell'SKU premi il pulsante '🚛 Affido allo spedizioniere'.\n2. Inserisci la quantità (120), il numero DDT 58/2026 e carica il documento.\n3. Registra: le 120 bottiglie passano in 'In spedizione'.\n\n🚚 ARCHIVIO DDT\nÈ la scheda dove trovi tutti i DDT di entrata e uscita: numero, data, formato, quantità, ordine collegato e il pulsante '🚚 Apri' per rivedere il documento. In cima vedi quanti DDT sono archiviati e quanti movimenti sono ancora 'senza DDT (da regolarizzare)' — quelli vanno sistemati allegando il documento mancante.\n\nORDINI: come si lega al magazzino\nQuando firmi un ordine, il magazzino si scarica da solo. L'ordine però NON può passare a 'Consegnato' o 'Fatturato' se non hai prima allegato il DDT all'ordine (oppure, se il DDT cartaceo manca, compilato le note manuali di trasporto): il sistema blocca la conferma con un avviso.\n\nRETTIFICHE (correzioni)\nServono dopo un inventario, una rottura o un ammanco. Inserisci SKU, quantità (+ aumenta, − diminuisce) e un motivo obbligatorio. Esempio: trovi 3 bottiglie rotte → quantità −3, motivo 'rottura magazzino'. La rettifica NON richiede DDT.\n\nIL TASTO '🔄 Ricalcola'\nSe un numero ti sembra sbagliato, premi 'Ricalcola': il sistema ricostruisce le giacenze da tutta la storia dei movimenti. Usalo come rete di sicurezza, almeno una volta al mese.\n\nCONSIGLI\n• Tieni pronto il file del DDT (PDF o foto) prima di registrare entrate/uscite.\n• Imposta le soglie minime per formato: gli alert di scorta scattano da soli.\n• Non scrivere le giacenze 'a mano': usa i movimenti o le rettifiche, così resta sempre la traccia.\n• Controlla ogni tanto l'Archivio DDT: se ci sono righe 'da regolarizzare', allega il documento mancante."
   },
   produzione: {
     titolo: "Produzione",

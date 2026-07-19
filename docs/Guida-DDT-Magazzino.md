@@ -83,8 +83,8 @@ Il prodotto entra in magazzino solo dopo che il DDT è stato inserito e archivia
 Gli ordini hanno una **gestione DDT propria**, a livello di documento dell'ordine.
 
 - Alla **firma** dell'ordine, il sistema scarica automaticamente la merce dal magazzino.
-- L'ordine **non può passare a « Consegnato » o « Fatturato »** se non è stato **allegato almeno un DDT** all'ordine. In quel caso compare l'avviso:
-  > ⛔ *Allega prima il DDT all'ordine: la merce non può uscire senza documento di trasporto.*
+- L'ordine **non può passare a « Consegnato » o « Fatturato »** se non è stato **allegato almeno un DDT** all'ordine (oppure, in mancanza del DDT cartaceo, **compilate le note manuali di trasporto**). In quel caso compare l'avviso:
+  > ⛔ *La merce non può risultare consegnata senza documento: allega il DDT all'ordine oppure compila le note manuali di trasporto.*
 - I movimenti di magazzino generati dall'ordine (scarico, resa, annullo) vengono **automaticamente collegati al DDT dell'ordine** e compaiono nell'Archivio DDT.
 
 **Come allegare il DDT a un ordine:** apri l'ordine → sezione documenti → carica il DDT (numero nella nota DDT + file).
