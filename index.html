@@ -6111,7 +6111,11 @@ const Inp = ({
   step,
   disabled,
   error
-}) => /*#__PURE__*/React.createElement("div", {
+}) => {
+  // Audit F#92: id stabile per associare <label> e campo (htmlFor/id): cliccare
+  // l'etichetta porta il focus nel campo e gli screen reader annunciano il nome.
+  const _id = React.useId();
+  return /*#__PURE__*/React.createElement("div", {
   style: {
     display: "flex",
     flexDirection: "column",
@@ -6120,6 +6124,7 @@ const Inp = ({
     opacity: disabled ? 0.55 : 1
   }
 }, label && /*#__PURE__*/React.createElement("label", {
+  htmlFor: _id,
   style: {
     fontSize: 11,
     fontWeight: 600,
@@ -6131,6 +6136,7 @@ const Inp = ({
     color: C.rosso
   }
 }, " *")), rows ? /*#__PURE__*/React.createElement("textarea", {
+  id: _id,
   value: v,
   onChange: e => on(e.target.value),
   rows: rows,
@@ -6148,6 +6154,7 @@ const Inp = ({
   onFocus: e => { if (!error) e.target.style.borderColor = C.oliva; },
   onBlur: e => { if (!error) e.target.style.borderColor = C.grigio200; }
 }) : /*#__PURE__*/React.createElement("input", {
+  id: _id,
   type: type,
   value: v,
   onChange: e => on(e.target.value),
@@ -6171,6 +6178,7 @@ const Inp = ({
 }), error && /*#__PURE__*/React.createElement("div", {
   style: { fontSize: 10, color: C.rosso, marginTop: 2 }
 }, error));
+};
 const Sel = ({
   label,
   v,
@@ -6179,7 +6187,10 @@ const Sel = ({
   req,
   disabled,
   error
-}) => /*#__PURE__*/React.createElement("div", {
+}) => {
+  // Audit F#92: id stabile per associare <label> e <select> (htmlFor/id).
+  const _id = React.useId();
+  return /*#__PURE__*/React.createElement("div", {
   style: {
     display: "flex",
     flexDirection: "column",
@@ -6187,6 +6198,7 @@ const Sel = ({
     opacity: disabled ? 0.55 : 1
   }
 }, label && /*#__PURE__*/React.createElement("label", {
+  htmlFor: _id,
   style: {
     fontSize: 11,
     fontWeight: 600,
@@ -6198,6 +6210,7 @@ const Sel = ({
     color: C.rosso
   }
 }, " *")), /*#__PURE__*/React.createElement("select", {
+  id: _id,
   value: v,
   onChange: e => on(e.target.value),
   disabled: !!disabled,
@@ -6220,6 +6233,7 @@ const Sel = ({
 }, typeof o === "string" ? o : o.l))), error && /*#__PURE__*/React.createElement("div", {
   style: { fontSize: 10, color: C.rosso, marginTop: 2 }
 }, error));
+};
 const Modal = ({
   title,
   onClose,
