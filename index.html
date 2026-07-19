@@ -11073,6 +11073,30 @@ function Ordini({
         ordine.stato === "da_firmare" ||
         (vecchioStato !== "firmato" && ordine.stato === "firmato")
       );
+    // Audit F#55: le modifiche alle righe di un ordine GIÀ firmato/consegnato/
+    // fatturato non rigenerano gli scarichi (comportamento storico voluto), ma
+    // il delta non scaricato ora viene SEGNALATO invece di passare in silenzio.
+    if (!richiedeCheckStock && !ordine.pregresso && ordinePrev && STATI_ORDINE_CON_SCARICO.includes(ordine.stato)) {
+      const nettoScar = _nettoScaricoOrdine(dati.movimenti, ordine.id);
+      const richiestoSku = new Map();
+      (ordine.righe || []).forEach(r => {
+        const skuR = skuPerRiga(dati.magazzino, r);
+        if (!skuR) return;
+        richiestoSku.set(skuR.id, (richiestoSku.get(skuR.id) || 0) + (Number(r.qta) || 0) + (Number(r.omaggio) || 0));
+      });
+      const differenze = [];
+      new Set([...richiestoSku.keys(), ...nettoScar.keys()]).forEach(idSku => {
+        const req = richiestoSku.get(idSku) || 0;
+        const net = nettoScar.get(idSku) || 0;
+        if (net > 0 && req !== net) {
+          const mSku = (dati.magazzino || []).find(x => x.id === idSku);
+          differenze.push(`${mSku ? (mSku.formato + " " + (mSku.annata || "")).trim() : idSku}: righe ${req} pz, scaricati ${net} pz`);
+        }
+      });
+      if (differenze.length && window.tnbToast) {
+        window.tnbToast("⚠ Le quantità dell'ordine non coincidono più con lo scarico magazzino registrato (" + differenze.join(" · ") + "). Il magazzino NON si adegua da solo: registra una rettifica, oppure annulla e ri-firma l'ordine per rigenerare gli scarichi.", "err");
+      }
+    }
     if (richiedeCheckStock) {
       if (window.TNB_DEBUG_MAG) console.log(`[TNB_DEBUG_MAG] saveOrdine check. ordineId=${ordine.id} stato=${ordine.stato} vecchio=${vecchioStato} righe=`, ordine.righe);
       // Audit F#58 (assorbe il credito B#19): il disponibile è RICALCOLATO dal
