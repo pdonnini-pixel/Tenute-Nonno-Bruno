@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E, F1, F2 e F3 dell'audit in produzione su decisione esplicita di Patrizio — 63 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E, F1, F2 e F3 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F4 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 74 finding su 145 chiusi)
 
 ---
 
@@ -36,6 +36,9 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E, F1, F2 e F3 dell'audit in pro
 
 ## 🟡 Opzionali / pulizia
 
+### 3d. Collo del 20 ml: 25 combo o 50 bottiglie? (audit #71 — rinviato, serve decisione della proprietà)
+- LISTINO "20 ml" dichiara `pezziCollo: 25` ma lo scaglione e LISTINO_PDF ragionano a 50 pz/collo, e la semantica "combo 20ml olio + 20ml aceto" (il "×2" in ListinoPage) non è codificata nei calcoli: per 50 bottiglie la UI suggerisce 2 colli, il listino 1. **Non è un fix tecnico ma una decisione commerciale**: va deciso se l'unità è la bottiglia singola (pezziCollo 50 ovunque, combo solo come nota) o la combo (campo esplicito `pezziPerCombo` usato da UI e PDF). Da definire con Patrizio prima di toccare listino/PDF.
+
 ### 3c. Consolidamento skuId/magId sui movimenti (audit #145 — rinviato deliberatamente)
 - I movimenti magazzino portano lo stesso campo con due nomi (`skuId` e `magId`): il codice nuovo scrive entrambi e ~25 punti leggono col fallback `(mv.skuId || mv.magId)`. La migrazione al load normalizza già `skuId`, ma consolidare davvero (smettere di scrivere `magId`, togliere i fallback) tocca decine di punti di lettura: **troppo invasivo per un blocco di pulizia** — serve una passata dedicata con verifica completa dei flussi magazzino. Fino ad allora il doppio alias resta (innocuo ma fragile per il codice futuro).
 - Correlato: il PDF `docs/Guida-DDT-Magazzino.pdf` va rigenerato dal `.md` aggiornato (fix #138 applicato a .md e .html, il PDF derivato è rimasto quello vecchio).
@@ -43,7 +46,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E, F1, F2 e F3 dell'audit in pro
 ### 3b. Limiti residui noti del magazzino (post-Pacchetto B, non bloccanti)
 - **Storici con clamp su movimenti "terzi" (audit B#5):** il riaccredito di annullo/resa è ora limitato allo scaricato effettivo *di quell'ordine*, e il nuovo controllo in saveMov (B#17) impedisce di creare nuovi scarichi oltre disponibilità. Resta però il caso storico in cui il clamp aveva assorbito un movimento di un ALTRO ordine/scarico manuale: quei pezzi fantasma già presenti nei dati non si correggono da soli → sanabili con un inventario fisico + rettifiche manuali (il bottone "🔄 Ricalcola" evidenzia le discrepanze in console).
 - **Riapertura di ordini storici senza scarichi a log:** un ordine vecchio (pre-tracciamento) annullato e poi riaperto genera ora lo scarico coerente con il documento, ma l'annullo precedente non aveva accreditato nulla → il netto magazzino scende. Era già così per la riapertura a "Firmato"; ora vale anche per "Consegnato/Fatturato". Dopo riaperture di ordini storici, controllare la giacenza.
-- **Finding magazzino correlati NON in questo pacchetto** (restano aperti nel report): #16 affido_spedizioniere doppio decremento riservato+confezionamento, #18 apertura non-lineare in saveSku, #57 migrazione v49 ordine inverso stesso giorno, #58 verificaDisponibilitaOrdine legge la giacenza memorizzata anziché il ricalcolo.
+- **Finding magazzino correlati NON in questo pacchetto** (restano aperti nel report): #16 affido_spedizioniere doppio decremento riservato+confezionamento, #18 apertura non-lineare in saveSku. (I #57 e #58, elencati qui in precedenza, sono stati chiusi col Pacchetto F4.)
 
 ### 4. Limiti residui noti della persistenza (post-Pacchetti A e D, non bloccanti)
 - **Log attività su blob unico (`tnb-log`):** dopo il Pacchetto D le scritture sono serializzate per scheda e un conflitto viene risolto rileggendo il log e riappendendo la voce (fino a 3 tentativi), quindi in pratica non si perdono più voci tra utenti attivi. Restano i limiti STRUTTURALI del blob unico: (a) il log cresce senza limite e viene ritrasmesso per intero a ogni azione (finding #9, aspetto performance); (b) le voci registrate mentre si è offline restano solo nella cache locale del dispositivo e non vengono risincronizzate. **Fix corretto:** tabella Supabase dedicata in append (1 INSERT per voce) — da pianificare insieme perché tocca il backend.
@@ -57,6 +60,20 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E, F1, F2 e F3 dell'audit in pro
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F4 (blocco omogeneo "magazzino, lotti e scadenze minori"): finding #55, #57, #58, #59, #60, #61, #68, #69, #72, #112, #113 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio per il merge su `main`; il #71 è rinviato come decisione commerciale, vedi punto 3d). ⚠️ Il blocco tocca l'area magazzino/persistenza dei movimenti (nessuna modifica a login/RLS/PDF):
+  - **#112** — rimossa la funzione `applicaMovimento` (percorso incrementale duplicato e divergente dal replay): ogni aggiornamento giacenza passa SOLO da `ricalcolaGiacenza` sul log movimenti. Nessun cambio di numeri: i punti che la usavano già ricalcolavano subito dopo.
+  - **#57** — migrazione v49: i movimenti legacy dello stesso giorno senza orario ricevono timestamp progressivi che rispettano l'ordine cronologico originale (prima il replay li eseguiva al contrario e, con i clamp, poteva sbagliare la giacenza).
+  - **#58** — il controllo disponibilità alla firma ordine ricalcola il disponibile DAL log movimenti (non più dalla cache `m.giacenza`, che può essere sovrastimata) escludendo scarichi/annulli dell'ordine stesso; assorbe e sostituisce il "credito" introdotto col fix B#19.
+  - **#55** — modificare le righe di un ordine già firmato/consegnato/fatturato ora AVVISA se le quantità non coincidono più con lo scarico registrato (prima la divergenza passava in silenzio); il magazzino resta volutamente non toccato: rettifica manuale o annulla+ri-firma.
+  - **#59** — eliminazione SKU bloccata se ha movimenti con DDT archiviato o lotto tracciato (lo storico di tracciabilità non si cancella); per dismettere: rettifica a zero + soglia 0.
+  - **#60** — codice lotto: unicità verificata al salvataggio e assegnazione automatica (`L<annata>-NNN`) quando il lotto arriva in imbottigliamento/etichettatura/completato senza codice.
+  - **#113** — per i lotti esistenti il menù Stato propone solo corrente, passo successivo del flusso e un passo indietro (etichette "→ avanza"/"← indietro"); i lotti nuovi restano liberi per registrare produzioni già in corso.
+  - **#61** — il ciclo di vita dei lotti è tracciato nel Report Attività: creazione/modifica, avanzamento stato, eliminazione, imbottigliamenti aggiunti/rimossi e carico in magazzino.
+  - **#68** — l'impostazione "Scadenza riserva pre-firma" (finora mai letta) genera un alert nel centro notifiche per gli SKU con pezzi riservati la cui riserva più recente supera la soglia; l'annullo resta manuale (movimento "Riserva annullata") e la descrizione in Impostazioni è stata riformulata di conseguenza.
+  - **#69** — l'alert "olio fermo in serbatoio" si basa sui LITRI RESIDUI del lotto (un imbottigliamento parziale non lo silenzia più per sempre) e sulla data dell'ultimo imbottigliamento.
+  - **#72** — annate coerenti col magazzino reale: LISTINO "5 L (latta)" allineato all'unico SKU esistente (2025) e default di riga derivati dagli SKU con stock.
+  - **Compromesso deliberato (#68):** se sullo stesso SKU convivono riserve vecchie e recenti, fa fede la più recente (il log non permette di attribuire i pezzi residui alla singola riserva) → l'alert può tardare, mai suonare a vuoto.
+  - **Verifica:** 27 controlli in Chromium con backend simulato: unit sulle funzioni reali (`applicaMovimento` assente, replay carico−scarico, timestamp migrazione decrescenti, LISTINO/annata default, disponibilità con/senza esclusione ordine) + flussi UI (alert Riserva scaduta e olio fermo con litri residui, toast divergenza su ordine consegnato 12 vs 10 pz, eliminazione SKU documentato bloccata, select Stato limitata sul lotto esistente e libera sul nuovo, codice auto `L2030-001` e duplicato rifiutato, voce "Nuovo lotto" scritta nel log attività).
 - **2026-07-19 — Pacchetto F3 (blocco omogeneo "guide e coerenza del codice"): finding #134–#144 del report corretti e portati IN PRODUZIONE** (merge deciso esplicitamente da Patrizio, insieme al Pacchetto F2; il #145 è rinviato — vedi punto 3c):
   - **#134–#137, #139** — testi della guida in-app allineati al comportamento reale (eliminazione cliente via annullo ordini, KPI Agenda, preset report inesistente, nome del pulsante Doppioni); **#135** — sezione "Accordi Fornitori" aggiunta all'indice della Guida; **#138** — nomi dei movimenti nella guida DDT (.md e .html) allineati alle etichette del menu (PDF da rigenerare, punto 3c).
   - **#140** — ⚠️ area PDF: l'IBAN dei documenti passa da `getTnbIban()` (rispetta gli override di dati.azienda); output identico a dati invariati.
