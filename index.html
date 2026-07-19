@@ -8962,8 +8962,10 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
 function Clienti({
   dati,
   setDati,
-  logAction
+  logAction,
+  currentUser // audit F#81: serve per gating dell'eliminazione cliente
 }) {
+  const isSuperAdmin = currentUser?.role === "superadmin"; // audit F#81
   const [filter, setFilter] = useState("");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
@@ -9536,7 +9538,7 @@ function Clienti({
           { title: 'Riporta in Pipeline', okLabel: 'Riporta', danger: false }
         );
       }
-    }), /*#__PURE__*/React.createElement(Btn, {
+    }), isSuperAdmin && /*#__PURE__*/React.createElement(Btn, { // audit F#81: eliminazione cliente solo SuperAdmin
       ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.del, null), " Elimina"),
       v: "dan",
       sz: "sm",
@@ -19984,7 +19986,8 @@ function App() {
   }) : /*#__PURE__*/React.createElement(Clienti, {
     dati: dati,
     setDati: setDatiSave,
-    logAction: logAction
+    logAction: logAction,
+    currentUser: currentUser // audit F#81
   })), modulo === "ordini" && /*#__PURE__*/React.createElement(Ordini, {
     dati: dati,
     setDati: setDatiSave,
