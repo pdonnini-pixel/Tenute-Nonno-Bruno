@@ -20169,6 +20169,7 @@ function ActivityLog({
   const [filterMese, setFilterMese] = useState("");
   const [filterTipo, setFilterTipo] = useState(""); // "" | "chiamate" | "email" | "ordini" | "altro"
   const [expanded, setExpanded] = useState(null); // id riga espansa per il dettaglio
+  const [logLimit, setLogLimit] = useState(100); // audit F#86: paginazione "carica altre"
   // Classifica una voce log in un "tipo report"
   const tipoDiAzione = az => {
     az = az || "";
@@ -20197,7 +20198,12 @@ function ActivityLog({
     // Policy: i log non vengono MAI cancellati. Azione disabilitata.
     if (window.tnbToast) window.tnbToast("🔒 Il report attività è permanente e non cancellabile", "err");
   };
-  const filtered = logs.filter(l => (!filter || l.dettaglio?.toLowerCase().includes(filter.toLowerCase()) || l.azione?.toLowerCase().includes(filter.toLowerCase())) && (!filterMod || l.modulo === filterMod) && (!filterUser || l.userId === filterUser) && (!filterMese || (l.ts || "").slice(0, 7) === filterMese) && (!filterTipo || tipoDiAzione(l.azione) === filterTipo));
+  // Audit F#86: filtro memoizzato — prima l'intero log (append-only, mai potato)
+  // veniva rifiltrato con toLowerCase + regex tipoDiAzione a OGNI carattere digitato.
+  const filtered = React.useMemo(() => logs.filter(l => (!filter || l.dettaglio?.toLowerCase().includes(filter.toLowerCase()) || l.azione?.toLowerCase().includes(filter.toLowerCase())) && (!filterMod || l.modulo === filterMod) && (!filterUser || l.userId === filterUser) && (!filterMese || (l.ts || "").slice(0, 7) === filterMese) && (!filterTipo || tipoDiAzione(l.azione) === filterTipo)), [logs, filter, filterMod, filterUser, filterMese, filterTipo]);
+  // Audit F#86: conteggi per tipo calcolati una sola volta per [logs] (prima i chip
+  // rieseguivano tipoDiAzione su tutto il log a ogni render).
+  const tipoCounts = React.useMemo(() => { const cnt = {}; logs.forEach(l => { const t = tipoDiAzione(l.azione); cnt[t] = (cnt[t] || 0) + 1; }); return cnt; }, [logs]);
   const moduli = [...new Set(logs.map(l => l.modulo))].filter(Boolean);
   // Mesi disponibili (YYYY-MM dal timestamp), ordinati dal più recente
   const mesi = [...new Set(logs.map(l => (l.ts || "").slice(0, 7)).filter(Boolean))].sort().reverse();
@@ -20232,7 +20238,7 @@ function ActivityLog({
       { k: "ordini", l: "Ordini", ic: "\uD83D\uDCE6" },
       { k: "altro", l: "Altro", ic: "\uD83D\uDCCC" }
     ];
-    var cnt = {}; logs.forEach(function(l) { var t = tipoDiAzione(l.azione); cnt[t] = (cnt[t] || 0) + 1; });
+    var cnt = tipoCounts; // Audit F#86: conteggi memoizzati a monte
     return /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" } },
       tipi.map(function(t) {
         var attivo = filterTipo === t.k;
@@ -20346,7 +20352,7 @@ function ActivityLog({
         flexDirection: "column",
         gap: 0
       }
-    }, filtered.map((l, i) => /*#__PURE__*/React.createElement("div", {
+    }, filtered.slice(0, logLimit).map((l, i) => /*#__PURE__*/React.createElement("div", {
       key: l.id,
       style: {
         borderBottom: `1px solid ${C.grigio100}`,
@@ -20445,7 +20451,15 @@ function ActivityLog({
         color: C.grigio400,
         fontStyle: "italic"
       }
-    }, "Nessun risultato per i filtri selezionati"))
+    }, "Nessun risultato per i filtri selezionati"),
+    // Audit F#86: paginazione — non monta migliaia di nodi DOM tutti insieme
+    // (soglia 100, poi +200 per click). Conteggio "eventi" in alto resta il totale.
+    filtered.length > logLimit && /*#__PURE__*/React.createElement("div", {
+      style: { textAlign: "center", padding: "12px 0" }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => setLogLimit(l => l + 200),
+      style: { padding: "8px 18px", borderRadius: 6, border: "1px solid #d4d2cc", background: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#5f5e5a" }
+    }, "Mostra altre (" + (filtered.length - logLimit) + " rimanenti)")))
   }));
 }
 
