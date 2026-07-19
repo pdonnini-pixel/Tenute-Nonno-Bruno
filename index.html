@@ -4942,9 +4942,14 @@ const tracciabilitaLotto = (lotto, dati) => {
   let totQtaVenduta = 0;
   let totQtaProdotta = 0;
   const dettaglioPerFormato = {};
+  // Audit F#22: il ricavo/qta per SKU va calcolato UNA sola volta per SKU. Prima
+  // il forEach lo ricalcolava per OGNI imbottigliamento: un lotto con più
+  // sessioni sullo stesso SKU sommava N volte gli stessi ricavi.
+  const skuProcessati = new Set();
   imbottigliamenti.forEach(({ bot, sku, formato, qta, costoBottPiena }) => {
     totQtaProdotta += qta;
-    if (!bot || !sku) return;
+    if (!bot || !sku || skuProcessati.has(sku.id)) return;
+    skuProcessati.add(sku.id);
     // Quota del lotto su questo SKU = carichi di questo lotto / carichi totali di quello SKU
     const carichiLotto = movimenti.filter(m => m.tipo === "carico_produzione" && m.lottoId === lotto.id && (m.skuId || m.magId) === sku.id);
     const qtaCaricataLotto = carichiLotto.reduce((s, m) => s + _parseNum(m.qta), 0);
@@ -4957,15 +4962,31 @@ const tracciabilitaLotto = (lotto, dati) => {
     let qtaVendutaSku = 0;
     scarichi.forEach(s => {
       const ordine = (dati.ordini || []).find(o => o.id === s.ordineId);
-      if (!ordine) return;
-      // Cerca riga ordine per formato (più robusto match formato che annata)
-      const riga = (ordine.righe || []).find(r => _normFmt52(r.formato) === _normFmt52(sku.formato));
+      // Audit F#62: gli ordini annullati non generano ricavo attribuito al lotto.
+      if (!ordine || ordine.stato === "annullato") return;
+      // Audit F#63: match riga per formato E annata (fallback al solo formato) —
+      // un ordine con due righe stesso formato ma annate/prezzi diversi non
+      // valorizza più tutto al prezzo della prima riga trovata.
+      const righeFmt = (ordine.righe || []).filter(r => _normFmt52(r.formato) === _normFmt52(sku.formato));
+      const riga = righeFmt.find(r => String(r.annata || "") === String(sku.annata || "")) || righeFmt[0];
       if (!riga) return;
       const qtaScaricata = _parseNum(s.qta);
       const prezzoUnit = Number(riga.prezzoUnitario) || 0;
-      ricavoSku += qtaScaricata * prezzoUnit;
+      // Audit F#62: i pezzi omaggio escono dal magazzino ma non generano ricavo
+      // → valorizza solo la frazione venduta della riga (omaggi a 0).
+      const qR = Number(riga.qta) || 0, oR = Number(riga.omaggio) || 0;
+      const fracVenduta = (qR + oR) > 0 ? qR / (qR + oR) : 1;
+      ricavoSku += qtaScaricata * fracVenduta * prezzoUnit;
       qtaVendutaSku += qtaScaricata;
     });
+    // Audit F#62: le rese conto vendita riportano bottiglie in magazzino → non
+    // sono più vendute: netta qty e ricavo proporzionalmente.
+    const qtaRientrata = movimenti.filter(m => m.tipo === "resa_cv" && (m.skuId || m.magId) === sku.id).reduce((s, m) => s + _parseNum(m.qta), 0);
+    if (qtaRientrata > 0 && qtaVendutaSku > 0) {
+      const fatt = Math.max(0, (qtaVendutaSku - qtaRientrata) / qtaVendutaSku);
+      ricavoSku *= fatt;
+      qtaVendutaSku = Math.max(0, qtaVendutaSku - qtaRientrata);
+    }
     // Attribuzione proporzionale al lotto
     const ricavoLotto = ricavoSku * quota;
     const qtaVendutaLotto = qtaVendutaSku * quota;
