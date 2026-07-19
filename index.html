@@ -14841,7 +14841,8 @@ function Magazzino({
 function Produzione({
   dati,
   setDati,
-  readonly
+  readonly,
+  logAction // audit F#61: anche i lotti lasciano traccia nel Report Attività
 }) {
   // Audit D#39: sola lettura (ROLE_READONLY). Guardia centrale: ogni tentativo
   // di modifica passa da setDati, quindi basta neutralizzarlo qui — vale per
@@ -14992,6 +14993,13 @@ function Produzione({
   // P4 — avanzamento rapido stato lotto (dalla card). Merge-safe per non perdere campi BOM
   // (imbottigliamenti, costi, bottigliaId, ecc). Auto-popola data corrispondente se vuota.
   const avanzaLottoStato = (lottoId, nuovoStato) => {
+    const lottoCorr = (dati.lotti || []).find(l => l.id === lottoId);
+    // Audit F#113: solo la transizione prevista dal flusso (i pulsanti rapidi
+    // la propongono già, questa è la garanzia anche per chiamate future).
+    if (lottoCorr && !(FLUSSO_LOTTO[lottoCorr.stato || "pianificato"] || []).includes(nuovoStato)) {
+      if (window.tnbToast) window.tnbToast("⚠ Transizione non prevista dal flusso lotto: " + (STATI_LOTTO[lottoCorr.stato]?.l || lottoCorr.stato || "?") + " → " + (STATI_LOTTO[nuovoStato]?.l || nuovoStato), "err");
+      return;
+    }
     setDati(d => ({
       ...d,
       lotti: (d.lotti || []).map(l => {
@@ -15003,6 +15011,8 @@ function Produzione({
       })
     }));
     const info = STATI_LOTTO[nuovoStato] || {};
+    // Audit F#61: cambio stato tracciato nel Report Attività
+    if (logAction) logAction("Stato lotto → " + (info.l || nuovoStato), "produzione", `Raccolta ${lottoCorr?.annata || "?"}${lottoCorr?.codLotto ? " · " + lottoCorr.codLotto : ""} (da ${STATI_LOTTO[lottoCorr?.stato]?.l || lottoCorr?.stato || "?"})`);
     if (window.tnbToast) window.tnbToast((info.emoji || "") + " " + (info.l || nuovoStato));
   };
   // P3 — toggle certificazione
@@ -15025,6 +15035,8 @@ function Produzione({
       `Eliminare definitivamente il lotto raccolta ${form.annata}${form.codLotto ? " (" + form.codLotto + ")" : ""}? L'operazione non è reversibile.`,
       () => {
         setDati(d => ({ ...d, lotti: (d.lotti || []).filter(l => l.id !== form.id) }));
+        // Audit F#61: eliminazione tracciata nel Report Attività
+        if (logAction) logAction("Elimina lotto", "produzione", `Raccolta ${form.annata}${form.codLotto ? " · " + form.codLotto : ""}`);
         setModal(null);
         setModalSection("generale");
         if (window.tnbToast) window.tnbToast("🗑 Lotto eliminato");
@@ -15074,6 +15086,8 @@ function Produzione({
       } : x)
     }));
     setForm(f => f.id === lottoId ? { ...f, imbottigliamenti: [...(f.imbottigliamenti || []), nuovo] } : f);
+    // Audit F#61: tracciato nel Report Attività
+    if (logAction) logAction("Imbottigliamento aggiunto", "produzione", `Raccolta ${lotto.annata}${lotto.codLotto ? " · " + lotto.codLotto : ""} — ${nuovo.qtaProdotta} pz ${bot ? bot.formato : ""} (${nuovo.litriUsati} L)`);
     if (window.tnbToast) window.tnbToast("➕ Imbottigliamento aggiunto");
     return true;
   };
@@ -15097,6 +15111,8 @@ function Produzione({
         } : x)
       }));
       setForm(f => f.id === lottoId ? { ...f, imbottigliamenti: (f.imbottigliamenti || []).filter(i => i.id !== imbId) } : f);
+      // Audit F#61: tracciato nel Report Attività
+      if (logAction) logAction("Imbottigliamento rimosso", "produzione", `Raccolta ${lotto.annata}${lotto.codLotto ? " · " + lotto.codLotto : ""} — ${imb.qtaProdotta || "?"} pz (${imb.litriUsati || "?"} L)`);
       if (window.tnbToast) window.tnbToast("🗑 Imbottigliamento rimosso");
     }, { title: "Conferma rimozione", okLabel: "Rimuovi", danger: true });
   };
@@ -15152,6 +15168,7 @@ function Produzione({
         i.id === imbId ? { ...i, caricoMagazzino: true, dataCaricoMag: dataMov } : i
       )
     } : f);
+    if (logAction) logAction("Imbottigliamento caricato in magazzino", "produzione", `Raccolta ${lotto.annata}${lotto.codLotto ? " · " + lotto.codLotto : ""} — ${Number(imb.qtaProdotta)} pz → magazzino (DDT ${mv.ddtNum || "—"})`);
     if (window.tnbToast) window.tnbToast("✅ Caricato in magazzino: " + Number(imb.qtaProdotta) + " pz");
     setCaricoMagModal(null);
   };
@@ -15169,13 +15186,28 @@ function Produzione({
     ["costoOlive", "costoFrantoio", "costoAltro"].forEach(k => {
       if (c[k] != null && c[k] !== "" && Number(c[k]) < 0) errors.push(`${k.replace("costo", "Costo ")} non può essere negativo`);
     });
+    // Audit F#60: il codice lotto finisce sulle etichette fisiche — se compilato
+    // deve essere UNICO tra i lotti.
+    const codTrim = String(form.codLotto || "").trim();
+    if (codTrim) {
+      const dupCod = (dati.lotti || []).find(l => l.id !== form.id && String(l.codLotto || "").trim() === codTrim);
+      if (dupCod) errors.push(`Codice lotto "${codTrim}" già usato (raccolta ${dupCod.annata || "?"})`);
+    }
     if (errors.length > 0) {
       if (window.tnbToast) window.tnbToast(errors.join(" · "), "err");
       return;
     }
     // Normalizza resa numerica (se per qualche motivo è ancora string/NaN)
     const resaNum = Number(form.resa);
-    const formNorm = { ...form, resa: isFinite(resaNum) ? resaNum : 0 };
+    // Audit F#60: dall'imbottigliamento in poi il lotto DEVE avere un codice —
+    // se manca viene auto-assegnato col generatore sequenziale.
+    let codFinale = codTrim;
+    if (!codFinale && ["in_imbottigliamento", "in_etichettatura", "completato"].includes(form.stato)) {
+      codFinale = nextCodLotto(form.annata);
+      if (codFinale && window.tnbToast) window.tnbToast("ℹ️ Codice lotto assegnato automaticamente: " + codFinale);
+    }
+    const formNorm = { ...form, resa: isFinite(resaNum) ? resaNum : 0, codLotto: codFinale || "" };
+    const isNewLotto = !formNorm.id;
     setDati(d => {
       const isNew = !formNorm.id;
       if (isNew) {
@@ -15188,6 +15220,9 @@ function Produzione({
         lotti: (d.lotti || []).map(l => l.id === formNorm.id ? { ...l, ...formNorm } : l)
       };
     });
+    // Audit F#61: creazione/modifica lotto tracciata nel Report Attività
+    if (logAction) logAction(isNewLotto ? "Nuovo lotto" : "Modifica lotto", "produzione",
+      `Raccolta ${formNorm.annata}${formNorm.codLotto ? " · " + formNorm.codLotto : ""} — ${STATI_LOTTO[formNorm.stato]?.l || formNorm.stato || "Pianificato"}`);
     setModal(null);
     setModalSection("generale");
   };
@@ -15830,7 +15865,22 @@ function Produzione({
             if (dateField && !f[dateField]) next[dateField] = todayStr();
             return next;
           }),
-          opts: Object.entries(STATI_LOTTO).map(([k, info]) => ({ v: k, l: info.emoji + " " + info.l }))
+          // Audit F#113: per i lotti ESISTENTI il selettore offre solo gli stati
+          // raggiungibili (corrente, passo successivo del flusso, passo indietro
+          // per correzioni) — niente più salti arbitrari che rendono la timeline
+          // inattendibile. Un lotto NUOVO può ancora partire da qualsiasi fase
+          // (registrazione di produzioni già in corso).
+          opts: (() => {
+            if (!form.id) return Object.entries(STATI_LOTTO).map(([k, info]) => ({ v: k, l: info.emoji + " " + info.l }));
+            const cur = form.stato || "pianificato";
+            const idxCur = STATI_LOTTO_ORDER.indexOf(cur);
+            const ammessi = new Set([cur, ...(FLUSSO_LOTTO[cur] || [])]);
+            if (idxCur > 0) ammessi.add(STATI_LOTTO_ORDER[idxCur - 1]);
+            return STATI_LOTTO_ORDER.filter(k => ammessi.has(k)).map(k => ({
+              v: k,
+              l: STATI_LOTTO[k].emoji + " " + STATI_LOTTO[k].l + (k === cur ? "" : ((FLUSSO_LOTTO[cur] || []).includes(k) ? " → avanza" : " ← indietro"))
+            }));
+          })()
         }),
         /*#__PURE__*/React.createElement("div", { style: { gridColumn: "span 2" } },
           /*#__PURE__*/React.createElement("label", {
