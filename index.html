@@ -11188,13 +11188,16 @@ function Ordini({
     const vecchioStato = ordinePrev ? ordinePrev.stato : null;
     // v49-mag1: check stock applicato quando l'ordine deve "consumare" magazzino:
     // (a) stato da_firmare: verifica disponibilità prima di accettare l'ordine
-    // (b) transizione vecchio !== firmato → nuovo === firmato: primo scarico (doppia sicurezza)
+    // (b) audit F#35: OGNI ingresso in uno stato con scarico (firmato/consegnato/
+    //     fatturato) da uno stato che non lo era — è il momento in cui
+    //     applicaTransizioneOrdineMagazzino genera lo scarico, quindi anche il
+    //     salto diretto da_firmare → consegnato dal dropdown viene verificato.
     // Per modifiche a ordini già firmati/consegnati/fatturati (no cambio stato): NESSUN check,
     // gli scarichi sono storici e modifiche righe non li rigenerano automaticamente.
     const richiedeCheckStock =
       !ordine.pregresso && (
         ordine.stato === "da_firmare" ||
-        (vecchioStato !== "firmato" && ordine.stato === "firmato")
+        (!STATI_ORDINE_CON_SCARICO.includes(vecchioStato) && STATI_ORDINE_CON_SCARICO.includes(ordine.stato))
       );
     // Audit F#55: le modifiche alle righe di un ordine GIÀ firmato/consegnato/
     // fatturato non rigenerano gli scarichi (comportamento storico voluto), ma
