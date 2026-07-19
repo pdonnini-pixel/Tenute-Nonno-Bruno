@@ -5755,6 +5755,10 @@ const STATO_PAG = {
     c: C.grigio400
   }
 };
+// Audit F#102: ordine di dichiarazione allineato al funnel canonico
+// STATI_PROGRESSIONE (interessato PRIMA di in_trattativa). Prima le colonne/
+// filtri mostravano in_trattativa prima di interessato, in contraddizione con
+// il pulsante "avanza stato" che segue STATI_PROGRESSIONE.
 const STATO_FUNNEL = {
   da_contattare: {
     l: "Da contattare",
@@ -5764,13 +5768,13 @@ const STATO_FUNNEL = {
     l: "Contattato",
     c: C.cyan
   },
-  in_trattativa: {
-    l: "In trattativa",
-    c: C.blu
-  },
   interessato: {
     l: "Interessato",
     c: C.oro
+  },
+  in_trattativa: {
+    l: "In trattativa",
+    c: C.blu
   },
   acquisito: {
     l: "Acquisito",
@@ -5786,6 +5790,8 @@ const STATO_FUNNEL = {
   }
 };
 const STATI_PROGRESSIONE = ["da_contattare","contattato","interessato","in_trattativa","acquisito"];
+// Stati fuori dal flusso lineare di progressione (esiti terminali/pausa).
+const STATI_FUNNEL_FUORI_FLUSSO = ["non_interessato", "in_sospeso"];
 const AZIONI_TIPO = {
   richiamare:         { l: "Richiamare",           emoji: "📞", c: "#f57c00" },
   mail_presentazione: { l: "Mail presentazione",   emoji: "📧", c: "#1565c0" },
@@ -7367,7 +7373,9 @@ function Pipeline({
     }));
     if (logAction) logAction("Eliminazione prospect", "pipeline", p?.ragioneSociale || id);
   };
-  const stati = ["da_contattare","contattato","in_trattativa","interessato","acquisito","non_interessato","in_sospeso"];
+  // Audit F#102: derivato dal funnel canonico + stati fuori-flusso (prima era
+  // hardcoded con in_trattativa PRIMA di interessato, incoerente con l'avanzamento).
+  const stati = [...STATI_PROGRESSIONE, ...STATI_FUNNEL_FUORI_FLUSSO];
   // Audit F#142: rimossa CANALI_LABEL — mai usata e con chiavi incompatibili
   // con la mappa canonica CANALE (che è quella da usare per le label canali).
   // UX1 helpers
