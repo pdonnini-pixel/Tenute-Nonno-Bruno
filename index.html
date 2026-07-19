@@ -12221,7 +12221,12 @@ function Ordini({
         ...f,
         stato: v
       })),
-      opts: Object.entries(STATO_ORDINE).map(([k, v]) => ({
+      // Audit F#118: "Annullato" non è più selezionabile dal dropdown — quel
+      // percorso saltava il cleanup di firma/DDT/fatture eseguito dal bottone
+      // dedicato "❌ Annulla ordine" (annullaOrdineDiretto), producendo ordini
+      // annullati con contenuto diverso a seconda del percorso usato.
+      // L'opzione resta visibile solo se l'ordine è GIÀ annullato.
+      opts: Object.entries(STATO_ORDINE).filter(([k]) => k !== "annullato" || form.stato === "annullato").map(([k, v]) => ({
         v: k,
         l: v.l
       }))
