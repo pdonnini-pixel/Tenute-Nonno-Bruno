@@ -5985,6 +5985,20 @@ const STATO_OF = {
 };
 
 // ─── BASE COMPONENTS ──────────────────────────────────────────────────────────
+// Audit F#93: il testo del badge era sempre bianco 10-11px, illeggibile sui
+// fondi chiari (oro, giallo, grigio400 → contrasto ~2,3-2,7:1, sotto la soglia
+// WCAG 4,5:1). Scegliamo automaticamente testo scuro/chiaro dalla luminanza
+// del fondo, così i badge di stato restano leggibili anche su tablet al sole.
+const _bdgTextColor = (bg) => {
+  const hex = String(bg || "").replace("#", "");
+  if (hex.length !== 3 && hex.length !== 6) return "#fff";
+  const n = hex.length === 3 ? hex.split("").map(c => c + c).join("") : hex;
+  const r = parseInt(n.slice(0, 2), 16), g = parseInt(n.slice(2, 4), 16), b = parseInt(n.slice(4, 6), 16);
+  if ([r, g, b].some(isNaN)) return "#fff";
+  // luminanza percepita (0-255); sopra ~150 il fondo è chiaro → testo scuro
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 150 ? "#2e2a17" : "#fff";
+};
 const Bdg = ({
   v,
   map,
@@ -6002,7 +6016,7 @@ const Bdg = ({
       fontSize: small ? 10 : 11,
       fontWeight: 600,
       letterSpacing: 0.4,
-      color: "#fff",
+      color: _bdgTextColor(s.c),
       background: s.c,
       whiteSpace: "nowrap"
     }
