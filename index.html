@@ -1076,25 +1076,28 @@ function BarChartSVG({
   // Bars
   data.map((d, i) => {
     const groupW = cW / data.length;
-    const totalBarW = bars.length * bw / bars.length;
+    // Audit F#45: lo spazio del gruppo (bw = 70% di groupW) va DIVISO tra le
+    // serie — prima ogni barra era larga come l'intero gruppo e con 3 serie
+    // invadeva i gruppi dei formati adiacenti.
+    const barW = bw / bars.length;
     return React.createElement('g', {
       key: i
     }, bars.map((b, bi) => {
       const val = d[b.key] || 0;
       const bh = val / maxV * cH;
-      const x = PL + i * groupW + bi * totalBarW + gap / 2;
+      const x = PL + i * groupW + gap / 2 + bi * barW;
       const y = PT + cH - bh;
       return React.createElement('g', {
         key: bi
       }, React.createElement('rect', {
         x,
         y,
-        width: Math.max(totalBarW - 2, 2),
+        width: Math.max(barW - 2, 2),
         height: Math.max(bh, 1),
         fill: b.color,
         rx: 3
       }), val > 0 && React.createElement('text', {
-        x: x + Math.max(totalBarW - 2, 2) / 2,
+        x: x + Math.max(barW - 2, 2) / 2,
         y: y - 3,
         textAnchor: 'middle',
         fontSize: 8,
