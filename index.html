@@ -20634,34 +20634,11 @@ function LoginScreen({
       fontSize: 14,
       marginTop: 4
     }
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 24,
-      padding: 16,
-      background: C.grigio50,
-      borderRadius: 8,
-      fontSize: 11,
-      color: C.grigio400
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      marginBottom: 6,
-      color: C.grigio600
-    }
-  }, "ACCESSI DISPONIBILI"), USERS.map(u => /*#__PURE__*/React.createElement("div", {
-    key: u.id,
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      marginBottom: 3
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 600,
-      color: ROLE_COLORS[u.role]
-    }
-  }, u.nome), /*#__PURE__*/React.createElement("span", null, u.username, " \xB7 ", ROLE_LABELS[u.role]))))));
+  })),
+  // Audit F#124: rimosso il box "ACCESSI DISPONIBILI" — elencava a chiunque
+  // visitasse l'URL, prima del login, nomi reali, username e ruoli (incluso il
+  // Super Admin). Le stesse info restano disponibili DOPO il login in Gestione Utenti.
+  null));
 }
 function GestioneUtenti() {
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
