@@ -7070,7 +7070,8 @@ function AzioniSection({ prospect, addAzione, closeAzione }) {
 function Pipeline({
   dati,
   setDati,
-  logAction
+  logAction,
+  currentUser // audit F#79: statoLog del wizard attribuito all'utente reale
 }) {
   const [filter, setFilter] = useState("");
   const [modal, setModal] = useState(null);
@@ -8745,7 +8746,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
                 statoLog: [{
                   stato: "da_firmare",
                   data: new Date().toISOString(),
-                  utente: "irene",
+                  utente: (currentUser && currentUser.username) || "sconosciuto", // audit F#79
                   auto: true,
                   trigger: "wizard_prospect"
                 }]
@@ -11141,7 +11142,7 @@ function Ordini({
         statoLogFinal = [...statoLogFinal, {
           stato: form.stato,
           data: new Date().toISOString(),
-          utente: (currentUser && currentUser.username) || "irene",
+          utente: (currentUser && currentUser.username) || "sconosciuto",
           auto: false,
           trigger: "manual_dropdown",
           prev: ordinePrev.stato
@@ -11381,7 +11382,7 @@ function Ordini({
       statoLog: [...(f.statoLog || []), {
         stato: nuovoStato,
         data: now,
-        utente: (currentUser && currentUser.username) || "irene",
+        utente: (currentUser && currentUser.username) || "sconosciuto",
         auto: !!opts.auto,
         trigger: opts.trigger || "manual",
         prev: vecchio
@@ -11421,7 +11422,7 @@ function Ordini({
         statoLog: [...(ord.statoLog || []), {
           stato: tipo,
           data: now,
-          utente: (currentUser && currentUser.username) || "irene",
+          utente: (currentUser && currentUser.username) || "sconosciuto",
           auto: false,
           trigger: "btn_" + tipo,
           prev: vecchio
@@ -11480,7 +11481,7 @@ function Ordini({
         statoLog: [...(ord.statoLog || []), {
           stato: "annullato",
           data: now,
-          utente: (currentUser && currentUser.username) || "irene",
+          utente: (currentUser && currentUser.username) || "sconosciuto",
           auto: false,
           trigger: opts.trigger || "annulla_diretto",
           prev: vecchio
@@ -12638,7 +12639,7 @@ function Ordini({
                   firma: { ...result, uploadedAt: now },
                   stato: nuovoStato,
                   statoLog: wasUnsigned
-                    ? [...(f.statoLog || []), { stato: nuovoStato, data: now, utente: "irene", auto: true, trigger: "upload_firma", prev: f.stato }]
+                    ? [...(f.statoLog || []), { stato: nuovoStato, data: now, utente: (currentUser && currentUser.username) || "sconosciuto", auto: true, trigger: "upload_firma", prev: f.stato }]
                     : (f.statoLog || [])
                 }));
                 if (window.tnbToast) window.tnbToast(wasUnsigned ? "✅ Firma caricata · stato → Firmato" : "✅ Firma sostituita");
@@ -12686,7 +12687,7 @@ function Ordini({
                   firma: { ...result, uploadedAt: now },
                   stato: nuovoStato,
                   statoLog: wasUnsigned
-                    ? [...(f.statoLog || []), { stato: nuovoStato, data: now, utente: "irene", auto: true, trigger: "upload_firma", prev: f.stato }]
+                    ? [...(f.statoLog || []), { stato: nuovoStato, data: now, utente: (currentUser && currentUser.username) || "sconosciuto", auto: true, trigger: "upload_firma", prev: f.stato }]
                     : (f.statoLog || [])
                 }));
                 if (window.tnbToast) window.tnbToast(wasUnsigned ? "✅ Firma caricata · stato → Firmato" : "✅ Firma caricata");
@@ -13154,7 +13155,7 @@ function Ordini({
                 statoLog: [...(ord.statoLog || []), {
                   stato: "annullato",
                   data: now,
-                  utente: (currentUser && currentUser.username) || "irene",
+                  utente: (currentUser && currentUser.username) || "sconosciuto",
                   auto: false,
                   trigger: "annulla_modal",
                   prev: vecchio
@@ -19904,7 +19905,8 @@ function App() {
   }), modulo === "pipeline" && /*#__PURE__*/React.createElement(Pipeline, {
     dati: dati,
     setDati: setDatiSave,
-    logAction: logAction
+    logAction: logAction,
+    currentUser: currentUser // audit F#79
   }), modulo === "clienti" && (currentUser.role === "commerciale" ? /*#__PURE__*/React.createElement(ClientiCommerciale, {
     dati: dati,
     setDati: setDatiSave,
