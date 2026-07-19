@@ -5823,12 +5823,32 @@ const LISTINO = {
     noteSconto: "Da 2 colli sconto 10% — €8,10 cad.",
     usi: "Omaggio clienti VIP · Gift menu degustazione · Room service"
   },
-  "20 ml": {
+  // Audit F#31/F#71 — olio e aceto monodose sono articoli distinti (decisione
+  // proprietà 2026-07-19): unità = bottiglia singola, collo da 50 pezzi.
+  // La chiave legacy unica "20 ml" (pezziCollo 25, semantica combo mai usata
+  // nei calcoli) è sostituita dalle due chiavi che i form ordine usano davvero.
+  "Olio 20 ml": {
     annata: "2025",
     pubblico: 7.00,
-    pezziCollo: 25,
+    pezziCollo: 50,
     scatola: false,
-    combo: "20ml olio + 20ml aceto",
+    scaglioni: [{
+      colli: 1,
+      qta: 50,
+      prezzo: 2.00
+    }, {
+      colli: 2,
+      qta: 100,
+      prezzo: 1.80
+    }],
+    noteSconto: "Da 2 colli sconto 10% — €1,80 cad. Senza confezione.",
+    usi: "Omaggio clienti VIP · Gift menu degustazione · Room service"
+  },
+  "Aceto 20 ml": {
+    annata: "2025",
+    pubblico: 7.00,
+    pezziCollo: 50,
+    scatola: false,
     scaglioni: [{
       colli: 1,
       qta: 50,
