@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–D in produzione; Pacchetto E — lotti e FIFO: finding #20, #23, #29, #4-FIFO corretti sul branch, merge da decidere)
+Ultimo aggiornamento: 2026-07-19 (TUTTI i pacchetti principali dell'audit A–E in produzione su decisione esplicita di Patrizio)
 
 ---
 
@@ -53,7 +53,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–D in produzione; Pacchetto E —
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto E audit (tracciabilità lotti e rotazione FIFO): finding #20, #23, #29 e prelievo guidato FIFO del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge su `main` da decidere esplicitamente):
+- **2026-07-19 — Pacchetto E audit (tracciabilità lotti e rotazione FIFO): finding #20, #23, #29 e prelievo guidato FIFO del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Novità operative per chi carica/scarica: il selettore Lotto nei movimenti (obbligatorio sui carichi se esistono lotti) e il lotto proposto FIFO sugli scarichi:
   - **#20** — lo scarico generato dalla firma dell'ordine ora registra il lotto: ripartizione FIFO sui lotti con residuo (un movimento per lotto, dal carico più vecchio); l'annullo/ripristino eredita il lotto dello scarico originale (netto per SKU invariato rispetto ai fix B). Badge lotto visibile anche sui movimenti legati a un ordine.
   - **#23** — nel modal "Registra Movimento" c'è il selettore Lotto: OBBLIGATORIO per carico/carico_produzione quando esistono lotti in anagrafica; facoltativo per i rientri manuali.
   - **E#4 (prelievo guidato)** — per scarico_manuale/scarico_ordine i lotti sono ordinati FIFO con residuo visibile e il più vecchio è proposto automaticamente (modificabile).
