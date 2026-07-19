@@ -6141,7 +6141,18 @@ const Modal = ({
     // Reset scroll del content all'apertura del modal — evita di vederlo già scrollato
     if (contentRef.current) contentRef.current.scrollTop = 0;
   }, []);
+  // Audit F#132: Escape chiude il modal, come già fanno i dialog tnbConfirm
+  // (chiusura sicura: i form non salvano nulla alla chiusura). Il click sul
+  // backdrop resta volutamente disabilitato per non perdere dati digitati.
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && onClose) onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return /*#__PURE__*/React.createElement("div", {
+  role: "dialog",
+  "aria-modal": true,
+  "aria-label": typeof title === "string" ? title : undefined,
   style: {
     position: "fixed",
     inset: 0,
