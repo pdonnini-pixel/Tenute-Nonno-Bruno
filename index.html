@@ -9075,6 +9075,18 @@ function Clienti({
   const [filterTipo, setFilterTipo] = useState("");
   const clvMap = useMemo(() => { const m = {}; dati.ordini.forEach(o => { if (o.modalita === "vendita" && o.stato !== "annullato") m[o.clienteId] = (m[o.clienteId] || 0) + totOrdine(o); }); return m; }, [dati.ordini]);
   const lastOrderDate = useMemo(() => { const m = {}; dati.ordini.forEach(o => { if (!m[o.clienteId] || o.data > m[o.clienteId]) m[o.clienteId] = o.data; }); return m; }, [dati.ordini]);
+  // Audit F#84: ordini attivi raggruppati per cliente una volta sola (prima ogni
+  // card faceva dati.ordini.filter → O(clienti×ordini) a ogni render/keystroke).
+  const ordiniByCliente = useMemo(() => { const m = new Map(); (dati.ordini || []).forEach(o => { if (o.stato === "annullato") return; if (!m.has(o.clienteId)) m.set(o.clienteId, []); m.get(o.clienteId).push(o); }); return m; }, [dati.ordini]);
+  // Audit F#84: totali del PageSummary memoizzati (prima 4 filter + 1 reduce su
+  // tutti gli ordini rieseguiti a ogni carattere digitato nella ricerca).
+  const summaryClienti = useMemo(() => ({
+    tot: dati.clienti.length,
+    horeca: dati.clienti.filter(c => c.tipo === "horeca").length,
+    retail: dati.clienti.filter(c => c.tipo === "retail").length,
+    distributore: dati.clienti.filter(c => c.tipo === "distributore").length,
+    fatturato: dati.ordini.filter(o => o.stato !== "annullato").reduce((s, o) => s + totOrdine(o), 0)
+  }), [dati.clienti, dati.ordini]);
   const cl = dati.clienti
     .filter(c => {
       const q = filter.toLowerCase();
@@ -9106,11 +9118,11 @@ function Clienti({
       /*#__PURE__*/React.createElement(Btn, { ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(I.plus, null), " Cliente"), sz: "sm", onClick: () => { setForm({ tipo: "horeca", canale: "irene" }); setModal("edit"); } })
     )
   }), /*#__PURE__*/React.createElement(PageSummary, { items: [
-    { label: "Totale clienti", value: dati.clienti.length, color: "#3a3a3a" },
-    { label: "HoReCa", value: dati.clienti.filter(c => c.tipo === "horeca").length, color: "#4a5c2f" },
-    { label: "Retail", value: dati.clienti.filter(c => c.tipo === "retail").length, color: "#1976d2" },
-    { label: "Distribuzione", value: dati.clienti.filter(c => c.tipo === "distributore").length, color: "#c9a84c" },
-    { label: "Fatturato totale", value: fmt(dati.ordini.filter(o => o.stato !== "annullato").reduce((s, o) => s + totOrdine(o), 0)), color: "#4a5c2f" }
+    { label: "Totale clienti", value: summaryClienti.tot, color: "#3a3a3a" },
+    { label: "HoReCa", value: summaryClienti.horeca, color: "#4a5c2f" },
+    { label: "Retail", value: summaryClienti.retail, color: "#1976d2" },
+    { label: "Distribuzione", value: summaryClienti.distributore, color: "#c9a84c" },
+    { label: "Fatturato totale", value: fmt(summaryClienti.fatturato), color: "#4a5c2f" }
   ]}), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
@@ -9118,7 +9130,7 @@ function Clienti({
       gap: 12
     }
   }, cl.map(c => {
-    const ordCl = dati.ordini.filter(o => o.clienteId === c.id && o.stato !== "annullato");
+    const ordCl = ordiniByCliente.get(c.id) || [];
     const clv = clvMap[c.id] || 0;
     const hasCV = ordCl.some(o => o.modalita === "conto_vendita" && o.statoPagamento !== "pagato");
     return /*#__PURE__*/React.createElement(Card, {
@@ -22053,6 +22065,16 @@ function ClientiCommerciale({
     canale: "campagna_m",
     callLog: []
   });
+  // Audit F#84: ordini raggruppati per cliente una volta sola (prima ogni card
+  // faceva dati.ordini.filter → O(clienti×ordini) a ogni carattere di ricerca).
+  const ordiniByCliente = useMemo(() => { const m = new Map(); (dati.ordini || []).forEach(o => { if (!m.has(o.clienteId)) m.set(o.clienteId, []); m.get(o.clienteId).push(o); }); return m; }, [dati.ordini]);
+  const summaryCC = useMemo(() => ({
+    tot: dati.clienti.length,
+    horeca: dati.clienti.filter(c => c.tipo === "horeca").length,
+    retail: dati.clienti.filter(c => c.tipo === "retail").length,
+    distributore: dati.clienti.filter(c => c.tipo === "distributore").length,
+    fatturato: dati.ordini.filter(o => o.stato !== "annullato").reduce((s, o) => s + totOrdine(o), 0)
+  }), [dati.clienti, dati.ordini]);
   const cl = dati.clienti.filter(c => {
     const matchText = !filter || c.ragioneSociale.toLowerCase().includes(filter.toLowerCase()) || c.insegna?.toLowerCase().includes(filter.toLowerCase()) || formatReferente(c.referente).toLowerCase().includes(filter.toLowerCase());
     const matchCanale = !filterCanale || c.canale === filterCanale;
@@ -22118,11 +22140,11 @@ function ClientiCommerciale({
       onClick: () => setShowNuovo(true)
     }))
   }), /*#__PURE__*/React.createElement(PageSummary, { items: [
-    { label: "Totale clienti", value: dati.clienti.length, color: "#3a3a3a" },
-    { label: "HoReCa", value: dati.clienti.filter(c => c.tipo === "horeca").length, color: "#4a5c2f" },
-    { label: "Retail", value: dati.clienti.filter(c => c.tipo === "retail").length, color: "#1976d2" },
-    { label: "Distribuzione", value: dati.clienti.filter(c => c.tipo === "distributore").length, color: "#c9a84c" },
-    { label: "Fatturato totale", value: fmt(dati.ordini.filter(o => o.stato !== "annullato").reduce((s, o) => s + totOrdine(o), 0)), color: "#4a5c2f" }
+    { label: "Totale clienti", value: summaryCC.tot, color: "#3a3a3a" },
+    { label: "HoReCa", value: summaryCC.horeca, color: "#4a5c2f" },
+    { label: "Retail", value: summaryCC.retail, color: "#1976d2" },
+    { label: "Distribuzione", value: summaryCC.distributore, color: "#c9a84c" },
+    { label: "Fatturato totale", value: fmt(summaryCC.fatturato), color: "#4a5c2f" }
   ]}), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
@@ -22133,7 +22155,7 @@ function ClientiCommerciale({
     const fu = c.followUp;
     const gg = giorniAlla(fu?.scadenza);
     const sem = semaforo(gg);
-    const ordCl = dati.ordini.filter(o => o.clienteId === c.id);
+    const ordCl = ordiniByCliente.get(c.id) || [];
     const lastCall = (c.callLog || [])[0];
     return /*#__PURE__*/React.createElement(Card, {
       key: c.id,
@@ -22379,8 +22401,11 @@ function ReportUltimiDocCliente({
     });
     return best;
   };
+  // Audit F#84: Map clienteId→ordini costruita una sola volta (prima un
+  // dati.ordini.filter per ogni cliente → O(clienti×ordini) a ogni keystroke).
+  const ordiniByCliente = React.useMemo(() => { const m = new Map(); (dati.ordini || []).forEach(o => { if (!m.has(o.clienteId)) m.set(o.clienteId, []); m.get(o.clienteId).push(o); }); return m; }, [dati.ordini]);
   const rows = (dati.clienti || []).map(c => {
-    const ordCli = (dati.ordini || []).filter(o => o.clienteId === c.id);
+    const ordCli = ordiniByCliente.get(c.id) || [];
     const ddtArr = [];
     const fatArr = [];
     ordCli.forEach(o => {
