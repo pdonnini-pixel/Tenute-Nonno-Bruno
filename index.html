@@ -18968,21 +18968,59 @@ function App() {
     } catch (e) {}
   }, [currentUser]);
   const isReadonly = mod => (ROLE_READONLY[currentUser?.role] || []).includes(mod);
+  // Audit D#7: il routing (hash e navigazione programmatica) accetta solo moduli
+  // permessi dal ruolo corrente — prima ROLE_ACCESS filtrava solo la sidebar e
+  // digitando #impostazioni/#produzione/… si apriva qualunque modulo.
+  // currentUser via ref: setModuloNav/onHash sono callback stabili.
+  const _userRef = React.useRef(null);
+  _userRef.current = currentUser;
+  const _moduloFallback = useCallback(() => {
+    const acc = ROLE_ACCESS[(_userRef.current || {}).role] || [];
+    return acc.includes("oggi") ? "oggi" : (acc.includes("dashboard") ? "dashboard" : (acc[0] || "oggi"));
+  }, []);
+  const _moduloPermesso = useCallback((mod) => {
+    const u = _userRef.current;
+    if (!u) return true; // prima del login la UI operativa non è montata
+    return (ROLE_ACCESS[u.role] || []).includes(mod);
+  }, []);
   // Hash routing: sync URL ↔ modulo
   const setModuloNav = useCallback((mod) => {
+    if (!_moduloPermesso(mod)) {
+      if (window.tnbToast) window.tnbToast("⛔ Modulo non disponibile per il tuo ruolo", "err");
+      mod = _moduloFallback();
+    }
     setModulo(mod);
     window.location.hash = mod;
-  }, []);
+  }, [_moduloPermesso, _moduloFallback]);
   // Rende setModuloNav accessibile globalmente ai componenti figli
   window._nav = setModuloNav;
   useEffect(() => {
     const onHash = () => {
       const m = window.location.hash.replace("#","");
-      if (m) setModulo(m);
+      if (!m) return;
+      if (!_moduloPermesso(m)) {
+        if (window.tnbToast) window.tnbToast("⛔ Modulo non disponibile per il tuo ruolo", "err");
+        const fb = _moduloFallback();
+        setModulo(fb);
+        window.location.hash = fb;
+        return;
+      }
+      setModulo(m);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
-  }, []);
+  }, [_moduloPermesso, _moduloFallback]);
+  // Audit D#7 (cintura): se il modulo in stato non è permesso al ruolo (es. hash
+  // digitato prima del login, o sessione ricordata che riparte su un hash vietato),
+  // rientra subito sul fallback del ruolo.
+  useEffect(() => {
+    if (!currentUser || !dati) return;
+    if (!_moduloPermesso(modulo)) {
+      const fb = _moduloFallback();
+      setModulo(fb);
+      try { window.location.hash = fb; } catch (_) {}
+    }
+  }, [currentUser, dati, modulo, _moduloPermesso, _moduloFallback]);
   // (rimosso il vecchio check window._supaOk: era codice morto — il flag non
   //  veniva mai impostato. Il banner ora è pilotato da syncErr, vedi sopra.)
 
