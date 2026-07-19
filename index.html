@@ -10931,16 +10931,25 @@ function Ordini({
     if (!form.campione && !form.modalita) errs.modalita = "Seleziona la modalità (Vendita o Conto Vendita)";
     if (!form.stato) errs.stato = "Seleziona lo stato ordine";
     if (!form.campione && !form.modalitaPagamento) errs.modalitaPagamento = "Seleziona la modalità di pagamento";
-    // Validazione righe: prezzi/qta/omaggi non negativi
+    // Audit F#76: un ordine deve avere almeno una riga (il wizard lo richiede già)
+    if ((form.righe || []).length === 0) {
+      errs.righe = "Aggiungi almeno una riga all'ordine";
+    }
+    // Validazione righe: prezzi/qta/omaggi non negativi.
+    // Audit F#76: qta 0 accettata SOLO se la riga è un omaggio puro (omaggio > 0).
     const righeBadIdx = [];
+    const righeZeroIdx = [];
     (form.righe || []).forEach((r, i) => {
       const prezzo = Number(r.prezzoUnitario);
       const qta = Number(r.qta);
       const om = Number(r.omaggio || 0);
       if (prezzo < 0 || qta < 0 || om < 0 || Number.isNaN(prezzo) || Number.isNaN(qta)) righeBadIdx.push(i + 1);
+      else if (qta === 0 && om === 0) righeZeroIdx.push(i + 1);
     });
     if (righeBadIdx.length > 0) {
       errs.righe = "Riga " + righeBadIdx.join(", ") + ": prezzo/quantità/omaggi non possono essere negativi";
+    } else if (righeZeroIdx.length > 0) {
+      errs.righe = "Riga " + righeZeroIdx.join(", ") + ": quantità 0 — indica i pezzi (o un omaggio) oppure elimina la riga";
     }
     if (Object.keys(errs).length > 0) {
       setFormErrors(errs);
