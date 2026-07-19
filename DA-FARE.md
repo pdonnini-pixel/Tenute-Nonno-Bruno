@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1 in produzione; Pacchetti F2 e F3 — UI/usabilità + guide/coerenza: 21 finding medi/bassi corretti sul branch, merge da decidere)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E, F1, F2 e F3 dell'audit in produzione su decisione esplicita di Patrizio — 63 finding su 145 chiusi)
 
 ---
 
@@ -57,13 +57,13 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1 in produzione; Pacchetti 
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F3 (blocco omogeneo "guide e coerenza del codice"): finding #134, #135, #136, #137, #138, #139, #140, #141, #142, #143, #144 del report corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione, insieme al Pacchetto F2: merge da decidere; il #145 è rinviato — vedi punto 3c):
+- **2026-07-19 — Pacchetto F3 (blocco omogeneo "guide e coerenza del codice"): finding #134–#144 del report corretti e portati IN PRODUZIONE** (merge deciso esplicitamente da Patrizio, insieme al Pacchetto F2; il #145 è rinviato — vedi punto 3c):
   - **#134–#137, #139** — testi della guida in-app allineati al comportamento reale (eliminazione cliente via annullo ordini, KPI Agenda, preset report inesistente, nome del pulsante Doppioni); **#135** — sezione "Accordi Fornitori" aggiunta all'indice della Guida; **#138** — nomi dei movimenti nella guida DDT (.md e .html) allineati alle etichette del menu (PDF da rigenerare, punto 3c).
   - **#140** — ⚠️ area PDF: l'IBAN dei documenti passa da `getTnbIban()` (rispetta gli override di dati.azienda); output identico a dati invariati.
   - **#141** — rimossi i due blocchi `null &&` di CostiMargini (~100 righe mai renderizzate) e gli stub sempre-0 `costoOlioPerLitro`/`costoFormato`.
   - **#142–#144** — rimosse `CANALI_LABEL` (orfana e incompatibile con la mappa CANALE) e `getScaglioneLabel` (mai chiamata); semplificato il ternario a rami identici su `ddtDoc`.
   - **Verifica:** 15 controlli in Chromium con backend simulato: app avviata senza errori JS, testi guida nuovi presenti e vecchi assenti, indice con Accordi Fornitori, tab Configurazione di CostiMargini integro senza le sezioni legacy, `getTnbIban()` con default e override, simboli morti assenti a runtime, registrazione movimento invariata.
-- **2026-07-19 — Pacchetto F2 (blocco omogeneo "UI e usabilità"): finding #45, #48, #49, #103, #106, #107, #128, #130, #132, #133 del report corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge da decidere esplicitamente):
+- **2026-07-19 — Pacchetto F2 (blocco omogeneo "UI e usabilità"): finding #45, #48, #49, #103, #106, #107, #128, #130, #132, #133 del report corretti e portati IN PRODUZIONE** (merge deciso esplicitamente da Patrizio, insieme al Pacchetto F3):
   - **#45/#103** — grafico "Confronto prezzo/costo/margine": barre che non invadono più i gruppi adiacenti e asse Y in euro (prop fmtFn allineata agli altri chart).
   - **#107** — grafico a ciambella disegnato anche con un'unica categoria al 100% (prima compariva solo la legenda).
   - **#48** — il badge "Fornitore collegato" di Costi&Margini apre davvero il dettaglio del fornitore.
