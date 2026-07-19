@@ -816,20 +816,30 @@ window.storage = {
     return p;
   },
   delete: async function(key) {
+    // Audit F#111: contratto onesto — una DELETE respinta dal server (es. RLS)
+    // non deve più riportare deleted:true. Prima non si controllava resp.ok, così
+    // un chiamante avrebbe creduto la chiave rimossa mentre restava sul server.
     try {
-      await fetch(
+      const resp = await fetch(
         SUPA_URL + '/rest/v1/app_kv?key=eq.' + encodeURIComponent(key),
         { method: 'DELETE', headers: _supaHeaders }
       );
-      _kvMeta[key] = null; // riga rimossa dal server
       try { localStorage.removeItem('tnb__' + key); } catch (_) {}
+      if (!resp.ok) {
+        console.error('[storage.delete] HTTP ' + resp.status + ' su key=' + key);
+        return { key: key, deleted: false, error: 'HTTP ' + resp.status };
+      }
+      _kvMeta[key] = null; // riga rimossa dal server
       return { key: key, deleted: true };
     } catch (e) {
+      console.error('[storage.delete] errore rete su key=' + key, e);
       try { localStorage.removeItem('tnb__' + key); } catch (_) {}
-      return { key: key, deleted: false };
+      return { key: key, deleted: false, error: String(e && e.message || e) };
     }
   },
   list: async function(prefix) {
+    // Audit F#111: distinguere l'errore da "nessuna chiave": keys:null + error
+    // invece di keys:[] silenzioso.
     try {
       const url = prefix
         ? SUPA_URL + '/rest/v1/app_kv?key=like.' + encodeURIComponent(prefix + '%') + '&select=key'
@@ -839,7 +849,8 @@ window.storage = {
       const data = await resp.json();
       return { keys: data.map(r => r.key), prefix: prefix };
     } catch (e) {
-      return { keys: [], prefix: prefix };
+      console.error('[storage.list] errore', e);
+      return { keys: null, prefix: prefix, error: String(e && e.message || e) };
     }
   }
 };
