@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A, B e C dell'audit in produzione su decisione esplicita di Patrizio)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A, B, C in produzione; Pacchetto D — ruoli e log: finding #7, #9, #39, #125 corretti sul branch, merge da decidere)
 
 ---
 
@@ -41,8 +41,8 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A, B e C dell'audit in produzione su
 - **Riapertura di ordini storici senza scarichi a log:** un ordine vecchio (pre-tracciamento) annullato e poi riaperto genera ora lo scarico coerente con il documento, ma l'annullo precedente non aveva accreditato nulla → il netto magazzino scende. Era già così per la riapertura a "Firmato"; ora vale anche per "Consegnato/Fatturato". Dopo riaperture di ordini storici, controllare la giacenza.
 - **Finding magazzino correlati NON in questo pacchetto** (restano aperti nel report): #16 affido_spedizioniere doppio decremento riservato+confezionamento, #18 apertura non-lineare in saveSku, #57 migrazione v49 ordine inverso stesso giorno, #58 verificaDisponibilitaOrdine legge la giacenza memorizzata anziché il ricalcolo.
 
-### 4. Limiti residui noti della persistenza (post-Pacchetto A, non bloccanti)
-- **Log attività su blob unico (`tnb-log`):** con il controllo di concorrenza un conflitto in scrittura ora NON sovrascrive più le voci degli altri utenti, ma la voce in conflitto viene scartata (con warning in console). La finestra di race read-modify-write resta: è il finding del **Pacchetto D** (voce #3) del report audit.
+### 4. Limiti residui noti della persistenza (post-Pacchetti A e D, non bloccanti)
+- **Log attività su blob unico (`tnb-log`):** dopo il Pacchetto D le scritture sono serializzate per scheda e un conflitto viene risolto rileggendo il log e riappendendo la voce (fino a 3 tentativi), quindi in pratica non si perdono più voci tra utenti attivi. Restano i limiti STRUTTURALI del blob unico: (a) il log cresce senza limite e viene ritrasmesso per intero a ogni azione (finding #9, aspetto performance); (b) le voci registrate mentre si è offline restano solo nella cache locale del dispositivo e non vengono risincronizzate. **Fix corretto:** tabella Supabase dedicata in append (1 INSERT per voce) — da pianificare insieme perché tocca il backend.
 - **Primo inserimento di una chiave assente:** usa ancora il POST upsert (nessuna riga da confrontare); una race tra due "primi salvataggi" simultanei resta teoricamente possibile solo al primissimo avvio su DB vuoto.
 - **Import backup / reset go-live annullati per errore server:** la copia in `localStorage` resta comunque aggiornata al valore che si tentava di scrivere (comportamento pre-esistente); al riavvio online il server fa fede, e da offline scatta la verifica "cache stantia".
 
@@ -53,6 +53,12 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A, B e C dell'audit in produzione su
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto D audit (ruoli e log attività): finding #7, #9, #39, #125 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge su `main` da decidere esplicitamente). ⚠️ Il fix #125 tocca l'area login SOLO in aggiunta (logging): autenticazione invariata (il punto critico "auth lato client" resta aperto, vedi #1):
+  - **#7** — il routing hash rispetta `ROLE_ACCESS`: digitare `#impostazioni`/`#produzione`/… con un ruolo non autorizzato mostra un avviso e riporta al modulo di fallback (vale anche per la sessione ricordata che riparte su un hash vietato). Per superadmin/admin nulla cambia.
+  - **#39** — la prop `readonly` (ROLE_READONLY) è ora passata e gestita anche in Produzione, Fornitori e CostiMargini: in sola lettura ogni tentativo di modifica è bloccato con avviso "🔒" (guardia centrale su setDati). Oggi nessun utente reale ha ruolo `commerciale`, quindi è una cintura per il futuro.
+  - **#9** — report attività: voce costruita al momento dell'azione, scritture serializzate per scheda, conflitti di concorrenza risolti con rilettura+retry (fino a 3), errori in console invece del catch vuoto. Limite strutturale residuo del blob unico documentato al punto 4.
+  - **#125** — Login e Logout registrati nel Report Attività (modulo `auth`, con nome, ruolo e flag "ricordami"): ora si può ricostruire chi era collegato e quando.
+  - **Verifica:** browser Chromium con backend simulato: login superadmin → voce Login scritta; #impostazioni ok per superadmin e BLOCCATO per il tester (fallback + avviso, `_nav('utenti')` bloccato, #magazzino resta accessibile); logout con conflitto simulato sul log → retry che preserva la voce dell'altro utente e registra il Logout; sola lettura forzata su Produzione/CostiMargini → avviso "Sola lettura" e modifiche senza effetto. 13/13 controlli superati.
 - **2026-07-19 — Pacchetto C audit (coerenza numeri Dashboard/Report/CostiMargini): finding #6, #24, #46, #47, #104 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Criterio unico: gli ordini annullati sono esclusi ovunque, come già faceva la Dashboard. NB: i numeri di Report Periodo/P&L/CostiMargini possono risultare più BASSI di prima — non è un calo di fatturato, è la fine del doppio conteggio degli annullati:
   - **#6** — Report Periodo: fatturato, conteggio ordini, tabella per canale e "clienti attivi" escludono gli annullati.
   - **#46** — CostiMargini "Per Ordine": annullati esclusi da tabella, totali ed export Excel (un solo filtro nel memo condiviso).
