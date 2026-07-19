@@ -5873,14 +5873,8 @@ const getPrezzoListino = (formato, qta, conConfezione = true) => {
   if (!conConfezione && l.scontoSenzaConfezione) prezzo -= l.scontoSenzaConfezione;
   return Math.round(prezzo * 100) / 100;
 };
-const getScaglioneLabel = (formato, qta) => {
-  const l = LISTINO[formato];
-  if (!l) return "";
-  const scaglioni = [...l.scaglioni].sort((a, b) => b.qta - a.qta);
-  const sc = scaglioni.find(s => qta >= s.qta);
-  if (!sc) return `${l.scaglioni[0].colli} collo`;
-  return `${sc.colli} ${sc.colli === 1 ? "collo" : "colli"}`;
-};
+// Audit F#143: rimossa getScaglioneLabel — mai chiamata, e leggeva solo la
+// const LISTINO hardcoded ignorando il listino editabile dati.listino.
 const STATO_OF = {
   attesa: {
     l: "In attesa",
@@ -7198,7 +7192,8 @@ function Pipeline({
     if (logAction) logAction("Eliminazione prospect", "pipeline", p?.ragioneSociale || id);
   };
   const stati = ["da_contattare","contattato","in_trattativa","interessato","acquisito","non_interessato","in_sospeso"];
-  const CANALI_LABEL = {fiera:"Fiera",call_diretta:"Call",contatto_aziendale:"Aziendale",web:"Web",passaparola:"Passaparola",email:"Email",visita:"Visita",altro:"Altro"};
+  // Audit F#142: rimossa CANALI_LABEL — mai usata e con chiavi incompatibili
+  // con la mappa canonica CANALE (che è quella da usare per le label canali).
   // UX1 helpers
   const ROWS_PER_PAGE = 50;
   const pNome = (p) => p.tipo === "Privato" ? ((p.nome||"") + " " + (p.cognome||"")).trim() || "Privato" : (p.insegna || p.ragioneSociale || "—");
@@ -13621,7 +13616,9 @@ function Magazzino({
       ordineId: form.ordineId || null,
       lottoId: form.lottoId || null,
       ddtNum: movRichiedeDDT(form.tipo) ? String(form.ddtNum || "").trim() : (form.ddtNum || null),
-      ddtDoc: movRichiedeDDT(form.tipo) ? (form.ddtDoc || null) : (form.ddtDoc || null),
+      // Audit F#144: il ternario aveva i due rami identici — semplificato a
+      // comportamento invariato (il documento resta allegato se caricato).
+      ddtDoc: form.ddtDoc || null,
       auto: false,
       skuId: form.magId,
       // Audit B#56: la data dichiarata guida replay e viste storiche;
