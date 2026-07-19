@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A, B, C e D dell'audit in produzione su decisione esplicita di Patrizio)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–D in produzione; Pacchetto E — lotti e FIFO: finding #20, #23, #29, #4-FIFO corretti sul branch, merge da decidere)
 
 ---
 
@@ -53,6 +53,18 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A, B, C e D dell'audit in produzione
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto E audit (tracciabilità lotti e rotazione FIFO): finding #20, #23, #29 e prelievo guidato FIFO del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge su `main` da decidere esplicitamente):
+  - **#20** — lo scarico generato dalla firma dell'ordine ora registra il lotto: ripartizione FIFO sui lotti con residuo (un movimento per lotto, dal carico più vecchio); l'annullo/ripristino eredita il lotto dello scarico originale (netto per SKU invariato rispetto ai fix B). Badge lotto visibile anche sui movimenti legati a un ordine.
+  - **#23** — nel modal "Registra Movimento" c'è il selettore Lotto: OBBLIGATORIO per carico/carico_produzione quando esistono lotti in anagrafica; facoltativo per i rientri manuali.
+  - **E#4 (prelievo guidato)** — per scarico_manuale/scarico_ordine i lotti sono ordinati FIFO con residuo visibile e il più vecchio è proposto automaticamente (modificabile).
+  - **#29** — annate dei form ordine e del wizard derivate da magazzino+lotti (`annateDisponibili`); default nuova riga = annata più VECCHIA con stock per il formato (rotazione). La raccolta 2026 sarà selezionabile senza toccare il codice.
+  - **Compromessi (deliberati, per non alterare dati storici o bloccare i flussi):**
+    - merce storica caricata senza lotto continua a uscire con lotto vuoto (nessuna riattribuzione retroattiva);
+    - senza lotti in anagrafica i carichi restano permessi (con suggerimento a creare il lotto in Produzione);
+    - `resa_cv` resta senza lotto (la resa è ripartita proporzionalmente tra le righe: l'attribuzione a un lotto sarebbe arbitraria);
+    - il lotto NON è stato aggiunto ai PDF (area a rischio): è visibile nei Movimenti/Archivio del Magazzino;
+    - modulo Contratti fornitori (nascosto dalla sidebar): formati/annate ancora hardcoded.
+  - **Verifica:** 21 controlli in Chromium con backend simulato: funzioni FIFO reali (residui, ripartizione, firma→scarichi per lotto A70+B20, annullo che eredita i lotti, somme invariate), flusso UI (scarico manuale con lotto proposto ▶ e salvato l01; carico senza lotto bloccato; riapertura ordine con scarico rigenerato CON lotto; selettore annate con 2026 e default 2024 = più vecchia con stock).
 - **2026-07-19 — Pacchetto D audit (ruoli e log attività): finding #7, #9, #39, #125 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Il fix #125 tocca l'area login SOLO in aggiunta (logging): autenticazione invariata (il punto critico "auth lato client" resta aperto, vedi #1). Da ora accessi e uscite compaiono nel Report Attività: la voce "Login/Logout · auth" è normale, non un'anomalia:
   - **#7** — il routing hash rispetta `ROLE_ACCESS`: digitare `#impostazioni`/`#produzione`/… con un ruolo non autorizzato mostra un avviso e riporta al modulo di fallback (vale anche per la sessione ricordata che riparte su un hash vietato). Per superadmin/admin nulla cambia.
   - **#39** — la prop `readonly` (ROLE_READONLY) è ora passata e gestita anche in Produzione, Fornitori e CostiMargini: in sola lettura ogni tentativo di modifica è bloccato con avviso "🔒" (guardia centrale su setDati). Oggi nessun utente reale ha ruolo `commerciale`, quindi è una cintura per il futuro.
