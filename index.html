@@ -1536,12 +1536,22 @@ window.tnbConfirm = (msg, onConfirm, opts) => {
   document.body.appendChild(overlay);
   requestAnimationFrame(() => { overlay.style.opacity = "1"; card.style.transform = "scale(1)"; });
   const close = () => { overlay.style.opacity = "0"; card.style.transform = "scale(0.95)"; setTimeout(() => overlay.remove(), 160); document.removeEventListener("keydown", onKey); };
-  const onKey = e => { if (e.key === "Escape") { close(); } else if (e.key === "Enter") { close(); if (typeof onConfirm === "function") onConfirm(); } };
+  // Audit F#89: per le conferme distruttive (danger) NON mappare Invio sulla
+  // conferma — Invio per abitudine/dito ancora sul tasto azzererebbe un'azione
+  // irreversibile senza leggere il messaggio. Escape annulla sempre; per i
+  // confirm non-danger Invio resta una scorciatoia di conferma.
+  const onKey = e => {
+    if (e.key === "Escape") { close(); }
+    else if (e.key === "Enter" && !danger) { close(); if (typeof onConfirm === "function") onConfirm(); }
+  };
   btnCancel.onclick = close;
   btnOk.onclick = () => { close(); if (typeof onConfirm === "function") onConfirm(); };
   overlay.onclick = e => { if (e.target === overlay) close(); };
   document.addEventListener("keydown", onKey);
-  setTimeout(() => btnOk.focus(), 100);
+  // Audit F#89: default sicuro — sulle conferme distruttive il focus va su
+  // "Annulla", non sul pulsante rosso; l'utente deve scegliere l'ok con un
+  // click esplicito.
+  setTimeout(() => { (danger ? btnCancel : btnOk).focus(); }, 100);
 };
 // ─── PALETTE ──────────────────────────────────────────────────────────────────
 const C = {
