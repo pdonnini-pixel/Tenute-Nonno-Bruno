@@ -689,13 +689,40 @@ const _supaHeaders = {
 // _kvQueue[key] : coda che serializza le set() per chiave — due richieste in
 //                 volo contemporanee possono arrivare al server fuori ordine
 //                 e farebbero scattare il controllo di versione contro noi stessi.
+// _kvCacheBoot[key] (audit #4): la chiave è stata letta dalla cache locale
+//                 perché il server era irraggiungibile. Prima della PRIMA
+//                 scrittura va verificato che il server non abbia dati più
+//                 recenti, altrimenti la copia stantia li sovrascriverebbe.
 const _kvMeta = {};
 const _kvQueue = {};
+const _kvCacheBoot = {};
 
 async function _kvSetRemote(key, value) {
   const nowIso = new Date().toISOString();
   try {
     let newMeta;
+    if (_kvCacheBoot[key] && _kvMeta[key] === undefined) {
+      // Audit #4: stiamo per scrivere partendo da una copia locale mai
+      // verificata col server. Rileggi il server PRIMA di scrivere.
+      const respV = await fetch(
+        SUPA_URL + '/rest/v1/app_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at',
+        { headers: _supaHeaders }
+      );
+      if (!respV.ok) throw new Error('HTTP ' + respV.status);
+      const rowsV = await respV.json();
+      const cb = _kvCacheBoot[key];
+      if (rowsV.length === 0) {
+        _kvMeta[key] = null; // il server non ha la riga: si può inserire
+      } else if (rowsV[0].value === cb.raw || (cb.meta && rowsV[0].updated_at === cb.meta)) {
+        // La copia locale coincide con il server: era aggiornata, si procede.
+        _kvMeta[key] = rowsV[0].updated_at || undefined;
+      } else {
+        // La copia locale era VECCHIA e il server ha dati diversi:
+        // NON sovrascrivere. (_kvCacheBoot resta: un eventuale retry riverifica.)
+        return { ok: false, conflict: true, stale: true, key: key };
+      }
+      delete _kvCacheBoot[key];
+    }
     if (_kvMeta[key] === undefined || _kvMeta[key] === null) {
       // Riga assente sul server (primo salvataggio della chiave) o stato mai
       // letto: upsert come in passato, con return=representation per
@@ -726,8 +753,12 @@ async function _kvSetRemote(key, value) {
       newMeta = rows[0].updated_at || nowIso;
     }
     _kvMeta[key] = newMeta;
-    // Cache locale per accesso offline
-    try { localStorage.setItem('tnb__' + key, value); } catch (_) {}
+    // Cache locale per accesso offline + versione server corrispondente
+    // (audit #4: permette di riconoscere una cache già allineata al boot).
+    try {
+      localStorage.setItem('tnb__' + key, value);
+      localStorage.setItem('tnb__meta__' + key, newMeta || '');
+    } catch (_) {}
     return { ok: true, key: key, value: value };
   } catch (e) {
     // Fallback a localStorage se offline: la modifica esiste solo su questo
@@ -749,9 +780,16 @@ window.storage = {
       if (data.length > 0) {
         // Registra la versione letta: servirà alla scrittura condizionale.
         _kvMeta[key] = data[0].updated_at || undefined;
+        delete _kvCacheBoot[key];
+        // Aggiorna cache locale + versione (audit #4)
+        try {
+          localStorage.setItem('tnb__' + key, data[0].value);
+          localStorage.setItem('tnb__meta__' + key, data[0].updated_at || '');
+        } catch (_) {}
         return { key: key, value: data[0].value };
       }
       _kvMeta[key] = null; // riga assente: primo avvio legittimo
+      delete _kvCacheBoot[key];
       return null;
     } catch (e) {
       // Fallback a localStorage se offline. Se non esiste NEMMENO la copia
@@ -761,7 +799,12 @@ window.storage = {
       let v = null;
       try { v = localStorage.getItem('tnb__' + key); } catch (_) {}
       if (v === null) throw e;
-      return { key: key, value: v };
+      // Audit #4: copia locale potenzialmente stantia — marcata come tale.
+      // La prima scrittura verrà verificata contro il server (_kvCacheBoot).
+      let meta = null;
+      try { meta = localStorage.getItem('tnb__meta__' + key) || null; } catch (_) {}
+      _kvCacheBoot[key] = { raw: v, meta: meta };
+      return { key: key, value: v, fromCache: true };
     }
   },
   set: async function(key, value) {
@@ -18627,6 +18670,10 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   // Audit #1: errore nel caricamento iniziale → schermata bloccante, MAI setDati(D0)
   const [loadError, setLoadError] = useState(null); // { tipo: 'rete'|'dati', dettaglio }
+  // Audit #4: boot avvenuto dalla copia locale (server irraggiungibile) →
+  // banner "dati potenzialmente non aggiornati"; la prima scrittura viene
+  // comunque verificata contro il server dallo storage layer (_kvCacheBoot).
+  const [cacheMode, setCacheMode] = useState(false);
   useEffect(() => {
     (async () => {
       // Restore session — check localStorage (remember me) then sessionStorage (temp)
@@ -18648,6 +18695,7 @@ function App() {
         setLoadError({ tipo: "rete", dettaglio: String((eNet && eNet.message) || eNet) });
         return;
       }
+      if (r && r.fromCache) setCacheMode(true); // audit #4
       try {
         const parsed = migrateV53ScaglioniNorm(migrateV53Azienda(migrateV53Contratti(migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))))))))))));
         // v53-golive (GL2): stash azienda per PDF/email generators che non hanno
@@ -18716,12 +18764,15 @@ function App() {
       if (r.timer) clearTimeout(r.timer);
       r.timer = null; r.json = null; r.delay = 5000;
       setSyncErr(null);
+      setCacheMode(false); // audit #4: scrittura verificata col server → copia allineata
       return;
     }
     if (res && res.conflict) {
-      // Audit #2: un altro utente ha salvato dopo di noi — la nostra
-      // scrittura NON è avvenuta. Avvisa e ricarica dai dati del server.
-      alert("⚠️ CONFLITTO DI SALVATAGGIO\n\nUn altro utente (o un'altra scheda del browser) ha salvato dati più recenti sul server.\nPer non sovrascriverli, la tua ultima modifica NON è stata salvata.\n\nLa pagina verrà ricaricata con i dati aggiornati: dopo il caricamento ripeti la modifica.");
+      // Audit #2/#4: la nostra scrittura NON è avvenuta per non sovrascrivere
+      // dati più recenti sul server. Avvisa e ricarica dai dati del server.
+      alert(res.stale
+        ? "⚠️ SALVATAGGIO BLOCCATO\n\nStavi lavorando su una copia locale NON aggiornata (il server non era raggiungibile all'avvio) e sul server ci sono dati più recenti.\nPer non sovrascriverli, la tua ultima modifica NON è stata salvata.\n\nLa pagina verrà ricaricata con i dati aggiornati del server: dopo il caricamento ripeti la modifica."
+        : "⚠️ CONFLITTO DI SALVATAGGIO\n\nUn altro utente (o un'altra scheda del browser) ha salvato dati più recenti sul server.\nPer non sovrascriverli, la tua ultima modifica NON è stata salvata.\n\nLa pagina verrà ricaricata con i dati aggiornati: dopo il caricamento ripeti la modifica.");
       window.location.reload();
       return;
     }
@@ -18988,14 +19039,14 @@ function App() {
   const access = ROLE_ACCESS[currentUser.role] || [];
   const NAV = ALL_NAV.filter(n => access.includes(n.k));
   const alerts = [dati.magazzino.filter(m => giacenzaDisp(m) <= m.soglia).length, dati.ordini.filter(o => o.stato !== "annullato" && o.statoPagamento === "da_pagare" && o.modalita === "vendita").length, dati.ordini.filter(o => o.stato !== "annullato" && o.scadenzaCV && o.scadenzaCV < todayStr() && o.statoPagamento !== "pagato").length].reduce((s, n) => s + n, 0);
-  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("style", null, css), syncErr && /*#__PURE__*/React.createElement("div", {
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("style", null, css), (syncErr || cacheMode) && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
-      background: "#c0392b", color: "#fff",
+      background: syncErr ? "#c0392b" : "#f57c00", color: "#fff",
       padding: "7px 16px", fontSize: 12, fontWeight: 600,
       display: "flex", justifyContent: "space-between", alignItems: "center"
     }
-  }, /*#__PURE__*/React.createElement("span", null, "\u26A0\uFE0F  " + syncErr), /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("span", null, "\u26A0\uFE0F  " + (syncErr || "Dati caricati dalla copia locale di questo dispositivo (server non raggiungibile all'avvio): potrebbero NON essere aggiornati. Al primo salvataggio il server verr\u00E0 verificato per non sovrascrivere dati pi\u00F9 recenti.")), syncErr && /*#__PURE__*/React.createElement("button", {
     onClick: function() { setSyncErr(null); },
     title: "Nascondi (riapparir\u00E0 se il prossimo salvataggio fallisce)",
     style: { background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 16, fontWeight: 700, lineHeight: 1 }
