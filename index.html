@@ -1600,7 +1600,11 @@ const refDisplay = r => {
   if (typeof r === "object") return ((r.nome || "") + " " + (r.cognome || "")).trim() || r.ruolo || "";
   return String(r);
 };
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// Audit F#70: data LOCALE, non UTC — con toISOString() tra mezzanotte e le
+// 01:00/02:00 italiane "oggi" risultava il giorno precedente (movimenti, DDT,
+// scadenze e perfino l'anno della numerazione ordini a capodanno).
+const _dataLocaleStr = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const todayStr = () => _dataLocaleStr(new Date());
 // v53-golive: helper per leggere dati.azienda con fallback ai default storici TNB.
 // Usato da PDF generators e template email. Se l'utente non ha ancora editato
 // `dati.azienda` (es. prima del prossimo load + migrazione), restituisce i valori
@@ -20497,13 +20501,15 @@ const calcolaScadenzaFollowUp = fu => {
   if (fu.tipo === "libero" && fu.dataLibera) return fu.dataLibera;
   if (fu.tipo === "disinteresse") return null;
   const oggi = new Date();
+  // Audit F#70: setDate lavora in ora locale — anche la stringa finale deve
+  // essere locale (prima usciva in UTC, con slittamento di un giorno di notte).
   if (fu.tipo === "giorni" && fu.quantita) {
     oggi.setDate(oggi.getDate() + Number(fu.quantita));
-    return oggi.toISOString().slice(0, 10);
+    return _dataLocaleStr(oggi);
   }
   if (fu.tipo === "settimane" && fu.quantita) {
     oggi.setDate(oggi.getDate() + Number(fu.quantita) * 7);
-    return oggi.toISOString().slice(0, 10);
+    return _dataLocaleStr(oggi);
   }
   if (fu.tipo === "prossima_stagione") {
     const y = oggi.getMonth() >= 8 ? oggi.getFullYear() + 1 : oggi.getFullYear();
