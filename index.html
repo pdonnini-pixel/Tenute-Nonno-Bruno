@@ -13310,6 +13310,27 @@ function Magazzino({
       if (!String(form.ddtNum || "").trim()) { window.alert('⛔ Numero DDT obbligatorio per questo movimento (entrata/uscita merce).'); return; }
       if (!form.ddtDoc || !form.ddtDoc.path) { window.alert('⛔ Documento DDT obbligatorio: carica il file del DDT prima di registrare il movimento.'); return; }
     }
+    // Audit B#17: i movimenti in uscita non possono superare la giacenza dello
+    // stato di origine. Senza questo controllo il clamp del ricalcolo assorbe
+    // l'eccesso in silenzio (es. scarico 100 con 60 disponibili: 40 pezzi
+    // spariscono senza errore e ogni ricalcolo riproduce la giacenza sbagliata).
+    const FONTE_USCITA = {
+      scarico_manuale: ["disponibile"],
+      scarico_ordine: ["disponibile"],
+      riserva: ["disponibile"],
+      consegnato: ["in_spedizione"],
+      affido_spedizioniere: ["riservato", "in_confezionamento"]
+    };
+    const fontiUscita = FONTE_USCITA[form.tipo];
+    if (fontiUscita) {
+      const gCalc = ricalcolaGiacenza((dati.movimenti || []).filter(mv => (mv.skuId || mv.magId) === form.magId));
+      const dispFonte = fontiUscita.reduce((s, k) => s + (Number(gCalc[k]) || 0), 0);
+      if (Number(form.qta) > dispFonte) {
+        const LBL_STATO_MAG = { disponibile: "disponibile", in_spedizione: "in spedizione", riservato: "riservato", in_confezionamento: "in confezionamento" };
+        window.alert('⛔ Quantità non disponibile per "' + (TIPI_MOV.find(t => t.v === form.tipo)?.l || form.tipo) + '":\nrichiesti ' + Number(form.qta) + ' pz, ma in "' + fontiUscita.map(k => LBL_STATO_MAG[k] || k).join(' + ') + '" ce ne sono solo ' + dispFonte + '.\n\nControlla la quantità oppure registra prima il carico/passaggio di stato mancante.');
+        return;
+      }
+    }
     const sku = dati.magazzino.find(m => m.id === form.magId);
     const dataMov = form.data || todayStr();
     const newMov = {
