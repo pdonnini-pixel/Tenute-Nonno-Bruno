@@ -21917,12 +21917,14 @@ function ReportPeriodo({
   const [dal, setDal] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
   const [al, setAl] = useState(todayStr());
   const inRange = d => d && d >= dal && d <= al;
+  // Audit C#6: gli ordini annullati non contano nel report (fatturato, conteggi,
+  // canali, clienti attivi) — stesso criterio della Dashboard (tkt_1781169406976).
   const clientiAttivi = dati.clienti.filter(c => {
     const haCall = (c.callLog || []).some(cl => inRange(cl.data));
-    const haOrd = dati.ordini.some(o => o.clienteId === c.id && inRange(o.data));
+    const haOrd = dati.ordini.some(o => o.stato !== "annullato" && o.clienteId === c.id && inRange(o.data));
     return haCall || haOrd;
   });
-  const ordiniPeriodo = dati.ordini.filter(o => inRange(o.data));
+  const ordiniPeriodo = dati.ordini.filter(o => o.stato !== "annullato" && inRange(o.data));
   const fatturatoPeriodo = ordiniPeriodo.filter(o => o.modalita === "vendita").reduce((s, o) => s + totOrdine(o), 0);
   const callPeriodo = dati.clienti.flatMap(c => (c.callLog || []).filter(cl => inRange(cl.data)).map(cl => ({
     ...cl,
