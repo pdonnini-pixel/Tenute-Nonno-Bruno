@@ -1223,6 +1223,20 @@ function PieChartSVG({
   let angle = -Math.PI / 2;
   const slices = data.map(d => {
     const a = d.value / total * Math.PI * 2;
+    // Audit F#107: fetta piena (unica categoria al 100%) — un arco SVG con
+    // estremi coincidenti non viene renderizzato: disegna l'anello completo
+    // con due semi-archi + foro interno (fill-rule evenodd).
+    if (d.value >= total) {
+      angle += a;
+      return {
+        d: `M${cx + r},${cy} A${r},${r} 0 1,1 ${cx - r},${cy} A${r},${r} 0 1,1 ${cx + r},${cy} ` +
+           `M${cx + ri},${cy} A${ri},${ri} 0 1,0 ${cx - ri},${cy} A${ri},${ri} 0 1,0 ${cx + ri},${cy} Z`,
+        evenodd: true,
+        value: d.value,
+        name: d.name,
+        color: d.color
+      };
+    }
     const x1 = cx + r * Math.cos(angle),
       y1 = cy + r * Math.sin(angle);
     angle += a;
@@ -1256,6 +1270,7 @@ function PieChartSVG({
   }, slices.map((s, i) => React.createElement('path', {
     key: i,
     d: s.d,
+    fillRule: s.evenodd ? 'evenodd' : undefined, // audit F#107: foro dell'anello pieno
     fill: s.color,
     stroke: '#fff',
     strokeWidth: 2
