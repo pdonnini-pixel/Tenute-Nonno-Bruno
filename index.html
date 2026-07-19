@@ -2870,15 +2870,61 @@ const ddtFromOrdine = (ordine) => {
   return { ddtNum: num || null, ddtDoc: doc || null };
 };
 
+// ─── Audit E#20/#23: tracciabilità lotti in uscita e prelievo FIFO ────────────
+// Lotti che hanno caricato uno SKU, con residuo prelevabile e ordinati dal
+// carico più vecchio (FIFO). Residuo = carichi del lotto − scarichi già
+// attribuiti al lotto (+ rientri annullo/resa attribuiti al lotto).
+const lottiDisponibiliFifo = (movimenti, skuId) => {
+  const perLotto = new Map();
+  (movimenti || []).forEach(mv => {
+    if ((mv.skuId || mv.magId) !== skuId || !mv.lottoId) return;
+    const q = Number(mv.qta) || 0;
+    let rec = perLotto.get(mv.lottoId);
+    if (!rec) { rec = { lottoId: mv.lottoId, caricato: 0, scaricato: 0, primoTs: Infinity }; perLotto.set(mv.lottoId, rec); }
+    const ts = (typeof mv.timestamp === "number" ? mv.timestamp : new Date(mv.data || 0).getTime()) || 0;
+    if (mv.tipo === "carico" || mv.tipo === "carico_produzione") {
+      rec.caricato += q;
+      if (ts < rec.primoTs) rec.primoTs = ts;
+    } else if (mv.tipo === "scarico_ordine" || mv.tipo === "scarico_manuale") {
+      rec.scaricato += q;
+    } else if (mv.tipo === "annullo_ordine" || mv.tipo === "resa_cv") {
+      rec.scaricato -= q; // rientro attribuito al lotto: torna prelevabile
+    }
+  });
+  return Array.from(perLotto.values())
+    .filter(r => r.caricato > 0)
+    .map(r => ({ lottoId: r.lottoId, residuo: r.caricato - r.scaricato, primoTs: r.primoTs }))
+    .sort((a, b) => a.primoTs - b.primoTs);
+};
+
+// Ripartizione FIFO di una quantità sui lotti disponibili di uno SKU.
+// Ritorna [{ lottoId, qta }]; la parte non coperta da lotti tracciati (merce
+// storica caricata senza lotto) esce con lottoId null, come in passato.
+const ripartizioneFifo = (movimenti, skuId, qta) => {
+  let resto = Number(qta) || 0;
+  const out = [];
+  for (const l of lottiDisponibiliFifo(movimenti, skuId)) {
+    if (resto <= 0) break;
+    const q = Math.min(resto, Math.max(0, l.residuo));
+    if (q > 0) { out.push({ lottoId: l.lottoId, qta: q }); resto -= q; }
+  }
+  if (resto > 0) out.push({ lottoId: null, qta: resto });
+  return out;
+};
+
 // Genera i movimenti di scarico_ordine per tutte le righe di un ordine.
 // Quantità fisica scaricata = r.qta + r.omaggio (i pezzi omaggio escono dal magazzino come gli altri).
-const generaMovimentiOrdine = (ordine, magazzino) => {
+// Audit E#20: se `movimenti` è fornito, lo scarico viene ripartito per lotto con
+// logica FIFO (un movimento per lotto) così la catena lotto → cliente resta
+// tracciata; senza lotti a log il comportamento è quello storico (lottoId null).
+const generaMovimentiOrdine = (ordine, magazzino, movimenti) => {
   if (!ordine || !Array.isArray(ordine.righe)) return [];
   const dataMov = todayStr();
   const ts0 = Date.now();
   const ddtRef = ddtFromOrdine(ordine);
   const out = [];
-  ordine.righe.forEach((r, i) => {
+  let seq = 0;
+  ordine.righe.forEach((r) => {
     const sku = skuPerRiga(magazzino, r);
     if (!sku) return;
     const qv = Number(r.qta) || 0, om = Number(r.omaggio) || 0;
@@ -2889,20 +2935,25 @@ const generaMovimentiOrdine = (ordine, magazzino) => {
     if (r.campione || ordine.campione) nota += " (campione)";
     else if (om > 0 && qv > 0) nota += ` (${qv} vendute + ${om} omaggio)`;
     else if (om > 0 && qv === 0) nota += " (omaggio)";
-    out.push({
-      id: uid(),
-      tipo: "scarico_ordine",
-      qta: qtaTot,
-      data: dataMov,
-      nota: nota,
-      ordineId: ordine.id,
-      lottoId: null,
-      ddtNum: ddtRef.ddtNum,
-      ddtDoc: ddtRef.ddtDoc,
-      auto: true,
-      skuId: sku.id,
-      magId: sku.id,
-      timestamp: ts0 + i
+    const parti = movimenti
+      ? ripartizioneFifo(movimenti.filter(mv => (mv.skuId || mv.magId) === sku.id), sku.id, qtaTot)
+      : [{ lottoId: null, qta: qtaTot }];
+    parti.forEach(p => {
+      out.push({
+        id: uid(),
+        tipo: "scarico_ordine",
+        qta: p.qta,
+        data: dataMov,
+        nota: nota,
+        ordineId: ordine.id,
+        lottoId: p.lottoId,
+        ddtNum: ddtRef.ddtNum,
+        ddtDoc: ddtRef.ddtDoc,
+        auto: true,
+        skuId: sku.id,
+        magId: sku.id,
+        timestamp: ts0 + (seq++)
+      });
     });
   });
   return out;
@@ -3001,7 +3052,8 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
     const netto = _nettoScaricoOrdine(newMov, ordine.id);
     const nettoTot = Array.from(netto.values()).reduce((s, x) => s + x, 0);
     if (nettoTot <= 0) {
-      const scarichi = generaMovimentiOrdine(ordine, prevDati.magazzino);
+      // Audit E#20: passa i movimenti per la ripartizione FIFO per lotto
+      const scarichi = generaMovimentiOrdine(ordine, prevDati.magazzino, newMov);
       if (scarichi.length > 0) {
         newMov = [...scarichi, ...newMov];
         scarichi.forEach(s => skuToccati.add(s.skuId));
@@ -3013,8 +3065,22 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
   // Copre sia l'annullamento sia il rollback a "da_firmare" (audit B#19: rimozione
   // firma — la Guida promette che il magazzino viene ripristinato).
   if (eraAttivo && !saraAttivo) {
-    const netto = _nettoScaricoOrdine(newMov, ordine.id);
-    const daAnnullare = Array.from(netto.entries()).filter(([, q]) => q > 0);
+    // Audit E#20: il netto è calcolato per (SKU, lotto) così l'annullo COPIA il
+    // lotto dello scarico originale e il rientro resta tracciato per lotto.
+    // La somma per SKU è identica a prima (comportamento B#15/#19 invariato).
+    const nettoSkuLotto = new Map(); // "skulotto" → { skuId, lottoId, qta }
+    newMov.forEach(mv => {
+      if (mv.ordineId !== ordine.id) return;
+      const sid = mv.skuId || mv.magId;
+      if (!sid) return;
+      const q = Number(mv.qta) || 0;
+      const key = sid + "|" + (mv.lottoId || "");
+      let rec = nettoSkuLotto.get(key);
+      if (!rec) { rec = { skuId: sid, lottoId: mv.lottoId || null, qta: 0 }; nettoSkuLotto.set(key, rec); }
+      if (mv.tipo === "scarico_ordine") rec.qta += q;
+      else if (mv.tipo === "annullo_ordine") rec.qta -= q;
+    });
+    const daAnnullare = Array.from(nettoSkuLotto.values()).filter(r => r.qta > 0);
     if (daAnnullare.length > 0) {
       const dataAnn = todayStr();
       const ts0 = Date.now();
@@ -3022,19 +3088,19 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
       const notaAnn = nuovoStato === "annullato"
         ? `Auto: annullo ordine ${ordine.numero || ordine.id}`
         : `Auto: ripristino magazzino ordine ${ordine.numero || ordine.id} (tornato "Da firmare")`;
-      const annulli = daAnnullare.map(([skuId, q], i) => ({
+      const annulli = daAnnullare.map((r, i) => ({
         id: uid(),
         tipo: "annullo_ordine",
-        qta: q,
+        qta: r.qta,
         data: dataAnn,
         nota: notaAnn,
         ordineId: ordine.id,
-        lottoId: null,
+        lottoId: r.lottoId,
         ddtNum: ddtRefAnn.ddtNum,
         ddtDoc: ddtRefAnn.ddtDoc,
         auto: true,
-        skuId: skuId,
-        magId: skuId,
+        skuId: r.skuId,
+        magId: r.skuId,
         timestamp: ts0 + i
       }));
       newMov = [...annulli, ...newMov];
@@ -14117,7 +14183,12 @@ function Magazzino({
                           title: `Ordine ${ordRef.numero || ordRef.id}`
                         }, "📋 ", ordRef.numero || ordRef.id.slice(0, 6)),
                         clRef && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio600, marginTop: 2 } }, "👤 ", clRef.ragioneSociale),
-                        ddtRef && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 1 } }, "🚚 DDT ", ddtRef))
+                        ddtRef && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 1 } }, "🚚 DDT ", ddtRef),
+                        // Audit E#20: lotto visibile anche sui movimenti legati a un ordine
+                        lotRef && /*#__PURE__*/React.createElement("div", {
+                          style: { fontSize: 10, color: "#2e7d32", fontWeight: 600, marginTop: 1 },
+                          title: `Lotto raccolta ${lotRef.annata}`
+                        }, "🫒 Lotto ", lotRef.annata, lotRef.dataRaccolta ? ` (${fmtD(lotRef.dataRaccolta)})` : ""))
                     : lotRef
                       ? /*#__PURE__*/React.createElement("span", {
                           style: { fontSize: 11, background: "#e8f5e9", color: "#2e7d32", borderRadius: 4, padding: "2px 6px", fontWeight: 600 },
