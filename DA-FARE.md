@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F9 dell'audit in produzione su decisione esplicita di Patrizio — 120 finding su 145 chiusi; #64 rinviato)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F9 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F10 pronto sul branch `claude/prompt-sessione-fix-1k2ast`, in attesa dell'ok di Patrizio — 129 finding su 145 chiusi; #64 e #80 rinviati)
 
 ---
 
@@ -36,6 +36,9 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F9 dell'audit in produz
 
 ## 🟡 Opzionali / pulizia
 
+### 80. Token di sessione / scadenza login (audit #80 — rinviato, area login)
+- Il login non ha un token di sessione con scadenza: la "sessione ricordata" resta valida a tempo indefinito nel `localStorage` del dispositivo, senza invalidazione lato server. È lo stesso nodo del punto critico #1 (auth lato client): un vero token di sessione ha senso solo insieme allo spostamento della verifica credenziali su server (Supabase Auth o Netlify Function). **Area login a rischio → non toccare da solo, va pianificato con #1.** Fino ad allora resta il comportamento attuale.
+
 ### 3e. Costo olio ponderato per campagna (audit #64 — rinviato, serve conferma di dominio)
 - `costoFormatoReale` calcola l'olio/L come media ponderata su TUTTI gli imbottigliamenti storici della bottiglia, senza filtro per campagna/annata: il P&L di ogni campagna usa lo stesso costo unitario (anche nel confronto YoY) e ogni nuovo lotto ricalcola retroattivamente i P&L passati. Il fix richiede di **propagare l'anno campagna attraverso `costoFormatoTot`/`costoFormatoReale`** (~15 punti di chiamata) e di fissare la **mappatura annata↔campagna**, che nel codice esistente è ambigua (il tab "Per Formato" usa `campagnaSel + 1`, con un commento che invece dice "olio prodotto in autunno N"). **Troppo invasivo e a rischio di rendere i numeri sbagliati in modo diverso senza una conferma di Patrizio** su quale annata olio appartiene a quale campagna. Da riprendere con quella decisione. Fino ad allora il costo olio resta la media globale (comportamento pre-audit).
 
@@ -60,6 +63,16 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F9 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F10 (blocco omogeneo "permessi ruoli, robustezza registro e testi guida"): finding #81, #82, #88, #95, #96, #97, #98, #99, #124 corretti — PRONTI SUL BRANCH `claude/prompt-sessione-fix-1k2ast`, NON ancora in produzione (in attesa dell'ok di Patrizio).** ⚠️ #124 tocca l'area login SOLO in sottrazione (rimozione dell'elenco utenti, autenticazione invariata); nessuna modifica a RLS/persistenza/PDF/edge function. **#80 rinviato** (vedi punto 80: token di sessione = architettura auth, va con il critico #1):
+  - **#124** — ⚠️ area login: la schermata di accesso non elenca più gli utenti disponibili (box "ACCESSI DISPONIBILI" con nomi/credenziali rimosso). Chi apre l'app non legge più chi sono gli utenti prima di autenticarsi. Il form di login è invariato.
+  - **#81** — il bottone "Elimina" cliente è riservato al Super Admin (gate `isSuperAdmin`): gli altri ruoli non lo vedono più. La prop `currentUser` è passata al componente Clienti.
+  - **#82** — le azioni di gestione ticket (prendi in carico / risolvi / riapri / chiudi / elimina) sono riservate al Super Admin; l'eliminazione ticket è protetta anche lato funzione (avviso "⛔ Operazione riservata al Super Admin" se invocata da altri) e ora scrive una voce nel Report Attività.
+  - **#88** — Report Attività: il caricamento del registro ha ora tre stati distinti — "⏳ Caricamento…", "⚠️ Impossibile caricare il registro attività" con pulsante **Riprova**, e l'elenco/"Nessuna attività registrata" solo a caricamento riuscito. Prima un errore di rete si confondeva con un registro vuoto.
+  - **#95/#96** — guida in-app e `docs/Guida-DDT-Magazzino` (.md/.html): chiarito che i movimenti "da regolarizzare" restano solo **segnalati** (non esiste una funzione per allegare a posteriori il documento a un movimento già registrato) e che lo scarico automatico per ordine eredita il DDT dell'ordine quando lo si allega. (PDF derivato ancora da rigenerare, punto 3c.)
+  - **#97** — guida reset (Impostazioni): chiarito che nessun reset cancella il **Registro Attività** (`tnb-log`), che sopravvive a entrambi i reset.
+  - **#98** — guida listino: lo "sconto senza confezione" è un **importo fisso in euro** detratto da ogni pezzo (es. 2,00 € a pezzo), non una percentuale.
+  - **#99** — guida clienti: le modifiche NON si salvano da sole — bisogna premere **"Salva"**; chiudendo la finestra senza salvare le modifiche vengono perse.
+  - **Verifica:** 18 controlli in Chromium con backend simulato (mai il DB reale): login senza elenco utenti (#124); SuperAdmin vede "Elimina" cliente e le azioni ticket, il tester (irene) NON le vede (#81/#82); registro vuoto → "Nessuna attività registrata", errore di rete sul log → "Impossibile caricare il registro" + pulsante Riprova (non confuso col vuoto) (#88); testi guida nuovi presenti e vecchi assenti (#95–#99). Zero errori JS.
 - **2026-07-19 — Pacchetto F9 (blocco omogeneo "tracciabilità economica lotti e P&L costificazione"): finding #22, #25, #26, #27, #62, #63, #65, #66 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Sono CORREZIONI che cambiano i NUMERI di Costi & Margini (margini, ricavi, P&L campagna): i valori possono differire da prima — è la fine di sovrastime/doppi conteggi, non un calo reale. Nessuna area login/RLS/persistenza/PDF toccata. **#64 rinviato** (vedi punto 3e: serve decisione su annata↔campagna):
   - **#22** — tab "Per Lotto": i ricavi/quantità di uno SKU erano contati una volta per OGNI imbottigliamento → un lotto con più sessioni sullo stesso SKU sommava N volte gli stessi ricavi (lotti in perdita mostrati in utile). Ora ogni SKU è processato una sola volta.
   - **#62** — ricavi attribuiti al lotto: esclusi gli ordini annullati, i pezzi omaggio valorizzati a 0 (uscivano dal magazzino ma non generano ricavo), le rese conto vendita nettate da quantità e ricavo.
