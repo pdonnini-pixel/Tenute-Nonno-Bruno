@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A e B dell'audit in produzione su decisione esplicita di Patrizio)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A e B in produzione; Pacchetto C — coerenza numeri: finding #6, #24, #46, #47, #104 corretti sul branch, merge da decidere)
 
 ---
 
@@ -53,6 +53,13 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A e B dell'audit in produzione su de
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto C audit (coerenza numeri Dashboard/Report/CostiMargini): finding #6, #24, #46, #47, #104 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge su `main` da decidere esplicitamente). Criterio unico: gli ordini annullati sono esclusi ovunque, come già faceva la Dashboard:
+  - **#6** — Report Periodo: fatturato, conteggio ordini, tabella per canale e "clienti attivi" escludono gli annullati.
+  - **#46** — CostiMargini "Per Ordine": annullati esclusi da tabella, totali ed export Excel (un solo filtro nel memo condiviso).
+  - **#24** — P&L di campagna e margini per cliente/canale: annullati esclusi da ricavi, costi variabili, margini e confronti YoY.
+  - **#104** — sottotitolo del KPI "Fatturato Vendite": il conteggio ordini ora segue lo stesso criterio dell'importo (esclusi annullati e campioni).
+  - **#47** — contatore "Distribuzione" nei riepiloghi Clienti/ClientiCommerciale: chiave corretta `distributore` (mostrava sempre 0). NON toccato il tipo `distribuzione` dei contratti fornitori (dominio diverso). Restano aperti gli aspetti correlati segnalati dal report: `calcolaMargineCanale` non riconosce il canale `distributore` (i distributori finiscono in "Altro" nei margini per canale) e il badge tipo cliente senza label.
+  - **Verifica:** browser Chromium con backend simulato e ordine annullato di prova (1004/2026, 140 € netti): prima/dopo l'annullo Dashboard −140, Report Periodo −140 (e coincide con la Dashboard al centesimo), P&L campagna −140, "Per Ordine" senza più l'ordine ed export/totali ridotti, conteggio KPI −1, contatore Distribuzione = numero reale di distributori.
 - **2026-07-19 — Pacchetto B audit (integrità magazzino): finding #5 (critico), #15, #17, #19, #56 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio; consigliata una prova su un ordine reale: firma → annullo → riapertura → controllo giacenze):
   - **#5** — scarico/riaccredito simmetrici nel replay: annullo_ordine e resa_cv riaccreditano al massimo quanto EFFETTIVAMENTE scaricato per quell'ordine (scarichi clampati e annulli doppi non fabbricano più pezzi). Invariato per movimenti manuali senza ordine e ordini senza scarichi a log. Limite residuo documentato al punto 3b.
   - **#17** — saveMov blocca i movimenti in uscita oltre la giacenza dello stato di origine (scarichi/riserve da disponibile, consegnato da in spedizione, affido da riservato+confezionamento) con messaggio chiaro in italiano.
