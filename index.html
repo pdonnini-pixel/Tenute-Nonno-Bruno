@@ -2804,9 +2804,22 @@ const annataDefaultPerFormato = (dati, formato) => {
 // Ritorna { ok: bool, errors: [{ tipo: "stock"|"sku_mancante", nome, disp, richiesti }] }.
 // Se la riga ha (formato+annata) ma nessuno SKU corrispondente, viene segnalata come errore
 // "sku_mancante" — altrimenti firmeremmo silenziosamente ordini senza tracciare scarico magazzino.
-const verificaDisponibilitaOrdine = (ordine, magazzino) => {
+// Audit F#58: se `movimenti` è fornito, il disponibile viene RICALCOLATO dal
+// log movimenti (fonte di verità) invece di leggere la cache m.giacenza, che
+// può essere sovrastimata (import, vecchi bug di riconciliazione) e permettere
+// firme oltre lo stock reale. `escludiOrdineId` scorpora gli scarichi netti
+// dell'ordine stesso (es. ri-firma dopo rimozione firma: quelle quantità
+// stanno per essere restituite/rigenerate — sostituisce il credito B#19).
+const verificaDisponibilitaOrdine = (ordine, magazzino, movimenti, escludiOrdineId) => {
   const DEBUG = (typeof window !== "undefined" && window.TNB_DEBUG_MAG);
   if (!ordine || !Array.isArray(ordine.righe)) return { ok: true, errors: [] };
+  const _dispSku = (sku) => {
+    const cache = (sku.giacenza && sku.giacenza.disponibile) || 0;
+    if (!Array.isArray(movimenti)) return cache;
+    const mvSku = movimenti.filter(mv => (mv.skuId || mv.magId) === sku.id &&
+      !(escludiOrdineId && mv.ordineId === escludiOrdineId && (mv.tipo === "scarico_ordine" || mv.tipo === "annullo_ordine")));
+    return ricalcolaGiacenza(mvSku).disponibile || 0;
+  };
   const richiesteSku = new Map();
   const missing = [];
   ordine.righe.forEach((r, idx) => {
@@ -2840,7 +2853,7 @@ const verificaDisponibilitaOrdine = (ordine, magazzino) => {
   });
   const errors = [...missing];
   richiesteSku.forEach(({ sku, qta }) => {
-    const disp = (sku.giacenza && sku.giacenza.disponibile) || 0;
+    const disp = _dispSku(sku); // audit F#58
     if (DEBUG) console.log(`[TNB_DEBUG_MAG] sku ${sku.id} (${sku.prodotto} ${sku.formato} ${sku.annata}): disp=${disp} richiesti=${qta}`);
     if (disp < qta) {
       const nome = [sku.prodotto, sku.formato, sku.annata].filter(Boolean).join(" ");
@@ -11062,19 +11075,11 @@ function Ordini({
       );
     if (richiedeCheckStock) {
       if (window.TNB_DEBUG_MAG) console.log(`[TNB_DEBUG_MAG] saveOrdine check. ordineId=${ordine.id} stato=${ordine.stato} vecchio=${vecchioStato} righe=`, ordine.righe);
-      // Audit B#19: se l'ordine ha ancora scarichi netti a proprio carico (es. firma
-      // appena rimossa → sta tornando "da firmare" e il magazzino verrà riaccreditato
-      // dalla transizione al salvataggio), ai fini del check quelle quantità vanno
-      // considerate disponibili — altrimenti l'ordine resterebbe bloccato da un falso
-      // "stock insufficiente" causato dal suo stesso scarico.
-      const nettoProprio = _nettoScaricoOrdine(dati.movimenti, ordine.id);
-      const magPerCheck = (dati.magazzino || []).map(m => {
-        const extra = nettoProprio.get(m.id) || 0;
-        return extra > 0
-          ? { ...m, giacenza: { ...(m.giacenza || {}), disponibile: ((m.giacenza && m.giacenza.disponibile) || 0) + extra } }
-          : m;
-      });
-      const check = verificaDisponibilitaOrdine(ordine, magPerCheck);
+      // Audit F#58 (assorbe il credito B#19): il disponibile è RICALCOLATO dal
+      // log movimenti (non dalla cache m.giacenza, che può essere sovrastimata)
+      // escludendo gli scarichi/annulli dell'ordine stesso — così la ri-firma
+      // dopo una rimozione firma non resta bloccata dal proprio scarico.
+      const check = verificaDisponibilitaOrdine(ordine, dati.magazzino, dati.movimenti, ordine.id);
       if (!check.ok) {
         const stock = check.errors.filter(e => e.tipo === "stock");
         const missing = check.errors.filter(e => e.tipo === "sku_mancante");
@@ -21253,7 +21258,7 @@ function OggiAzioni({
       const giaScaricato = (dati.movimenti || []).some(mv => mv.ordineId === a.ordine.id && mv.tipo === "scarico_ordine");
       if (window.TNB_DEBUG_MAG) console.log(`[TNB_DEBUG_MAG] quickComplete firma. ordineId=${a.ordine.id} giaScaricato=${giaScaricato}`);
       if (!giaScaricato) {
-        const check = verificaDisponibilitaOrdine(a.ordine, dati.magazzino);
+        const check = verificaDisponibilitaOrdine(a.ordine, dati.magazzino, dati.movimenti, a.ordine.id); // audit F#58
         if (!check.ok) {
           const stock = check.errors.filter(e => e.tipo === "stock");
           const missing = check.errors.filter(e => e.tipo === "sku_mancante");
