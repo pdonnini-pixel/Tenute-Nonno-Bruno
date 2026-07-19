@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F5 dell'audit in produzione su decisione esplicita di Patrizio — 85 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F5 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F6 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 96 finding su 145 chiusi)
 
 ---
 
@@ -57,6 +57,18 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F5 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F6 (blocco omogeneo "flussi ordine e documenti"): finding #35, #36, #37, #38, #43, #73, #74, #79, #90, #118, #119 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio). ⚠️ Il blocco tocca Storage/allegati (cosa viene cancellato all'annullo) e introduce due nuovi BLOCCHI operativi (documento alla consegna, tetto rese CV) — vedi note operative sotto:
+  - **#35** — il check di disponibilità scatta su OGNI ingresso in uno stato con scarico: anche il salto diretto da_firmare → consegnato dal dropdown ora verifica lo stock (lo scarico era già generato dal replay, ma senza controllo).
+  - **#37/#43** — la regola "niente consegna senza documento" ora esiste davvero: consegnato/fatturato richiedono un DDT allegato OPPURE le note manuali di trasporto (wizard e dropdown; pregressi esenti). Rimossa updateStato (codice morto che conteneva l'unico controllo). Guida in-app e docs/Guida-DDT-Magazzino (.md/.html) allineate (PDF derivato ancora da rigenerare, punto 3c). **Nota operativa: chi segnava consegne senza DDT ora deve compilare almeno le note manuali.**
+  - **#36** — l'annullamento (tutti i percorsi, inclusa l'eliminazione SuperAdmin) non cancella più da Storage i DDT/fatture referenziati dai movimenti: l'Archivio DDT non punta più a file inesistenti e il documento di una consegna avvenuta resta consultabile.
+  - **#118** — "Annullato" rimosso dal dropdown stato (restava un percorso di annullo senza cleanup di firma/DDT/fatture): si annulla solo col bottone dedicato, che fa il cleanup completo ed è persistente.
+  - **#38** — liquidazione CV: bottiglie rese/vendute non negative e rese+vendute ≤ pezzi consegnati dell'ordine — un refuso non gonfia più la giacenza con rientri fantasma.
+  - **#73** — riaprire un ordine annullato il cui numero è stato nel frattempo riassegnato genera un numero nuovo (avviso in conferma + toast): mai due ordini attivi con lo stesso numero documento.
+  - **#74** — i movimenti auto usano il vero numero DDT (campo "Numero" della voce, poi note, poi nome file) e alla conferma di consegna gli scarichi nati senza DDT ricevono il riferimento del documento appena allegato (solo metadati: giacenze intatte).
+  - **#79** — statoLog attribuito all'utente collegato (upload firma, wizard prospect; fallback "sconosciuto"): basta azioni intestate a Irene fatte da altri. Unica eccezione deliberata: il backfill storico della migrazione v48.
+  - **#90** — cambio rapido stato pagamento dalla riga: toast di conferma e voce nel Report Attività.
+  - **#119** — quick-firma dalla pagina Oggi registra la transizione in statoLog (utente, trigger, stato precedente): la timeline dell'ordine è completa.
+  - **Verifica:** 23 controlli in Chromium con backend simulato: unit su ddtFromOrdine/docReferenziatoDaMovimenti; flussi UI completi — consegna via dropdown senza documento BLOCCATA e con quantità impossibile → "Stock insufficiente"; liquidazione CV con rese 500 su 2 pz consegnati BLOCCATA; annullo di un ordine con DDT referenziato → firma cancellata da Storage, DDT preservato; riapertura con numero conteso → riassegnato 1100/2025 con avviso; cambio stato pagamento → toast + voce log; quick-firma → statoLog {firmato, quick_firma, superadmin}. Zero errori JS.
 - **2026-07-19 — Pacchetto F5 (blocco omogeneo "formati, listino e monodose"): finding #30, #31, #32, #33, #34, #44, #67, #71, #115, #116, #117 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Base del blocco: **decisione della proprietà (Patrizio, 2026-07-19) sul #71**: olio e aceto 20 ml sono articoli a sé, l'unità è la bottiglia singola, il collo monodose è da 50 pezzi; la "combo" resta solo come nota descrittiva. ⚠️ Il blocco tocca le aree persistenza (migrazione v54, solo rinomina formati/chiavi) e PDF (numero colli):
   - **#30/#117** — i monodose sono due articoli distinti "Olio 20 ml"/"Aceto 20 ml" ovunque: migrazione idempotente v54 che rinomina gli SKU legacy "20 ml" in base al prodotto, allinea le bottiglie BOM, sdoppia la voce di listino (preservando prezzi personalizzati) e le voci costi. I movimenti non vengono toccati (referenziano skuId). Prima un ordine monodose finiva SEMPRE in "SKU non trovato" e non era firmabile.
   - **#31/#71** — LISTINO con le chiavi monodose reali: l'auto-prezzo propone 2,00 € (1,80 € da 100 pz) invece di lasciare il 19,50 € del formato precedente; pezziCollo 50 coerente con scaglioni e PDF (era 25).
