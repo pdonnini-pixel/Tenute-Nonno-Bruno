@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F8 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F9 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 120 finding su 145 chiusi; #64 rinviato)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F9 dell'audit in produzione su decisione esplicita di Patrizio — 120 finding su 145 chiusi; #64 rinviato)
 
 ---
 
@@ -60,7 +60,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F8 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F9 (blocco omogeneo "tracciabilità economica lotti e P&L costificazione"): finding #22, #25, #26, #27, #62, #63, #65, #66 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio). ⚠️ Sono CORREZIONI che cambiano i NUMERI di Costi & Margini (margini, ricavi, P&L campagna): i valori possono differire da prima — è la fine di sovrastime/doppi conteggi, non un calo reale. Nessuna area login/RLS/persistenza/PDF toccata. **#64 rinviato** (vedi punto 3e: serve decisione su annata↔campagna):
+- **2026-07-19 — Pacchetto F9 (blocco omogeneo "tracciabilità economica lotti e P&L costificazione"): finding #22, #25, #26, #27, #62, #63, #65, #66 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Sono CORREZIONI che cambiano i NUMERI di Costi & Margini (margini, ricavi, P&L campagna): i valori possono differire da prima — è la fine di sovrastime/doppi conteggi, non un calo reale. Nessuna area login/RLS/persistenza/PDF toccata. **#64 rinviato** (vedi punto 3e: serve decisione su annata↔campagna):
   - **#22** — tab "Per Lotto": i ricavi/quantità di uno SKU erano contati una volta per OGNI imbottigliamento → un lotto con più sessioni sullo stesso SKU sommava N volte gli stessi ricavi (lotti in perdita mostrati in utile). Ora ogni SKU è processato una sola volta.
   - **#62** — ricavi attribuiti al lotto: esclusi gli ordini annullati, i pezzi omaggio valorizzati a 0 (uscivano dal magazzino ma non generano ricavo), le rese conto vendita nettate da quantità e ricavo.
   - **#63** — il prezzo di uno scarico si prende dalla riga con formato E annata corrispondenti (prima dalla prima riga con lo stesso formato: un ordine con 500 ml 2025 e 2024 a prezzi diversi mis-attribuiva i ricavi tra annate).
