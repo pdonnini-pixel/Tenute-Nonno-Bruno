@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F9 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F10 pronto sul branch `claude/prompt-sessione-fix-1k2ast`, in attesa dell'ok di Patrizio — 129 finding su 145 chiusi; #64 e #80 rinviati)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F10 dell'audit in produzione su decisione esplicita di Patrizio — 129 finding su 145 chiusi; #64 e #80 rinviati)
 
 ---
 
@@ -63,7 +63,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F9 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F10 (blocco omogeneo "permessi ruoli, robustezza registro e testi guida"): finding #81, #82, #88, #95, #96, #97, #98, #99, #124 corretti — PRONTI SUL BRANCH `claude/prompt-sessione-fix-1k2ast`, NON ancora in produzione (in attesa dell'ok di Patrizio).** ⚠️ #124 tocca l'area login SOLO in sottrazione (rimozione dell'elenco utenti, autenticazione invariata); nessuna modifica a RLS/persistenza/PDF/edge function. **#80 rinviato** (vedi punto 80: token di sessione = architettura auth, va con il critico #1):
+- **2026-07-19 — Pacchetto F10 (blocco omogeneo "permessi ruoli, robustezza registro e testi guida"): finding #81, #82, #88, #95, #96, #97, #98, #99, #124 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ #124 tocca l'area login SOLO in sottrazione (rimozione dell'elenco utenti, autenticazione invariata); nessuna modifica a RLS/persistenza/PDF/edge function. **#80 rinviato** (vedi punto 80: token di sessione = architettura auth, va con il critico #1):
   - **#124** — ⚠️ area login: la schermata di accesso non elenca più gli utenti disponibili (box "ACCESSI DISPONIBILI" con nomi/credenziali rimosso). Chi apre l'app non legge più chi sono gli utenti prima di autenticarsi. Il form di login è invariato.
   - **#81** — il bottone "Elimina" cliente è riservato al Super Admin (gate `isSuperAdmin`): gli altri ruoli non lo vedono più. La prop `currentUser` è passata al componente Clienti.
   - **#82** — le azioni di gestione ticket (prendi in carico / risolvi / riapri / chiudi / elimina) sono riservate al Super Admin; l'eliminazione ticket è protetta anche lato funzione (avviso "⛔ Operazione riservata al Super Admin" se invocata da altri) e ora scrive una voce nel Report Attività.
