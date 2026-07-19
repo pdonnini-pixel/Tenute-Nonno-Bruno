@@ -13658,6 +13658,15 @@ function Magazzino({
     const m = (dati.magazzino || []).find(x => x.id === skuId);
     const nomeSku = m ? `${m.prodotto} ${m.formato} ${m.annata || ""}`.trim() : "SKU";
     const movCollegati = (dati.movimenti || []).filter(mv => (mv.skuId || mv.magId) === skuId);
+    // Audit F#59: se tra i movimenti collegati ci sono DDT archiviati o carichi
+    // di lotti tracciati, l'eliminazione dello SKU cancellerebbe lo storico di
+    // tracciabilità (Archivio DDT, quote lotto, imbottigliamenti "caricati"
+    // senza più il movimento che lo prova) — BLOCCATA.
+    const movDocumentati = movCollegati.filter(mv => mv.lottoId || mv.ddtNum || (mv.ddtDoc && mv.ddtDoc.path));
+    if (movDocumentati.length > 0) {
+      if (window.tnbToast) window.tnbToast('⛔ Impossibile eliminare "' + nomeSku + '": ha ' + movDocumentati.length + ' movimenti con DDT archiviato o lotto tracciato. Lo storico di tracciabilità non si cancella — se lo SKU non serve più, azzera la giacenza con una rettifica e alza la soglia a 0.', 'err');
+      return;
+    }
     const fisica = m ? giacenzaFisica(m) : 0;
     const msg = 'Eliminare definitivamente "' + nomeSku + '" dal magazzino?' +
       (fisica > 0 ? ' ⚠️ Giacenza fisica attuale: ' + fisica + ' pz.' : '') +
