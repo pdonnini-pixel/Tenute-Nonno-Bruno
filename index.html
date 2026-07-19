@@ -13745,6 +13745,15 @@ function Magazzino({
     v: "annullo_ordine",
     l: "🔄 Annullo scarico ordine"
   }];
+  // Audit F#94: il form "Nuovo movimento" manuale NON deve offrire i tipi
+  // generati dai flussi automatici. Selezionare "Scarico automatico per
+  // ordine" creava un movimento etichettato come automatico ma con
+  // ordineId null (nessun campo per collegare l'ordine), inquinando storico
+  // e Archivio DDT; la "Rettifica manuale" ha un form dedicato che pretende
+  // il motivo obbligatorio. TIPI_MOV resta completo per le etichette dei
+  // movimenti già esistenti.
+  const TIPI_MOV_SISTEMA = ["scarico_ordine", "annullo_ordine", "carico_produzione", "rettifica"];
+  const TIPI_MOV_MANUALI = TIPI_MOV.filter(t => !TIPI_MOV_SISTEMA.includes(t.v));
   const saveMov = () => {
     // Audit F#42: niente return muto — elenca i campi mancanti
     if (!form.magId || !form.tipo || !form.qta) {
@@ -14782,7 +14791,7 @@ function Magazzino({
         lottoId: null // il lotto va riscelto quando cambia il tipo
       })),
       req: true,
-      opts: TIPI_MOV
+      opts: TIPI_MOV_MANUALI // audit F#94: niente tipi automatici/di sistema
     }), (() => {
       // Audit E#23 + E#4: selezione lotto nel movimento manuale.
       // - Carichi di prodotto finito (carico, carico_produzione): lotto
