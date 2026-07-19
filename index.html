@@ -18509,8 +18509,11 @@ function BugReportWidget(props) {
       window.tnbStorage.uploadDocumento(ticketId, file, "tickets").then(function(result) {
         var url = "/ticket-img/" + result.path.replace(/^tickets\//, "");
         salvaTicket(url);
-      }).catch(function() {
+      }).catch(function(errUp) {
+        // Audit F#129: l'utente ha visto l'anteprima e crede che lo screenshot
+        // sia allegato — avvisa che il ticket è stato creato SENZA immagine.
         salvaTicket(null);
+        if (window.tnbToast) window.tnbToast("⚠ Ticket creato ma lo screenshot NON è stato caricato (" + ((errUp && errUp.message) || "errore upload") + "): descrivi il problema a parole o riprova più tardi.", "err");
       });
     } else {
       salvaTicket(null);
