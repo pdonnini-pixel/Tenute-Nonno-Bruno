@@ -1019,7 +1019,10 @@ function BarChartSVG({
   xKey,
   bars,
   height = 180,
-  fmt: fmtFn
+  // Audit F#103: la prop si chiama fmtFn come negli altri chart (Area/HBar) —
+  // l'unico chiamante passa fmtFn: fmt, che con la vecchia firma restava undefined
+  // e l'asse Y mostrava numeri grezzi senza formato euro.
+  fmtFn
 }) {
   const W = 540,
     H = height,
