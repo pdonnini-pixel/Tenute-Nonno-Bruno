@@ -17017,7 +17017,9 @@ function CostiMargini({
   }));
   const analisi = useMemo(() => {
     // v52-costi1: filtro modalità configurabile (vendita sempre, CV solo se includiCV)
-    return dati.ordini.filter(o => o.modalita === "vendita" || (includiCV && o.modalita === "conto_vendita")).map(o => {
+    // Audit C#46: gli ordini annullati non entrano in ricavi/costi/margini
+    // (tabella, totali ed export Excel usano tutti questo memo).
+    return dati.ordini.filter(o => o.stato !== "annullato" && (o.modalita === "vendita" || (includiCV && o.modalita === "conto_vendita"))).map(o => {
       const cl = dati.clienti.find(c => c.id === o.clienteId);
       const righe = (o.righe || []).map(r => {
         const costo = costoFormatoTot(r.formato, dati);
