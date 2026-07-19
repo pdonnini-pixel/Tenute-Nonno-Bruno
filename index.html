@@ -16242,6 +16242,18 @@ function Fornitori({
   const [filtroAttivo, setFiltroAttivo] = useState("tutti"); // tutti | attivi | inattivi
   // v51-forn1: state navigazione interna modal (4 sezioni)
   const [modalSection, setModalSection] = useState("anagrafica");
+  // Audit F#48: consuma window._tnbNav.fornitoreId (il badge "Fornitore
+  // collegato — click per aprire" di CostiMargini) aprendo il dettaglio,
+  // come fa Produzione per targetLottoId.
+  useEffect(() => {
+    setTimeout(() => {
+      if (window._tnbNav && window._tnbNav.fornitoreId) {
+        const fTarget = (dati.fornitori || []).find(x => x.id === window._tnbNav.fornitoreId);
+        if (fTarget) { setForm(fTarget); setModalSection("anagrafica"); setModal("f"); }
+        window._tnbNav = null;
+      }
+    }, 80);
+  }, []);
   // v51-forn1: state upload documenti
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [docDraftTipo, setDocDraftTipo] = useState("contratto");
