@@ -694,11 +694,14 @@ window.storage = {
       const data = await resp.json();
       return data.length > 0 ? { key: key, value: data[0].value } : null;
     } catch (e) {
-      // Fallback a localStorage se offline
-      try {
-        const v = localStorage.getItem('tnb__' + key);
-        return v ? { key: key, value: v } : null;
-      } catch (_) { return null; }
+      // Fallback a localStorage se offline. Se non esiste NEMMENO la copia
+      // locale l'errore deve emergere: un null qui verrebbe scambiato dal
+      // chiamante per "primo avvio, nessun dato" e l'app partirebbe con il
+      // dataset vuoto D0, pronto a sovrascrivere i dati reali (audit #1).
+      let v = null;
+      try { v = localStorage.getItem('tnb__' + key); } catch (_) {}
+      if (v === null) throw e;
+      return { key: key, value: v };
     }
   },
   set: async function(key, value) {
@@ -18573,19 +18576,30 @@ function App() {
   const [dati, setDati] = useState(null);
   const [saving, setSaving] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  // Audit #1: errore nel caricamento iniziale → schermata bloccante, MAI setDati(D0)
+  const [loadError, setLoadError] = useState(null); // { tipo: 'rete'|'dati', dettaglio }
   useEffect(() => {
     (async () => {
+      // Restore session — check localStorage (remember me) then sessionStorage (temp)
+      let sessionId = null;
       try {
-        // Restore session — check localStorage (remember me) then sessionStorage (temp)
-        let sessionId = null;
-        try {
-          sessionId = localStorage.getItem('tnb__tnb-session') || sessionStorage.getItem('tnb__session_temp');
-        } catch (e) {}
-        if (sessionId) {
-          const u = USERS.find(x => x.id === sessionId);
-          if (u) setCurrentUser(u);
-        }
-        const r = await window.storage.get("tnb-pro-v2");
+        sessionId = localStorage.getItem('tnb__tnb-session') || sessionStorage.getItem('tnb__session_temp');
+      } catch (e) {}
+      if (sessionId) {
+        const u = USERS.find(x => x.id === sessionId);
+        if (u) setCurrentUser(u);
+      }
+      let r;
+      try {
+        r = await window.storage.get("tnb-pro-v2");
+      } catch (eNet) {
+        // Server irraggiungibile e nessuna copia locale su questo dispositivo:
+        // NON partire con D0 (al primo salvataggio sovrascriverebbe i dati reali).
+        console.error("[TNB] boot: dati non raggiungibili", eNet);
+        setLoadError({ tipo: "rete", dettaglio: String((eNet && eNet.message) || eNet) });
+        return;
+      }
+      try {
         const parsed = migrateV53ScaglioniNorm(migrateV53Azienda(migrateV53Contratti(migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))))))))))));
         // v53-golive (GL2): stash azienda per PDF/email generators che non hanno
         // accesso al React state. Riaggiornato a ogni setDatiSave (vedi sotto).
@@ -18608,8 +18622,12 @@ function App() {
           };
         }
         setDati(parsed);
-      } catch {
-        setDati(D0);
+      } catch (eData) {
+        // Dato presente ma illeggibile (JSON corrotto o migration fallita):
+        // schermata bloccante, NIENTE setDati → nessun salvataggio possibile.
+        // (Il caso legittimo "primo avvio, nessun dato" è r === null qui sopra.)
+        console.error("[TNB] boot: errore lettura/migrazione dati", eData);
+        setLoadError({ tipo: "dati", dettaglio: String((eData && eData.message) || eData) });
       }
     })();
   }, []);
@@ -18717,6 +18735,30 @@ function App() {
   }, []);
 
   // ── CONDITIONAL RENDERS (after all hooks) ──
+  // Audit #1: errore di caricamento → schermata bloccante. Nessun dato in stato,
+  // quindi nessuna UI operativa e nessun salvataggio possibile finché non si
+  // ricarica con successo.
+  if (loadError) return React.createElement("div", {
+    style: {
+      display: "flex", alignItems: "center", justifyContent: "center",
+      height: "100vh", background: C.olivaScuro, color: "#fff",
+      flexDirection: "column", gap: 18, fontFamily: "serif",
+      padding: 24, textAlign: "center"
+    }
+  }, React.createElement("div", {
+    style: { fontFamily: "serif", fontSize: 26, color: C.oroChiaro, letterSpacing: 2 }
+  }, "Nonno Bruno"), React.createElement("div", {
+    style: { fontSize: 20, fontWeight: 700 }
+  }, "⚠️ Impossibile caricare i dati del gestionale"), React.createElement("div", {
+    style: { fontSize: 14, maxWidth: 560, lineHeight: 1.5, opacity: .92 }
+  }, loadError.tipo === "rete"
+    ? "Il server non è raggiungibile e su questo dispositivo non c'è nessuna copia locale dei dati. Per proteggere i dati aziendali l'applicazione è bloccata: nessun salvataggio è possibile. Controlla la connessione e riprova."
+    : "I dati sono stati trovati ma non è stato possibile leggerli (dettaglio tecnico qui sotto). Per evitare di sovrascrivere i dati sul server l'applicazione è bloccata: nessun salvataggio è possibile. Contatta l'assistenza; se serve, esporta un backup da un dispositivo funzionante."), React.createElement("div", {
+    style: { fontSize: 12, fontFamily: "monospace", background: "rgba(0,0,0,.25)", padding: "6px 12px", borderRadius: 6, maxWidth: 560, wordBreak: "break-word" }
+  }, loadError.dettaglio), React.createElement("button", {
+    onClick: () => window.location.reload(),
+    style: { marginTop: 6, background: C.oroChiaro, color: C.olivaScuro, border: "none", padding: "10px 26px", borderRadius: 8, fontSize: 15, fontWeight: 700, cursor: "pointer" }
+  }, "↻ Riprova"));
   if (!dati) return React.createElement("div", {
     style: {
       display: "flex",
