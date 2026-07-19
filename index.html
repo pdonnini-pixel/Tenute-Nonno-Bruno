@@ -22667,6 +22667,37 @@ function AlertsPage({
       color: C.arancio
     };
   }),
+  // Audit F#68: l'impostazione 'Scadenza riserva pre-firma' ora produce un
+  // alert per gli SKU con pezzi riservati la cui riserva più recente è più
+  // vecchia di scadenzaRiservaGg giorni. L'annullo resta un'azione manuale
+  // (movimento 'Riserva annullata' dal Magazzino): nessuna modifica
+  // automatica delle giacenze.
+  ...(dati.magazzino || []).filter(m => {
+    const ris = (m.giacenza && m.giacenza.riservato) || 0;
+    if (ris <= 0) return false;
+    const soglia = Number((dati.impostazioni || {}).scadenzaRiservaGg ?? 7);
+    if (!(soglia > 0)) return false;
+    const dateRiserve = (dati.movimenti || []).filter(mv => (mv.skuId || mv.magId) === m.id && mv.tipo === "riserva" && mv.data).map(mv => mv.data);
+    if (!dateRiserve.length) return false;
+    const ultima = dateRiserve.sort().slice(-1)[0];
+    return Math.floor((new Date(oggi) - new Date(ultima)) / 86400000) > soglia;
+  }).map(m => {
+    const soglia = Number((dati.impostazioni || {}).scadenzaRiservaGg ?? 7);
+    const ultima = (dati.movimenti || []).filter(mv => (mv.skuId || mv.magId) === m.id && mv.tipo === "riserva" && mv.data).map(mv => mv.data).sort().slice(-1)[0];
+    const gg = Math.floor((new Date(oggi) - new Date(ultima)) / 86400000);
+    return {
+      id: "riserva_scad_" + m.id,
+      tipo: "riserva_scaduta",
+      priorita: "media",
+      titolo: `Riserva scaduta: ${`${m.prodotto || ""} ${m.formato || ""} ${m.annata || ""}`.trim() || m.id}`,
+      desc: `${(m.giacenza && m.giacenza.riservato) || 0} pz riservati — ultima riserva il ${fmtD(ultima)} (${gg} giorni fa, soglia ${soglia}). Se l'ordine non è stato firmato, registra un movimento 'Riserva annullata' per liberarli.`,
+      cta: "Vai a Magazzino",
+      modulo: "magazzino",
+      targetId: m.id,
+      icon: "⏳",
+      color: C.arancio
+    };
+  }),
   // v53-golive (GL4): Bottiglie (BOM) senza prezzo listino — usabili per produzione
   // ma non vendibili. Match formato vs dati.listino[].prezzoBase.
   ...(dati.bottiglie || []).filter(b => {
@@ -25635,7 +25666,7 @@ function ImpostazioniModule({ dati, setDati, currentUser, logAction }) {
             v: imp.scadenzaRiservaGg ?? 7,
             on: v => setDati(d => ({ ...d, impostazioni: { ...(d.impostazioni || {}), scadenzaRiservaGg: Number(v) } }))
           }),
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, marginTop: 4 } }, "Giorni entro cui il cliente deve firmare un ordine prima che la riserva si annulli automaticamente.")
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio400, marginTop: 4 } }, "Giorni oltre i quali una riserva senza firma viene segnalata nel centro Alert. L'annullo della riserva resta manuale (movimento 'Riserva annullata' dal Magazzino).")
         )
       )
     }),
