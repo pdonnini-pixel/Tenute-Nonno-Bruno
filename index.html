@@ -2478,6 +2478,69 @@ const migrateV53ScaglioniNorm = (dataObj) => {
   return out;
 };
 
+// Audit F#30/F#71/F#117 — monodose come articoli distinti (decisione proprietà
+// 2026-07-19: olio e aceto 20 ml sono prodotti a sé, unità = bottiglia singola,
+// collo da 50 pezzi; la "combo" resta solo come eventuale nota descrittiva).
+// Il formato legacy unico "20 ml" viene sdoppiato in "Olio 20 ml"/"Aceto 20 ml":
+// - magazzino: rinomina lo SKU in base al prodotto (aceto → "Aceto 20 ml");
+// - bottiglie BOM: allineate al formato dello SKU collegato (skuId);
+// - dati.listino: la voce "20 ml" diventa "Olio 20 ml" e viene clonata in
+//   "Aceto 20 ml" (stessi prezzi/scaglioni); pezziCollo legacy 25 → 50;
+// - costiConfig.voci: chiave "20 ml" duplicata sulle due nuove chiavi.
+// Idempotente via _migration_v54_monodose; nessun movimento viene toccato
+// (i movimenti referenziano skuId, non il formato).
+const migrateV54Monodose = (dataObj) => {
+  if (!dataObj || dataObj._migration_v54_monodose) return dataObj;
+  const out = { ...dataObj };
+  const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const isAceto = (s) => norm(s).includes("aceto");
+  // 1. Magazzino: "20 ml" → "Olio 20 ml" | "Aceto 20 ml" in base al prodotto
+  if (Array.isArray(out.magazzino)) {
+    out.magazzino = out.magazzino.map(m =>
+      norm(m.formato) === "20 ml"
+        ? { ...m, formato: isAceto(m.prodotto) ? "Aceto 20 ml" : "Olio 20 ml" }
+        : m
+    );
+  }
+  // 2. Bottiglie BOM: allinea il formato allo SKU collegato (stessa bottiglia fisica)
+  if (Array.isArray(out.bottiglie)) {
+    out.bottiglie = out.bottiglie.map(b => {
+      if (norm(b.formato) !== "20 ml") return b;
+      const sku = (out.magazzino || []).find(m => m.id === b.skuId);
+      return { ...b, formato: sku ? sku.formato : "Olio 20 ml" };
+    });
+  }
+  // 3. Listino editabile: sdoppia la voce "20 ml" preservando prezzi personalizzati
+  if (Array.isArray(out.listino)) {
+    const legacy = out.listino.find(l => norm(l.formato) === "20 ml");
+    if (legacy) {
+      const fix = (l, fmt) => ({
+        ...l,
+        formato: fmt,
+        pezziCollo: Number(l.pezziCollo) === 25 ? 50 : (Number(l.pezziCollo) || 50),
+        combo: ""
+      });
+      out.listino = out.listino
+        .map(l => (l === legacy && !out.listino.some(x => norm(x.formato) === "olio 20 ml")) ? fix(l, "Olio 20 ml") : l)
+        .filter(l => norm(l.formato) !== "20 ml");
+      if (!out.listino.some(x => norm(x.formato) === "aceto 20 ml")) {
+        out.listino = [...out.listino, { ...fix(legacy, "Aceto 20 ml"), id: (typeof uid === "function" ? uid() : "lst_aceto_20ml") }];
+      }
+    }
+  }
+  // 4. Fallback costi: duplica la voce "20 ml" sulle due chiavi nuove
+  const voci = out.costiConfig && out.costiConfig.voci;
+  if (voci && voci["20 ml"]) {
+    const nuova = { ...voci };
+    if (!nuova["Olio 20 ml"]) nuova["Olio 20 ml"] = { ...voci["20 ml"] };
+    if (!nuova["Aceto 20 ml"]) nuova["Aceto 20 ml"] = { ...voci["20 ml"] };
+    delete nuova["20 ml"];
+    out.costiConfig = { ...out.costiConfig, voci: nuova };
+  }
+  out._migration_v54_monodose = true;
+  return out;
+};
+
 const migrateV53Azienda = (dataObj) => {
   if (!dataObj || dataObj._migration_v53_azienda) return dataObj;
   const out = { ...dataObj };
@@ -2774,6 +2837,16 @@ const skuPerRiga = (magazzino, r) => {
       console.log(`[TNB] skuPerRiga formato-only-match: riga="${fmtRaw} · ${annRaw}" → mag="${formatoOnly.formato}" (magazzino senza annata)`);
     }
     return formatoOnly;
+  }
+  // 4) Audit F#30 — alias monodose: righe "Olio 20 ml"/"Aceto 20 ml" su SKU
+  //    legacy con formato "20 ml" (es. backup importati prima della migrazione
+  //    v54): disambiguazione tramite il campo prodotto.
+  const mono = fmtN.match(/^(olio|aceto) 20 ml$/);
+  if (mono) {
+    const legacy20 = mags.filter(m => _normSkuField(m.formato) === "20 ml" &&
+      (_normSkuField(m.annata) === annN || _normSkuField(m.annata) === ""));
+    const byProdotto = legacy20.find(m => _normSkuField(m.prodotto).includes(mono[1]));
+    if (byProdotto) return byProdotto;
   }
   return null;
 };
@@ -3253,7 +3326,7 @@ const D0 = {
   }, {
     id: "m8",
     prodotto: "Olio Fata Morgana",
-    formato: "20 ml",
+    formato: "Olio 20 ml",
     annata: "2025",
     soglia: 100,
     prezzoListino: 2.00,
@@ -3270,7 +3343,7 @@ const D0 = {
   }, {
     id: "m9",
     prodotto: "Aceto Fata Morgana",
-    formato: "20 ml",
+    formato: "Aceto 20 ml",
     annata: "2025",
     soglia: 50,
     prezzoListino: 2.00,
@@ -4675,7 +4748,15 @@ const D0 = {
         packaging: 0.00,
         logistica: 1.50
       },
-      "20 ml": {
+      // Audit F#117: olio e aceto monodose sono articoli distinti (decisione
+      // proprietà 2026-07-19); la voce legacy unica "20 ml" è sdoppiata.
+      "Olio 20 ml": {
+        bottiglia: 0.18,
+        etichetta: 0.10,
+        packaging: 0.15,
+        logistica: 0.10
+      },
+      "Aceto 20 ml": {
         bottiglia: 0.18,
         etichetta: 0.10,
         packaging: 0.15,
@@ -4701,7 +4782,12 @@ const _normFmt52 = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").tri
 const costoFormatoReale = (formato, dati, _cfg) => {
   if (!dati) return { packaging: null, olioPerLitro: null, totale: null, fonte: "nd" };
   const target = _normFmt52(formato);
-  const bot = (dati.bottiglie || []).find(b => _normFmt52(b.formato) === target);
+  let bot = (dati.bottiglie || []).find(b => _normFmt52(b.formato) === target);
+  // Audit F#30/F#117 — alias monodose: "Olio/Aceto 20 ml" condividono la stessa
+  // bottiglia fisica; se la BOM ha ancora il formato legacy "20 ml", usala.
+  if (!bot && /^(olio|aceto) 20 ml$/.test(target)) {
+    bot = (dati.bottiglie || []).find(b => _normFmt52(b.formato) === "20 ml");
+  }
   if (!bot) return { packaging: null, olioPerLitro: null, totale: null, fonte: "nd" };
   const pack = costoPackaging(bot);
   // Media ponderata olio/L sui lotti che hanno imbottigliato questa bottiglia
@@ -19048,7 +19134,7 @@ function App() {
       }
       if (r && r.fromCache) setCacheMode(true); // audit #4
       try {
-        const parsed = migrateV53ScaglioniNorm(migrateV53Azienda(migrateV53Contratti(migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0)))))))))))))))));
+        const parsed = migrateV54Monodose(migrateV53ScaglioniNorm(migrateV53Azienda(migrateV53Contratti(migrateV52CostiMargini(migrateV51Fornitori(migrateV50LitriUsati(migrateV50Bottiglie(migrateV50ImbottLotto(migrateV50Produzione(migrateV49Magazzino(migrateOrdineV48(migrateOrdineV46(migrateClientiV46(migrateRigheConsegnaV44(migrateOrdiniV41(migrateFornitoriV36(migrateGiacenzaV34(r ? JSON.parse(r.value) : D0))))))))))))))))));
         // v53-golive (GL2): stash azienda per PDF/email generators che non hanno
         // accesso al React state. Riaggiornato a ogni setDatiSave (vedi sotto).
         try {
