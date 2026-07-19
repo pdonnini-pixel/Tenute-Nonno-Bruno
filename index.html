@@ -5114,7 +5114,11 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
     if (o.modalita !== "conto_vendita" || o.statoPagamento === "pagato") return s;
     return s + (o.righe || []).reduce((ss, r) => ss + ((Number(r.qta)||0) + (Number(r.omaggio)||0)) * costoFormatoTot(r.formato, dati), 0);
   }, 0);
-  const vociExtraCampagna = (cfg.vociExtra || []).filter(v => !v.data || (v.data >= range.inizio && v.data <= range.fine));
+  // Audit F#65: una voce extra SENZA data non va più sommata al costo di OGNI
+  // campagna (doppio/triplo conteggio nei confronti YoY). Le voci senza data
+  // (solo storiche: il form ora la richiede) contano solo per la campagna corrente.
+  const _campCorr = campagnaCorrente();
+  const vociExtraCampagna = (cfg.vociExtra || []).filter(v => v.data ? (v.data >= range.inizio && v.data <= range.fine) : (anno === _campCorr));
   const costoExtra = vociExtraCampagna.reduce((s, v) => s + (v.importo || 0), 0);
   const costoStruttura = (cfg.costiStruttura || []).reduce((s, cs) => {
     const dal = cs.attivoDal || range.inizio;
@@ -18104,7 +18108,7 @@ function CostiMargini({
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 12 } },
       /*#__PURE__*/React.createElement(Inp, { label: "Descrizione", v: cfg._exDesc||"", on: v => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exDesc:v}})), ph: "es. Lavorazione straordinaria" }),
       /*#__PURE__*/React.createElement(Inp, { label: "Importo €", type: "number", v: cfg._exImp||"", on: v => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exImp:Number(v)}})) }),
-      /*#__PURE__*/React.createElement(Inp, { label: "Data", type: "date", v: cfg._exData||"", on: v => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exData:v}})) }),
+      /*#__PURE__*/React.createElement(Inp, { label: "Data", type: "date", req: true, v: cfg._exData||"", on: v => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exData:v}})) }),
       /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } },
         /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, fontWeight: 600, color: C.grigio600 } }, "Assegna a (multi)"),
         /*#__PURE__*/React.createElement("select", { multiple: true, value: cfg._exSkus||[], onChange: e => setDati(d=>({...d,costiConfig:{...d.costiConfig,_exSkus:Array.from(e.target.selectedOptions,o=>o.value)}})), style: { border: `1px solid ${C.grigio200}`, borderRadius: 6, padding: "4px", fontSize: 11, height: 72 } },
@@ -18113,7 +18117,7 @@ function CostiMargini({
         ),
         /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400 } }, "Ctrl+click per selezionare più prodotti")
       ),
-      /*#__PURE__*/React.createElement(Btn, { ch: "Aggiungi", sz: "sm", onClick: () => { if(!cfg._exDesc||!cfg._exImp) return; setDati(d => ({...d, costiConfig: {...d.costiConfig, vociExtra: [...(d.costiConfig.vociExtra||[]), {desc:d.costiConfig._exDesc, importo:d.costiConfig._exImp, data:d.costiConfig._exData, skuIds:(d.costiConfig._exSkus||[]).filter(x=>x)}], _exDesc:"", _exImp:"", _exData:"", _exSkus:[]}})); } })
+      /*#__PURE__*/React.createElement(Btn, { ch: "Aggiungi", sz: "sm", onClick: () => { if(!cfg._exDesc||!cfg._exImp) return; if(!cfg._exData){ if(window.tnbToast) window.tnbToast("⚠ Indica la data della voce extra: senza data verrebbe attribuita a ogni campagna","err"); return; } setDati(d => ({...d, costiConfig: {...d.costiConfig, vociExtra: [...(d.costiConfig.vociExtra||[]), {desc:d.costiConfig._exDesc, importo:d.costiConfig._exImp, data:d.costiConfig._exData, skuIds:(d.costiConfig._exSkus||[]).filter(x=>x)}], _exDesc:"", _exImp:"", _exData:"", _exSkus:[]}})); } }) // audit F#65: data obbligatoria
     )
   ) }), tab === "config" && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 16 } },
     // v52-costi1: banner informativo — fonte unica BOM (no più stime)
