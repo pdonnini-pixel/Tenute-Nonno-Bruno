@@ -7088,7 +7088,7 @@ function Pipeline({
           hits.push("P.IVA");
 
         if (hits.length) {
-          window.alert("⛔ " + hits.join(" e ") + " già presente - apri la scheda esistente:\n\n→ " + pLabel);
+          if (window.tnbToast) window.tnbToast("⛔ " + hits.join(" e ") + " già presente — apri la scheda esistente: " + pLabel, "err");
           setModal(null);
           setDetailId(p.id);
           return false;
@@ -11470,7 +11470,7 @@ function Ordini({
   };
   const saveCv = () => {
     if (!cvForm.importoLiquidazione || Number(cvForm.importoLiquidazione) <= 0) {
-      window.alert('⚠ Inserire un importo di liquidazione valido'); return;
+      if (window.tnbToast) window.tnbToast('⚠ Inserire un importo di liquidazione valido', 'err'); return;
     }
     // v49-mag1: rileva delta bottiglieRese; se positivo, genera movimenti resa_cv.
     // (Delta negativo = correzione manuale = nessun movimento auto; l'utente può rettificare a mano.)
@@ -13573,11 +13573,11 @@ function Magazzino({
       if (window.tnbToast) window.tnbToast("⚠ Compila i campi obbligatori: " + mancanti, "err");
       return;
     }
-    if (!form.qta || Number(form.qta) <= 0) { window.alert('⚠ La quantità deve essere maggiore di 0'); return; }
+    if (!form.qta || Number(form.qta) <= 0) { if (window.tnbToast) window.tnbToast('⚠ La quantità deve essere maggiore di 0', 'err'); return; }
     // Regola proprietà: i movimenti di entrata/uscita richiedono numero DDT + documento archiviato.
     if (movRichiedeDDT(form.tipo)) {
-      if (!String(form.ddtNum || "").trim()) { window.alert('⛔ Numero DDT obbligatorio per questo movimento (entrata/uscita merce).'); return; }
-      if (!form.ddtDoc || !form.ddtDoc.path) { window.alert('⛔ Documento DDT obbligatorio: carica il file del DDT prima di registrare il movimento.'); return; }
+      if (!String(form.ddtNum || "").trim()) { if (window.tnbToast) window.tnbToast('⛔ Numero DDT obbligatorio per questo movimento (entrata/uscita merce).', 'err'); return; }
+      if (!form.ddtDoc || !form.ddtDoc.path) { if (window.tnbToast) window.tnbToast('⛔ Documento DDT obbligatorio: carica il file del DDT prima di registrare il movimento.', 'err'); return; }
     }
     // Audit E#23: i carichi di prodotto finito devono indicare il lotto (quando
     // esistono lotti in anagrafica): un carico senza lotto crea giacenza vendibile
@@ -13585,7 +13585,7 @@ function Magazzino({
     // Compromesso documentato in DA-FARE.md: senza lotti in anagrafica il carico
     // resta permesso (non blocchiamo il flusso su dati storici/aziende senza lotti).
     if ((form.tipo === "carico" || form.tipo === "carico_produzione") && (dati.lotti || []).length > 0 && !form.lottoId) {
-      window.alert('⛔ Lotto obbligatorio per i carichi di prodotto finito: seleziona il lotto di produzione.\n\nSe la merce non appartiene a nessun lotto registrato, crea prima il lotto nel modulo Produzione.');
+      if (window.tnbToast) window.tnbToast('⛔ Lotto obbligatorio per i carichi di prodotto finito: seleziona il lotto di produzione (se non esiste, crealo prima nel modulo Produzione).', 'err');
       return;
     }
     // Audit B#17: i movimenti in uscita non possono superare la giacenza dello
@@ -13605,7 +13605,7 @@ function Magazzino({
       const dispFonte = fontiUscita.reduce((s, k) => s + (Number(gCalc[k]) || 0), 0);
       if (Number(form.qta) > dispFonte) {
         const LBL_STATO_MAG = { disponibile: "disponibile", in_spedizione: "in spedizione", riservato: "riservato", in_confezionamento: "in confezionamento" };
-        window.alert('⛔ Quantità non disponibile per "' + (TIPI_MOV.find(t => t.v === form.tipo)?.l || form.tipo) + '":\nrichiesti ' + Number(form.qta) + ' pz, ma in "' + fontiUscita.map(k => LBL_STATO_MAG[k] || k).join(' + ') + '" ce ne sono solo ' + dispFonte + '.\n\nControlla la quantità oppure registra prima il carico/passaggio di stato mancante.');
+        if (window.tnbToast) window.tnbToast('⛔ Quantità non disponibile per "' + (TIPI_MOV.find(t => t.v === form.tipo)?.l || form.tipo) + '": richiesti ' + Number(form.qta) + ' pz, ma in "' + fontiUscita.map(k => LBL_STATO_MAG[k] || k).join(' + ') + '" ce ne sono solo ' + dispFonte + '. Controlla la quantità oppure registra prima il carico/passaggio di stato mancante.', 'err');
         return;
       }
     }
@@ -13654,8 +13654,8 @@ function Magazzino({
       if (window.tnbToast) window.tnbToast("⚠ Compila i campi obbligatori: " + mancanti, "err");
       return;
     }
-    if (Number(form.soglia) < 0) { window.alert('⚠ La soglia non può essere negativa'); return; }
-    if (Number(form.prezzoListino) < 0) { window.alert('⚠ Il prezzo non può essere negativo'); return; }
+    if (Number(form.soglia) < 0) { if (window.tnbToast) window.tnbToast('⚠ La soglia non può essere negativa', 'err'); return; }
+    if (Number(form.prezzoListino) < 0) { if (window.tnbToast) window.tnbToast('⚠ Il prezzo non può essere negativo', 'err'); return; }
     const isNew = !form.id;
     const skuId = form.id || uid();
     const giacenzaDesiderata = form.giacenza || {
@@ -24632,7 +24632,7 @@ function PreventiviTab(p2){
       var nome=(cl.insegna||cl.ragioneSociale||"prev").replace(/[^a-z0-9]/gi,"_").toLowerCase();
       doc.save("preventivo_"+nome+"_"+todayStr()+".pdf");
       if(logAction)logAction("Preventivo generato","preventivi",cl.ragioneSociale||"");
-    }catch(e){alert("Errore PDF: "+e.message);}
+    }catch(e){ if (window.tnbToast) window.tnbToast('⚠ Errore generazione PDF: ' + e.message, 'err'); }
   };
   var SS={border:"1px solid #e0ddd8",borderRadius:"6px",padding:"6px 8px",fontSize:"12px",background:"#fff"};
   var hasW=fPv.righe.some(function(r){var d=getD(r.formato,r.annata);return d!==null&&r.qta>d;});
@@ -24894,7 +24894,7 @@ function ContrattiModule({
       doc.save(`contratto_${nome}_${c.dataCreazione || todayStr()}.pdf`);
       if (logAction) logAction("PDF contratto generato", "contratti", `${cliente2.ragioneSociale} — ${CONTRATTO_TIPI[c.tipo]?.label}`);
     } catch (e) {
-      alert("Errore generazione PDF: " + e.message);
+      if (window.tnbToast) window.tnbToast('⚠ Errore generazione PDF: ' + e.message, 'err');
     }
   };
   const renderPreview = c => {
