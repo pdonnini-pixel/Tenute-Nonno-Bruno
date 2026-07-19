@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F4 dell'audit in produzione su decisione esplicita di Patrizio — 74 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F4 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F5 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 85 finding su 145 chiusi)
 
 ---
 
@@ -36,9 +36,6 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F4 dell'audit in produz
 
 ## 🟡 Opzionali / pulizia
 
-### 3d. Collo del 20 ml: 25 combo o 50 bottiglie? (audit #71 — rinviato, serve decisione della proprietà)
-- LISTINO "20 ml" dichiara `pezziCollo: 25` ma lo scaglione e LISTINO_PDF ragionano a 50 pz/collo, e la semantica "combo 20ml olio + 20ml aceto" (il "×2" in ListinoPage) non è codificata nei calcoli: per 50 bottiglie la UI suggerisce 2 colli, il listino 1. **Non è un fix tecnico ma una decisione commerciale**: va deciso se l'unità è la bottiglia singola (pezziCollo 50 ovunque, combo solo come nota) o la combo (campo esplicito `pezziPerCombo` usato da UI e PDF). Da definire con Patrizio prima di toccare listino/PDF.
-
 ### 3c. Consolidamento skuId/magId sui movimenti (audit #145 — rinviato deliberatamente)
 - I movimenti magazzino portano lo stesso campo con due nomi (`skuId` e `magId`): il codice nuovo scrive entrambi e ~25 punti leggono col fallback `(mv.skuId || mv.magId)`. La migrazione al load normalizza già `skuId`, ma consolidare davvero (smettere di scrivere `magId`, togliere i fallback) tocca decine di punti di lettura: **troppo invasivo per un blocco di pulizia** — serve una passata dedicata con verifica completa dei flussi magazzino. Fino ad allora il doppio alias resta (innocuo ma fragile per il codice futuro).
 - Correlato: il PDF `docs/Guida-DDT-Magazzino.pdf` va rigenerato dal `.md` aggiornato (fix #138 applicato a .md e .html, il PDF derivato è rimasto quello vecchio).
@@ -60,6 +57,13 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F4 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F5 (blocco omogeneo "formati, listino e monodose"): finding #30, #31, #32, #33, #34, #44, #67, #71, #115, #116, #117 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio). Base del blocco: **decisione della proprietà (Patrizio, 2026-07-19) sul #71**: olio e aceto 20 ml sono articoli a sé, l'unità è la bottiglia singola, il collo monodose è da 50 pezzi; la "combo" resta solo come nota descrittiva. ⚠️ Il blocco tocca le aree persistenza (migrazione v54, solo rinomina formati/chiavi) e PDF (numero colli):
+  - **#30/#117** — i monodose sono due articoli distinti "Olio 20 ml"/"Aceto 20 ml" ovunque: migrazione idempotente v54 che rinomina gli SKU legacy "20 ml" in base al prodotto, allinea le bottiglie BOM, sdoppia la voce di listino (preservando prezzi personalizzati) e le voci costi. I movimenti non vengono toccati (referenziano skuId). Prima un ordine monodose finiva SEMPRE in "SKU non trovato" e non era firmabile.
+  - **#31/#71** — LISTINO con le chiavi monodose reali: l'auto-prezzo propone 2,00 € (1,80 € da 100 pz) invece di lasciare il 19,50 € del formato precedente; pezziCollo 50 coerente con scaglioni e PDF (era 25).
+  - **#32** — l'auto-prezzo delle righe ordine (Ordini + wizard Pipeline) legge il listino EDITABILE della pagina Listino via getListino, con fallback alla const; anche il placeholder "auto" dei colli usa la stessa fonte.
+  - **#33/#34/#44** — ⚠️ area PDF: numero colli corretto sui documenti (500 ml → 8 pz/collo, 100 ml → 16, monodose → 50 con le chiavi "Olio/Aceto 20 ml|annata"); prima un ordine di 8×500 ml stampava "0,67" colli e 100 monodose stampavano "100" colli. Nessun prezzo cambia.
+  - **#115/#116/#67** — lista formati vendibili UNICA (`FORMATI_VENDITA`) al posto di 6 copie divergenti: Contratti può registrare "Aceto 20 ml" e CostiMargini "Per Formato" analizza entrambi i monodose con prezzo/SKU reali.
+  - **Verifica:** 24 controlli in Chromium con backend simulato: migrazione v54 unit (rinomine, sdoppi, idempotenza) e applicata al dataset con SKU legacy (Magazzino mostra i due articoli), alias skuPerRiga/BOM, auto-prezzo monodose e da listino editabile (25 € custom, sconto senza confezione, fallback), LISTINO_PDF con colli coerenti coi prezzi a collo, flusso ordine end-to-end: riga "Olio 20 ml" → prezzo 2,00 € auto e SKU TROVATO (l'errore diventa "Stock insufficiente", corretto con disponibile 0, non più "SKU non trovato").
 - **2026-07-19 — Pacchetto F4 (blocco omogeneo "magazzino, lotti e scadenze minori"): finding #55, #57, #58, #59, #60, #61, #68, #69, #72, #112, #113 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio; il #71 è rinviato come decisione commerciale, vedi punto 3d). ⚠️ Il blocco tocca l'area magazzino/persistenza dei movimenti (nessuna modifica a login/RLS/PDF):
   - **#112** — rimossa la funzione `applicaMovimento` (percorso incrementale duplicato e divergente dal replay): ogni aggiornamento giacenza passa SOLO da `ricalcolaGiacenza` sul log movimenti. Nessun cambio di numeri: i punti che la usavano già ricalcolavano subito dopo.
   - **#57** — migrazione v49: i movimenti legacy dello stesso giorno senza orario ricevono timestamp progressivi che rispettano l'ordine cronologico originale (prima il replay li eseguiva al contrario e, con i clamp, poteva sbagliare la giacenza).
