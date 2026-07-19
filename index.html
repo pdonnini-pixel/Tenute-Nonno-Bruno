@@ -5924,12 +5924,16 @@ const getListino = (formato, dati) => {
     combo: l.combo || ""
   };
 };
-const getPrezzoListino = (formato, qta, conConfezione = true) => {
-  const l = LISTINO[formato];
-  if (!l) return null;
+// Audit F#32: legge il listino EDITABILE (dati.listino) via getListino, con
+// fallback automatico alla const LISTINO — prima i prezzi aggiornati da
+// ListinoPage venivano ignorati dall'auto-fill delle righe ordine.
+const getPrezzoListino = (formato, qta, conConfezione = true, dati = null) => {
+  const l = getListino(formato, dati);
+  if (!l || !Array.isArray(l.scaglioni) || l.scaglioni.length === 0) return null;
   // find best scaglione
   const scaglioni = [...l.scaglioni].sort((a, b) => b.qta - a.qta);
   const sc = scaglioni.find(s => qta >= s.qta) || l.scaglioni[0];
+  if (!sc) return null;
   let prezzo = sc.prezzo;
   if (!conConfezione && l.scontoSenzaConfezione) prezzo -= l.scontoSenzaConfezione;
   return Math.round(prezzo * 100) / 100;
@@ -8544,7 +8548,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
             if (key === "formato" || key === "qta") {
               var fmt = key === "formato" ? val : updated.formato;
               var qty = key === "qta" ? Number(val) : updated.qta;
-              var p = getPrezzoListino(fmt, qty, updated.confezione !== false);
+              var p = getPrezzoListino(fmt, qty, updated.confezione !== false, dati); // audit F#32
               if (p) updated.prezzoUnitario = p;
               if (key === "formato") {
                 // Audit F#72: annata dagli SKU reali (vedi updRiga in Ordini)
@@ -8618,7 +8622,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
                 type: "number", min: 0, step: 1,
                 v: r.colliManuale != null ? r.colliManuale : "",
                 on: function(v) { updateRiga(i, "colliManuale", v); },
-                ph: (function() { var pc = Number((LISTINO[r.formato] || {}).pezziCollo) || 1; var a = pc > 0 ? (Number(r.qta) || 0) / pc : 0; return a ? ("auto " + (Number.isInteger(a) ? a : a.toFixed(2))) : "Colli"; })()
+                ph: (function() { var pc = Number((getListino(r.formato, dati) || {}).pezziCollo) || 1; var a = pc > 0 ? (Number(r.qta) || 0) / pc : 0; return a ? ("auto " + (Number.isInteger(a) ? a : a.toFixed(2))) : "Colli"; })()
               }),
               /*#__PURE__*/React.createElement(Inp, {
                 type: "number", min: 0, step: 0.5,
@@ -11598,7 +11602,7 @@ function Ordini({
       const fmt2 = k === "formato" ? v : r[i].formato;
       const qty = k === "qta" ? Number(v) : r[i].qta;
       const conConf = r[i].confezione !== false;
-      const p = getPrezzoListino(fmt2, qty, conConf);
+      const p = getPrezzoListino(fmt2, qty, conConf, dati); // audit F#32
       if (p) r[i].prezzoUnitario = p;
       if (k === "formato") {
         // Audit F#72: annata dagli SKU reali (più vecchia con stock, fallback
@@ -11608,7 +11612,7 @@ function Ordini({
       }
     }
     if (k === "confezione") {
-      const p = getPrezzoListino(r[i].formato, r[i].qta, v);
+      const p = getPrezzoListino(r[i].formato, r[i].qta, v, dati); // audit F#32
       if (p) r[i].prezzoUnitario = p;
     }
     return {
@@ -12367,7 +12371,7 @@ function Ordini({
       v: r.colliManuale != null ? r.colliManuale : "",
       on: v => updRiga(i, "colliManuale", v),
       disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato",
-      ph: (function() { var pc = Number((LISTINO[r.formato] || {}).pezziCollo) || 1; var a = pc > 0 ? (Number(r.qta) || 0) / pc : 0; return a ? ("auto " + (Number.isInteger(a) ? a : a.toFixed(2))) : "Colli"; })()
+      ph: (function() { var pc = Number((getListino(r.formato, dati) || {}).pezziCollo) || 1; var a = pc > 0 ? (Number(r.qta) || 0) / pc : 0; return a ? ("auto " + (Number.isInteger(a) ? a : a.toFixed(2))) : "Colli"; })()
     }), !form.campione && /*#__PURE__*/React.createElement(Inp, {
       type: "number",
       min: 0,
