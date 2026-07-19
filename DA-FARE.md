@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F8 dell'audit in produzione su decisione esplicita di Patrizio — 112 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F8 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F9 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 120 finding su 145 chiusi; #64 rinviato)
 
 ---
 
@@ -36,6 +36,9 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F8 dell'audit in produz
 
 ## 🟡 Opzionali / pulizia
 
+### 3e. Costo olio ponderato per campagna (audit #64 — rinviato, serve conferma di dominio)
+- `costoFormatoReale` calcola l'olio/L come media ponderata su TUTTI gli imbottigliamenti storici della bottiglia, senza filtro per campagna/annata: il P&L di ogni campagna usa lo stesso costo unitario (anche nel confronto YoY) e ogni nuovo lotto ricalcola retroattivamente i P&L passati. Il fix richiede di **propagare l'anno campagna attraverso `costoFormatoTot`/`costoFormatoReale`** (~15 punti di chiamata) e di fissare la **mappatura annata↔campagna**, che nel codice esistente è ambigua (il tab "Per Formato" usa `campagnaSel + 1`, con un commento che invece dice "olio prodotto in autunno N"). **Troppo invasivo e a rischio di rendere i numeri sbagliati in modo diverso senza una conferma di Patrizio** su quale annata olio appartiene a quale campagna. Da riprendere con quella decisione. Fino ad allora il costo olio resta la media globale (comportamento pre-audit).
+
 ### 3c. Consolidamento skuId/magId sui movimenti (audit #145 — rinviato deliberatamente)
 - I movimenti magazzino portano lo stesso campo con due nomi (`skuId` e `magId`): il codice nuovo scrive entrambi e ~25 punti leggono col fallback `(mv.skuId || mv.magId)`. La migrazione al load normalizza già `skuId`, ma consolidare davvero (smettere di scrivere `magId`, togliere i fallback) tocca decine di punti di lettura: **troppo invasivo per un blocco di pulizia** — serve una passata dedicata con verifica completa dei flussi magazzino. Fino ad allora il doppio alias resta (innocuo ma fragile per il codice futuro).
 - Correlato: il PDF `docs/Guida-DDT-Magazzino.pdf` va rigenerato dal `.md` aggiornato (fix #138 applicato a .md e .html, il PDF derivato è rimasto quello vecchio).
@@ -57,6 +60,16 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F8 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F9 (blocco omogeneo "tracciabilità economica lotti e P&L costificazione"): finding #22, #25, #26, #27, #62, #63, #65, #66 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio). ⚠️ Sono CORREZIONI che cambiano i NUMERI di Costi & Margini (margini, ricavi, P&L campagna): i valori possono differire da prima — è la fine di sovrastime/doppi conteggi, non un calo reale. Nessuna area login/RLS/persistenza/PDF toccata. **#64 rinviato** (vedi punto 3e: serve decisione su annata↔campagna):
+  - **#22** — tab "Per Lotto": i ricavi/quantità di uno SKU erano contati una volta per OGNI imbottigliamento → un lotto con più sessioni sullo stesso SKU sommava N volte gli stessi ricavi (lotti in perdita mostrati in utile). Ora ogni SKU è processato una sola volta.
+  - **#62** — ricavi attribuiti al lotto: esclusi gli ordini annullati, i pezzi omaggio valorizzati a 0 (uscivano dal magazzino ma non generano ricavo), le rese conto vendita nettate da quantità e ricavo.
+  - **#63** — il prezzo di uno scarico si prende dalla riga con formato E annata corrispondenti (prima dalla prima riga con lo stesso formato: un ordine con 500 ml 2025 e 2024 a prezzi diversi mis-attribuiva i ricavi tra annate).
+  - **#66** — margine per lotto su grandezze omogenee: ricavi del venduto vs costo del SOLO venduto (non più il costo dell'intera produzione, incluso olio non imbottigliato e bottiglie invendute). Prima ogni lotto non esaurito risultava "in perdita"; ora il costo non ancora recuperato è mostrato a parte. KPI rietichettato "MARGINE SUL VENDUTO".
+  - **#27** — P&L campagna, margini cliente/canale e tab "Per Ordine": il costo variabile include ora i pezzi omaggio (escono dal magazzino come i venduti); prima un 1+1 contava il costo di metà bottiglie, gonfiando il margine.
+  - **#26** — ricavi conto vendita: le liquidazioni PARZIALI dei CV non chiusi ora entrano nei ricavi (prima sparivano); un CV "pagato" vale la liquidazione reale, non l'intero ordine (evita di sovrastimare la quota di bottiglie rese).
+  - **#25** — costo mancante non più 0 silenzioso: il caso "parziale" (BOM senza imbottigliamenti) usa il costo packaging noto; l'overview P&L avvisa "N pz senza costo — margine sovrastimato" per i formati senza distinta base, invece di sommare 0 in silenzio.
+  - **#65** — le voci extra senza data non pesano più sul costo di OGNI campagna (doppio/triplo conteggio nei confronti YoY): il form ora richiede la data (guardia + toast) e le voci senza data preesistenti contano solo per la campagna corrente.
+  - **Verifica:** 16 controlli unit in Chromium sulle funzioni economiche reali (con dataset sintetici): `tracciabilitaLotto` (ricavo 1000 non 2000 col doppio imbottigliamento; annullato → 0; omaggio → solo la quota venduta; resa nettata; prezzo per annata giusta; margine sul venduto positivo su lotto non esaurito con costo giacenza a parte); `calcolaPLCampagna` (pezzi costo-incompleto contati, CV parziale 300 nei ricavi, CV pagato al valore di liquidazione, voce extra senza data solo sulla campagna corrente). Zero errori JS.
 - **2026-07-19 — Pacchetto F8 (blocco omogeneo "coerenza codice, robustezza e hooks"): finding #100, #101, #102, #108, #109, #110, #111, #114, #120, #123 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Prevalentemente pulizia interna a comportamento invariato; due punti toccano aree a rischio (segnalati) e uno cambia leggermente dei numeri:
   - **#100** — aliquota IVA 4% in un'unica costante `IVA_ALIQUOTA` (prima duplicata inline in 6+ punti: PDF, liquidazione CV, preventivi, contratti). Valori identici.
   - **#120** — rimossa la funzione morta `generateModuloPDF` (~108 righe, mai chiamata, con bug latenti su omaggi/totale): ⚠️ area PDF ma solo eliminazione di codice non attivo; i PDF reali passano da `_generaPdfModulo`, invariato.
