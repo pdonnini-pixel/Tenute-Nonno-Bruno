@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F5 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F6 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 96 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F6 dell'audit in produzione su decisione esplicita di Patrizio — 96 finding su 145 chiusi)
 
 ---
 
@@ -57,7 +57,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F5 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F6 (blocco omogeneo "flussi ordine e documenti"): finding #35, #36, #37, #38, #43, #73, #74, #79, #90, #118, #119 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio). ⚠️ Il blocco tocca Storage/allegati (cosa viene cancellato all'annullo) e introduce due nuovi BLOCCHI operativi (documento alla consegna, tetto rese CV) — vedi note operative sotto:
+- **2026-07-19 — Pacchetto F6 (blocco omogeneo "flussi ordine e documenti"): finding #35, #36, #37, #38, #43, #73, #74, #79, #90, #118, #119 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Il blocco tocca Storage/allegati (cosa viene cancellato all'annullo) e introduce due nuovi BLOCCHI operativi (documento alla consegna, tetto rese CV) — vedi note operative sotto:
   - **#35** — il check di disponibilità scatta su OGNI ingresso in uno stato con scarico: anche il salto diretto da_firmare → consegnato dal dropdown ora verifica lo stock (lo scarico era già generato dal replay, ma senza controllo).
   - **#37/#43** — la regola "niente consegna senza documento" ora esiste davvero: consegnato/fatturato richiedono un DDT allegato OPPURE le note manuali di trasporto (wizard e dropdown; pregressi esenti). Rimossa updateStato (codice morto che conteneva l'unico controllo). Guida in-app e docs/Guida-DDT-Magazzino (.md/.html) allineate (PDF derivato ancora da rigenerare, punto 3c). **Nota operativa: chi segnava consegne senza DDT ora deve compilare almeno le note manuali.**
   - **#36** — l'annullamento (tutti i percorsi, inclusa l'eliminazione SuperAdmin) non cancella più da Storage i DDT/fatture referenziati dai movimenti: l'Archivio DDT non punta più a file inesistenti e il documento di una consegna avvenuta resta consultabile.
