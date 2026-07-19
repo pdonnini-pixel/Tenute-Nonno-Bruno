@@ -13468,7 +13468,12 @@ function Magazzino({
     l: "🔄 Annullo scarico ordine"
   }];
   const saveMov = () => {
-    if (!form.magId || !form.tipo || !form.qta) return;
+    // Audit F#42: niente return muto — elenca i campi mancanti
+    if (!form.magId || !form.tipo || !form.qta) {
+      const mancanti = [!form.magId && "SKU", !form.tipo && "tipo movimento", !form.qta && "quantità"].filter(Boolean).join(", ");
+      if (window.tnbToast) window.tnbToast("⚠ Compila i campi obbligatori: " + mancanti, "err");
+      return;
+    }
     if (!form.qta || Number(form.qta) <= 0) { window.alert('⚠ La quantità deve essere maggiore di 0'); return; }
     // Regola proprietà: i movimenti di entrata/uscita richiedono numero DDT + documento archiviato.
     if (movRichiedeDDT(form.tipo)) {
@@ -13538,11 +13543,18 @@ function Magazzino({
       };
     });
     if (logAction) logAction(`Mov. magazzino: ${TIPI_MOV.find(t => t.v === form.tipo)?.l || form.tipo}`, "magazzino", `${sku?.prodotto} ${sku?.formato} ${sku?.annata} — ${form.qta} pz`);
+    // Audit F#42: conferma esplicita del salvataggio (come già per le rettifiche)
+    if (window.tnbToast) window.tnbToast(`✅ Movimento registrato: ${Number(form.qta)} pz — ${sku?.prodotto || ""} ${sku?.formato || ""} ${sku?.annata || ""}`);
     setModal(null);
     setForm({});
   };
   const saveSku = () => {
-    if (!form.formato || !form.prodotto) return;
+    // Audit F#42: niente return muto
+    if (!form.formato || !form.prodotto) {
+      const mancanti = [!form.prodotto && "prodotto", !form.formato && "formato"].filter(Boolean).join(", ");
+      if (window.tnbToast) window.tnbToast("⚠ Compila i campi obbligatori: " + mancanti, "err");
+      return;
+    }
     if (Number(form.soglia) < 0) { window.alert('⚠ La soglia non può essere negativa'); return; }
     if (Number(form.prezzoListino) < 0) { window.alert('⚠ Il prezzo non può essere negativo'); return; }
     const isNew = !form.id;
@@ -16333,7 +16345,11 @@ function Fornitori({
     if (window.tnbToast) window.tnbToast("✓ Fornitore salvato");
   };
   const saveOF = () => {
-    if (!form.fornitoreId) return;
+    // Audit F#42: niente return muto
+    if (!form.fornitoreId) {
+      if (window.tnbToast) window.tnbToast("⚠ Seleziona il fornitore prima di salvare", "err");
+      return;
+    }
     // Sanitizza righe: campi vuoti → 0
     var righeClean = (form.righe || []).map(function(r) {
       return Object.assign({}, r, {
