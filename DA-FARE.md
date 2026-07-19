@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A e B in produzione; Pacchetto C — coerenza numeri: finding #6, #24, #46, #47, #104 corretti sul branch, merge da decidere)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A, B e C dell'audit in produzione su decisione esplicita di Patrizio)
 
 ---
 
@@ -53,7 +53,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A e B in produzione; Pacchetto C —
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto C audit (coerenza numeri Dashboard/Report/CostiMargini): finding #6, #24, #46, #47, #104 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge su `main` da decidere esplicitamente). Criterio unico: gli ordini annullati sono esclusi ovunque, come già faceva la Dashboard:
+- **2026-07-19 — Pacchetto C audit (coerenza numeri Dashboard/Report/CostiMargini): finding #6, #24, #46, #47, #104 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Criterio unico: gli ordini annullati sono esclusi ovunque, come già faceva la Dashboard. NB: i numeri di Report Periodo/P&L/CostiMargini possono risultare più BASSI di prima — non è un calo di fatturato, è la fine del doppio conteggio degli annullati:
   - **#6** — Report Periodo: fatturato, conteggio ordini, tabella per canale e "clienti attivi" escludono gli annullati.
   - **#46** — CostiMargini "Per Ordine": annullati esclusi da tabella, totali ed export Excel (un solo filtro nel memo condiviso).
   - **#24** — P&L di campagna e margini per cliente/canale: annullati esclusi da ricavi, costi variabili, margini e confronti YoY.
