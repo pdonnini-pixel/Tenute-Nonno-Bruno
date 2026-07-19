@@ -8583,6 +8583,16 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
             style: { background: "#1565c0", color: "#fff", border: "none", fontWeight: 700, opacity: (of.righe || []).length > 0 ? 1 : 0.4 },
             onClick: function() {
               if (!(of.righe || []).length) { if (window.tnbToast) window.tnbToast("⚠ Aggiungi almeno una riga", "err"); return; }
+              // Audit F#75: stessa validazione righe di saveOrdine (Ordini) —
+              // niente qta/prezzi/omaggi negativi o NaN, niente righe a 0 pezzi.
+              var righeBadW = [], righeZeroW = [];
+              (of.righe || []).forEach(function(r, i) {
+                var prezzoW = Number(r.prezzoUnitario), qtaW = Number(r.qta), omW = Number(r.omaggio || 0);
+                if (prezzoW < 0 || qtaW < 0 || omW < 0 || isNaN(prezzoW) || isNaN(qtaW)) righeBadW.push(i + 1);
+                else if ((qtaW || 0) === 0 && omW === 0) righeZeroW.push(i + 1);
+              });
+              if (righeBadW.length) { if (window.tnbToast) window.tnbToast("⚠ Riga " + righeBadW.join(", ") + ": prezzo/quantità/omaggi non possono essere negativi", "err"); return; }
+              if (righeZeroW.length) { if (window.tnbToast) window.tnbToast("⚠ Riga " + righeZeroW.join(", ") + ": quantità 0 — indica i pezzi oppure elimina la riga", "err"); return; }
               if (!of.modalitaPagamento) { if (window.tnbToast) window.tnbToast("⚠ Seleziona modalità pagamento", "err"); return; }
               var clienteId = ordineWizard.clienteId;
               if (!clienteId) { if (window.tnbToast) window.tnbToast("⚠ Cliente non trovato", "err"); return; }
