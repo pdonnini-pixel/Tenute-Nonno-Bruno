@@ -2073,11 +2073,18 @@ const migrateV49Magazzino = (dataObj) => {
   const out = { ...dataObj };
   // 1. Movimenti globali: arricchimento campi
   let mov = Array.isArray(out.movimenti) ? out.movimenti : [];
-  mov = mov.map(mv => {
+  // Audit F#57: i movimenti legacy dello stesso giorno ricevevano tutti lo
+  // stesso timestamp e il replay (sort stabile su array newest-first) li
+  // eseguiva in ordine INVERSO rispetto alla cronologia reale — con i clamp
+  // l'ordine conta (es. carico+scarico stesso giorno → disponibile sbagliato).
+  // Ora: ts = base del giorno + offset crescente secondo l'ordine cronologico
+  // originale (l'array è newest-first → l'indice più alto è il più vecchio).
+  const nTot = mov.length;
+  mov = mov.map((mv, idx) => {
     const dataStr = mv.data || "2025-01-01";
     const ts = (typeof mv.timestamp === "number" && mv.timestamp > 0)
       ? mv.timestamp
-      : new Date(dataStr).getTime();
+      : new Date(dataStr).getTime() + (nTot - 1 - idx);
     return {
       ...mv,
       ordineId: mv.ordineId || null,
