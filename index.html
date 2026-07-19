@@ -2748,6 +2748,20 @@ const giacenzaAllaData = (movimenti, dataLimite) => {
 const movimentiSku = (movimentiGlobali, magId) =>
   (movimentiGlobali || []).filter(mv => (mv.skuId || mv.magId) === magId);
 
+// Audit B#56: timestamp coerente con la data dichiarata del movimento.
+// Un movimento retrodatato (data ≠ oggi) riceve un timestamp derivato dalla SUA data
+// (mezzogiorno locale), così il replay di ricalcolaGiacenza e le viste storiche di
+// giacenzaAllaData lo collocano nella posizione cronologica dichiarata, non in coda.
+// A parità di data, +1 ms per ogni movimento già registrato quel giorno: preserva
+// l'ordine di inserimento. L'orario reale di registrazione resta nel campo inseritoTs.
+const timestampPerData = (dataMov, movimentiEsistenti) => {
+  if (!dataMov || dataMov === todayStr()) return Date.now();
+  const base = new Date(dataMov + "T12:00:00").getTime();
+  if (!Number.isFinite(base)) return Date.now();
+  const stessoGiorno = (movimentiEsistenti || []).filter(m => m && m.data === dataMov).length;
+  return base + stessoGiorno;
+};
+
 // Risolve il magId per una riga ordine usando (formato, annata) → primo SKU che matcha.
 // Resto v49: le righe ordine non hanno prodottoId; questa è la sorgente di verità per il match.
 // SKU-FIX: matching con 3 livelli di fallback per evitare falsi "SKU non trovato".
@@ -13283,7 +13297,9 @@ function Magazzino({
       auto: false,
       skuId: rettForm.magId,
       magId: rettForm.magId,
-      timestamp: Date.now()
+      // Audit B#56: come in saveMov — rettifiche retrodatate replayate alla loro data.
+      timestamp: timestampPerData(dataMov, dati.movimenti),
+      inseritoTs: Date.now()
     };
     setDati(d => {
       const movimentiTot = [mv, ...(d.movimenti || [])];
@@ -13387,7 +13403,10 @@ function Magazzino({
       ddtDoc: movRichiedeDDT(form.tipo) ? (form.ddtDoc || null) : (form.ddtDoc || null),
       auto: false,
       skuId: form.magId,
-      timestamp: Date.now()
+      // Audit B#56: la data dichiarata guida replay e viste storiche;
+      // l'orario reale di registrazione resta come metadato (inseritoTs).
+      timestamp: timestampPerData(dataMov, dati.movimenti),
+      inseritoTs: Date.now()
     };
     setDati(d => {
       const movimentiTot = [newMov, ...(d.movimenti || [])];
