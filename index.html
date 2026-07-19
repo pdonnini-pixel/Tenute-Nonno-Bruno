@@ -20119,6 +20119,7 @@ function ActivityLog({
   currentUser
 }) {
   const [logs, setLogs] = useState([]);
+  const [loadState, setLoadState] = useState("loading"); // audit F#88: "loading" | "ok" | "error"
   const [filter, setFilter] = useState("");
   const [filterMod, setFilterMod] = useState("");
   const [filterUser, setFilterUser] = useState("");
@@ -20133,17 +20134,22 @@ function ActivityLog({
     if (/ordine|pdf|consegna|stato →|sollecit/i.test(az)) return "ordini";
     return "altro";
   };
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await window.storage.get("tnb-log");
-        setLogs(r ? JSON.parse(r.value) : []);
-      } catch (e) {
-        console.warn('Storage non disponibile:', e);
-        setLogs([]);
-      }
-    })();
+  // Audit F#88: distinguere caricamento in corso ed errore dallo stato vuoto —
+  // prima un errore di rete mostrava "Nessuna attività", facendo credere che
+  // non ci fosse operatività registrata (grave per una funzione di controllo).
+  const caricaLog = React.useCallback(async () => {
+    setLoadState("loading");
+    try {
+      const r = await window.storage.get("tnb-log");
+      setLogs(r ? JSON.parse(r.value) : []);
+      setLoadState("ok");
+    } catch (e) {
+      console.warn('Storage non disponibile:', e);
+      setLogs([]);
+      setLoadState("error");
+    }
   }, []);
+  useEffect(() => { caricaLog(); }, [caricaLog]);
   const clearLog = async () => {
     // Policy: i log non vengono MAI cancellati. Azione disabilitata.
     if (window.tnbToast) window.tnbToast("🔒 Il report attività è permanente e non cancellabile", "err");
@@ -20269,7 +20275,16 @@ function ActivityLog({
       color: C.grigio400,
       marginLeft: 4
     }
-  }, filtered.length, " eventi")), logs.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, filtered.length, " eventi")),
+  // Audit F#88: stato caricamento distinto
+  loadState === "loading" && /*#__PURE__*/React.createElement("div", {
+    style: { textAlign: "center", padding: 60, color: C.grigio400, fontStyle: "italic" }
+  }, /*#__PURE__*/React.createElement("div", { style: { fontSize: 40, marginBottom: 12 } }, "\u23F3"), "Caricamento attivit\xE0\u2026"),
+  // Audit F#88: stato errore distinto, con retry (prima l'errore mostrava "nessuna attivit\u00E0")
+  loadState === "error" && /*#__PURE__*/React.createElement("div", {
+    style: { textAlign: "center", padding: 60, color: C.rosso, fontStyle: "italic" }
+  }, /*#__PURE__*/React.createElement("div", { style: { fontSize: 40, marginBottom: 12 } }, "\u26A0\uFE0F"), "Impossibile caricare il registro attivit\xE0.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("button", { onClick: caricaLog, style: { marginTop: 12, padding: "6px 16px", borderRadius: 6, border: "1px solid " + C.rosso, background: "#fff", color: C.rosso, fontSize: 12, fontWeight: 700, cursor: "pointer" } }, "\uD83D\uDD04 Riprova")),
+  loadState === "ok" && logs.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: 60,
@@ -20281,7 +20296,7 @@ function ActivityLog({
       fontSize: 40,
       marginBottom: 12
     }
-  }, "\uD83D\uDCCB"), "Nessuna attivit\xE0 registrata ancora.", /*#__PURE__*/React.createElement("br", null), "Le azioni vengono tracciate automaticamente."), /*#__PURE__*/React.createElement(Card, {
+  }, "\uD83D\uDCCB"), "Nessuna attivit\xE0 registrata ancora.", /*#__PURE__*/React.createElement("br", null), "Le azioni vengono tracciate automaticamente."), loadState === "ok" && /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
