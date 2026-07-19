@@ -7577,7 +7577,9 @@ function Pipeline({
       );
     }
   };
-  const filtered = dati.prospect.filter(p => {
+  // Audit F#108: memoizzato sui dati sorgente + filtri (prima era un filter
+  // ricreato a ogni render, che invalidava sempre la memo sortedFiltered a valle).
+  const filtered = useMemo(() => dati.prospect.filter(p => {
     if (filter) {
       const q = filter.toLowerCase();
       const label = pNome(p).toLowerCase();
@@ -7598,7 +7600,7 @@ function Pipeline({
       if (!p.campioneInviato || p.stato === "acquisito" || p.stato === "non_interessato") return false;
     }
     return true;
-  });
+  }), [dati.prospect, filter, statoFilter, categoriaFilter, quickFilter]);
   // UX1: sorting for list view
   const sortedFiltered = useMemo(() => {
     if (!vistaLista) return filtered;
@@ -11658,7 +11660,17 @@ function Ordini({
   const lista = navTarget ? allOrdini.filter(o => o.id === navTarget) : (views[tab] || allOrdini);
   const handleSetTab = (k) => { setNavTarget(null); setTab(k); };
   const toggleClient = (cid) => setExpandedClients(prev => ({...prev, [cid]: !prev[cid]}));
-  const gruppiClienti = React.useMemo(() => { const listaBase = navTarget ? allOrdini.filter(o => o.id === navTarget) : (views[tab] || allOrdini); const map = {}; listaBase.forEach(o => { const cid = o.clienteId || '__nessuno__'; if (!map[cid]) map[cid] = { cliente: dati.clienti.find(c => c.id === cid), ordini: [] }; map[cid].ordini.push(o); }); return Object.values(map).sort((a,b) => (a.cliente?.insegna||a.cliente?.ragioneSociale||'').localeCompare(b.cliente?.insegna||b.cliente?.ragioneSociale||'')); }, [lista, tab, navTarget]);
+  // Audit F#108: deps sui dati SORGENTE (dati.ordini/clienti, tab, navTarget) —
+  // prima dipendeva da `lista`/`views`, array ricreati a ogni render, così la
+  // memo ricalcolava sempre. La lista è ricostruita dentro il memo e il cliente
+  // si risolve con una Map costruita una volta sola (non find nel loop).
+  const gruppiClienti = React.useMemo(() => {
+    const mappaClienti = new Map((dati.clienti || []).map(c => [c.id, c]));
+    const listaBase = navTarget ? allOrdini.filter(o => o.id === navTarget) : (views[tab] || allOrdini);
+    const map = {};
+    listaBase.forEach(o => { const cid = o.clienteId || '__nessuno__'; if (!map[cid]) map[cid] = { cliente: mappaClienti.get(cid), ordini: [] }; map[cid].ordini.push(o); });
+    return Object.values(map).sort((a,b) => (a.cliente?.insegna||a.cliente?.ragioneSociale||'').localeCompare(b.cliente?.insegna||b.cliente?.ragioneSociale||''));
+  }, [dati.ordini, dati.clienti, tab, navTarget]);
   const formatRigaConIcona = r => {
     const base = (r.qta||0)+'×'+(r.formato||'')+(r.annata?' '+r.annata:'');
     if (r.modalitaConsegna === "ricorrente") return base + ' 🔁';
