@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F7 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F8 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 112 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F8 dell'audit in produzione su decisione esplicita di Patrizio — 112 finding su 145 chiusi)
 
 ---
 
@@ -57,7 +57,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F7 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F8 (blocco omogeneo "coerenza codice, robustezza e hooks"): finding #100, #101, #102, #108, #109, #110, #111, #114, #120, #123 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio). Prevalentemente pulizia interna a comportamento invariato; due punti toccano aree a rischio (segnalati) e uno cambia leggermente dei numeri:
+- **2026-07-19 — Pacchetto F8 (blocco omogeneo "coerenza codice, robustezza e hooks"): finding #100, #101, #102, #108, #109, #110, #111, #114, #120, #123 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Prevalentemente pulizia interna a comportamento invariato; due punti toccano aree a rischio (segnalati) e uno cambia leggermente dei numeri:
   - **#100** — aliquota IVA 4% in un'unica costante `IVA_ALIQUOTA` (prima duplicata inline in 6+ punti: PDF, liquidazione CV, preventivi, contratti). Valori identici.
   - **#120** — rimossa la funzione morta `generateModuloPDF` (~108 righe, mai chiamata, con bug latenti su omaggi/totale): ⚠️ area PDF ma solo eliminazione di codice non attivo; i PDF reali passano da `_generaPdfModulo`, invariato.
   - **#111** — ⚠️ area persistenza: `storage.delete`/`storage.list` ora hanno un esito onesto (delete respinta → `deleted:false`+error invece di `deleted:true`; list in errore → `keys:null`+error). NESSUN chiamante usa questi metodi (impatto reale nullo), si chiude un contratto ingannevole.
