@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1 dell'audit in produzione su decisione esplicita di Patrizio)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1 in produzione; Pacchetto F2 — UI e usabilità: 10 finding medi/bassi corretti sul branch, merge da decidere)
 
 ---
 
@@ -53,6 +53,17 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1 dell'audit in produzione 
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F2 (blocco omogeneo "UI e usabilità"): finding #45, #48, #49, #103, #106, #107, #128, #130, #132, #133 del report corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge da decidere esplicitamente):
+  - **#45/#103** — grafico "Confronto prezzo/costo/margine": barre che non invadono più i gruppi adiacenti e asse Y in euro (prop fmtFn allineata agli altri chart).
+  - **#107** — grafico a ciambella disegnato anche con un'unica categoria al 100% (prima compariva solo la legenda).
+  - **#48** — il badge "Fornitore collegato" di Costi&Margini apre davvero il dettaglio del fornitore.
+  - **#49** — l'autocomplete cliente cerca anche per ragione sociale (prima, con insegna compilata, la ragione sociale era ignorata → doppioni).
+  - **#106** — vista Ordini "Per cliente": colonne allineate all'intestazione (niente più tabella deformata).
+  - **#128** — validazioni con toast coerente al posto dei popup nativi window.alert (resta volutamente bloccante solo l'avviso di conflitto di salvataggio, che precede il reload).
+  - **#130** — tutte le copie negli appunti hanno gestione dell'errore (verificato a codice: il fallimento clipboard non è simulabile in test).
+  - **#132** — i form modali si chiudono con Escape come i dialog di conferma (+ role dialog/aria-modal); click sul backdrop volutamente disattivo per non perdere dati digitati.
+  - **#133** — login: name/autocomplete per i password manager e Invio-per-accedere anche dal campo username. ⚠️ Area login toccata SOLO in forma additiva, autenticazione invariata.
+  - **Verifica:** 15 controlli in Chromium con backend simulato (login con Invio da username, anello 100% con fill-rule, geometria barre del grafico e € sull'asse, apertura fornitore f02 via _tnbNav, Escape sul modal ordine, colSpan 5=5, ricerca "Barlondi" che trova Allianz, quantità negativa → toast senza popup nativi).
 - **2026-07-19 — Pacchetto F1 (blocco omogeneo "validazione input e feedback utente"): finding #42, #70, #75, #76, #77, #78, #105, #121, #122, #129 del report corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio):
   - **#42** — niente più click "senza effetto": saveMov/saveSku/saveOF elencano i campi mancanti; movimento registrato → toast di conferma.
   - **#70** — `todayStr` e scadenze follow-up in ora LOCALE (prima, tra mezzanotte e le 2, movimenti/DDT/scadenze/numerazione slittavano al giorno prima). ⚠️ Tocca le date che finiscono nei PDF, nel senso che ora sono quelle corrette.
