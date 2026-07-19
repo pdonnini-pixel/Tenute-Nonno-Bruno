@@ -6170,7 +6170,8 @@ const Inp = ({
   max,
   step,
   disabled,
-  error
+  error,
+  maxLength // audit F#123: limite lunghezza (default sotto), evita blob giganti
 }) => {
   // Audit F#92: id stabile per associare <label> e campo (htmlFor/id): cliccare
   // l'etichetta porta il focus nel campo e gli screen reader annunciano il nome.
@@ -6200,6 +6201,7 @@ const Inp = ({
   value: v,
   onChange: e => on(e.target.value),
   rows: rows,
+  maxLength: maxLength || 2000, // audit F#123: default 2000 per le note/aree testo
   disabled: !!disabled,
   style: {
     border: `1.5px solid ${error ? C.rosso : C.grigio200}`,
@@ -6222,6 +6224,7 @@ const Inp = ({
   min: min,
   max: max,
   step: step,
+  maxLength: (type === "number") ? undefined : (maxLength || 200), // audit F#123: default 200 per i campi di testo
   disabled: !!disabled,
   style: {
     border: `1.5px solid ${error ? C.rosso : C.grigio200}`,
