@@ -4836,7 +4836,10 @@ const costoFormatoReale = (formato, dati, _cfg) => {
     });
   });
   if (totL <= 0) {
-    return { packaging: pack, olioPerLitro: null, totale: null, fonte: "parziale" };
+    // Audit F#25: caso "parziale" (BOM senza imbottigliamenti) → il packaging è
+    // comunque noto: usalo come totale parziale invece di null (che a valle
+    // diventava costo 0 → margine 100% silenzioso). La fonte resta "parziale".
+    return { packaging: pack, olioPerLitro: null, totale: pack, fonte: "parziale" };
   }
   const olioPerLitro = totC / totL;
   const litri = litriPerFormato(formato);
@@ -5130,6 +5133,17 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
     const mesiAttivi = mesiFrazionari(inizioOverlap, fineOverlap);
     return s + (cs.importoMensile || 0) * Math.max(0, mesiAttivi);
   }, 0);
+  // Audit F#25: conta i pezzi il cui costo formato è ancora sconosciuto (fonte
+  // "nd", nessuna bottiglia BOM) — quel costo entra come 0 e gonfia il margine.
+  // Lo esponiamo perché l'overview possa avvisare invece di sommare 0 in silenzio.
+  let pezziCostoIncompleto = 0;
+  ordiniCampagna.forEach(o => {
+    const includeCosto = o.modalita === "vendita" || (o.modalita === "conto_vendita" && o.statoPagamento === "pagato");
+    if (!includeCosto) return;
+    (o.righe || []).forEach(r => {
+      if (costoFormatoFonte(r.formato, dati) === "nd") pezziCostoIncompleto += (Number(r.qta) || 0) + (Number(r.omaggio) || 0);
+    });
+  });
   const ricaviTotali = venditeRicavo + cvLiquidato + cvLiquidatoParziale; // audit F#26
   const margineLordo = ricaviTotali - costoVariabile - costoExtra;
   const margineNetto = margineLordo - costoStruttura;
@@ -5144,7 +5158,8 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
     costoTotale: costoVariabile + costoExtra + costoStruttura,
     margineLordo, margineLordoPct,
     margineNetto, margineNettoPct,
-    nOrdini: vendite.length, nCV: cv.length
+    nOrdini: vendite.length, nCV: cv.length,
+    pezziCostoIncompleto // audit F#25
   };
 };
 
@@ -17772,6 +17787,7 @@ function CostiMargini({
       if (pl.cvInCorso > 1000) alerts.push({ icon: "💰", txt: fmt(pl.cvInCorso) + " in CV non liquidati — flusso cassa bloccato", color: "#f57c00" });
       if (pl.margineNettoPct < 20 && pl.margineNettoPct >= 0) alerts.push({ icon: "📉", txt: "Margine netto sotto 20% — verificare struttura costi", color: "#f57c00" });
       if (pl.margineNetto < 0) alerts.push({ icon: "🚨", txt: "Margine netto NEGATIVO — costi struttura superano margine lordo", color: "#c62828" });
+      if (pl.pezziCostoIncompleto > 0) alerts.push({ icon: "❓", txt: pl.pezziCostoIncompleto + " pz senza costo (BOM mancante): il margine è sovrastimato — completa la distinta base", color: "#f57c00" }); // audit F#25
       if (alerts.length === 0) alerts.push({ icon: "✅", txt: "Nessun alert finanziario per questa campagna", color: "#2e7d32" });
       return /*#__PURE__*/React.createElement(Card, {
         style: { marginTop: 16 },
