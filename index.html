@@ -8696,7 +8696,7 @@ function Clienti({
     { label: "Totale clienti", value: dati.clienti.length, color: "#3a3a3a" },
     { label: "HoReCa", value: dati.clienti.filter(c => c.tipo === "horeca").length, color: "#4a5c2f" },
     { label: "Retail", value: dati.clienti.filter(c => c.tipo === "retail").length, color: "#1976d2" },
-    { label: "Distribuzione", value: dati.clienti.filter(c => c.tipo === "distribuzione").length, color: "#c9a84c" },
+    { label: "Distribuzione", value: dati.clienti.filter(c => c.tipo === "distributore").length, color: "#c9a84c" },
     { label: "Fatturato totale", value: fmt(dati.ordini.filter(o => o.stato !== "annullato").reduce((s, o) => s + totOrdine(o), 0)), color: "#4a5c2f" }
   ]}), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -21534,7 +21534,7 @@ function ClientiCommerciale({
     { label: "Totale clienti", value: dati.clienti.length, color: "#3a3a3a" },
     { label: "HoReCa", value: dati.clienti.filter(c => c.tipo === "horeca").length, color: "#4a5c2f" },
     { label: "Retail", value: dati.clienti.filter(c => c.tipo === "retail").length, color: "#1976d2" },
-    { label: "Distribuzione", value: dati.clienti.filter(c => c.tipo === "distribuzione").length, color: "#c9a84c" },
+    { label: "Distribuzione", value: dati.clienti.filter(c => c.tipo === "distributore").length, color: "#c9a84c" },
     { label: "Fatturato totale", value: fmt(dati.ordini.filter(o => o.stato !== "annullato").reduce((s, o) => s + totOrdine(o), 0)), color: "#4a5c2f" }
   ]}), /*#__PURE__*/React.createElement("div", {
     style: {
