@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F6 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F7 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 102 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F7 dell'audit in produzione su decisione esplicita di Patrizio — 102 finding su 145 chiusi)
 
 ---
 
@@ -57,7 +57,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F6 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F7 (blocco omogeneo "accessibilità e usabilità", completa l'area): finding #89, #91, #92, #93, #94, #131 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio). Tutti fix a comportamento invariato che migliorano leggibilità e uso su tablet:
+- **2026-07-19 — Pacchetto F7 (blocco omogeneo "accessibilità e usabilità", completa l'area): finding #89, #91, #92, #93, #94, #131 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Tutti fix a comportamento invariato che migliorano leggibilità e uso su tablet:
   - **#89** — le conferme di eliminazione (ordini, clienti, SKU, fornitori, reset ordini) ora danno il focus a "Annulla", non al pulsante rosso, e Invio non conferma più: premere Invio per abitudine non cancella più nulla di irreversibile. I confirm non-distruttivi mantengono Invio come scorciatoia.
   - **#91** — il componente Btn ora passa `title` e `aria-label` al pulsante (prima li scartava): tornano i tooltip già scritti nel codice e i pulsanti-icona (matita, cestino, X di chiusura) hanno un nome. Aggiunto title "Chiudi" alla X dei modali.
   - **#92** — Inp e Sel associano etichetta e campo (htmlFor/id via React.useId): toccare la label porta il focus nel campo e gli screen reader annunciano il nome — su tutti i form.
