@@ -4872,7 +4872,9 @@ const campagneAttive = (ordini = []) => {
 // Calcola P&L sintetico per una campagna specifica (ricavi, costi, margini, contatori)
 const calcolaPLCampagna = (anno, dati, cfg) => {
   const range = campagnaRange(anno);
-  const ordiniCampagna = (dati.ordini || []).filter(o => o.data && o.data >= range.inizio && o.data <= range.fine);
+  // Audit C#24: gli ordini annullati non entrano nel P&L (ricavi, costi variabili,
+  // margini, confronti YoY) — stesso criterio della Dashboard (tkt_1781169406976).
+  const ordiniCampagna = (dati.ordini || []).filter(o => o.stato !== "annullato" && o.data && o.data >= range.inizio && o.data <= range.fine);
   const vendite = ordiniCampagna.filter(o => o.modalita === "vendita");
   const venditeRicavo = vendite.reduce((s, o) => s + totOrdine(o), 0);
   const venditeRicavoIncassato = vendite.filter(o => o.statoPagamento === "pagato").reduce((s, o) => s + totOrdine(o), 0);
@@ -4928,7 +4930,10 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
 // Include solo ordini "competenza": vendite (sempre) + CV liquidati.
 const calcolaMargineCliente = (anno, dati, cfg) => {
   const range = campagnaRange(anno);
+  // Audit C#24: come per il P&L, gli annullati non entrano nei margini per
+  // cliente (e quindi nemmeno in quelli per canale, che derivano da questi).
   const ordiniCampagna = (dati.ordini || []).filter(o =>
+    o.stato !== "annullato" &&
     o.data >= range.inizio && o.data <= range.fine &&
     (o.modalita === "vendita" || (o.modalita === "conto_vendita" && o.statoPagamento === "pagato"))
   );
