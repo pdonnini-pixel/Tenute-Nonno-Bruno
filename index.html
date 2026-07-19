@@ -2642,6 +2642,11 @@ const ricalcolaGiacenza = (movimenti) => {
     const tb = (typeof b.timestamp === "number" ? b.timestamp : new Date(b.data || 0).getTime()) || 0;
     return ta - tb;
   });
+  // Audit B#5: traccia, per ordineId, quanto è stato EFFETTIVAMENTE sottratto dal
+  // disponibile dagli scarico_ordine (al netto del clamp a zero). Annulli e rese
+  // dello stesso ordine riaccreditano al massimo questo budget: uno scarico
+  // "assorbito" dal clamp non può più fabbricare pezzi al momento dell'annullo.
+  const scaricoEffOrdine = {};
   sorted.forEach(mv => {
     const q = Number(mv.qta) || 0;
     switch (mv.tipo) {
@@ -2687,15 +2692,33 @@ const ricalcolaGiacenza = (movimenti) => {
         g.in_spedizione = Math.max(0, g.in_spedizione - q);
         break;
       case "scarico_manuale":
-      case "scarico_ordine":
-        g.disponibile = Math.max(0, g.disponibile - q);
+      case "scarico_ordine": {
+        // Sottrae solo quanto realmente disponibile (clamp) e registra la quantità
+        // effettiva per l'eventuale riaccredito simmetrico (audit B#5).
+        const eff = Math.min(q, g.disponibile);
+        g.disponibile -= eff;
+        if (mv.tipo === "scarico_ordine" && mv.ordineId) {
+          scaricoEffOrdine[mv.ordineId] = (scaricoEffOrdine[mv.ordineId] || 0) + eff;
+        }
         break;
+      }
       case "resa_cv":
-      case "annullo_ordine":
+      case "annullo_ordine": {
         // Rientro del prodotto verso disponibile (cliente reso / ordine annullato post-firma).
         // Non tocca `riservato` perché lo scarico originale era da `disponibile`.
-        g.disponibile += q;
+        // Audit B#5: se il movimento è legato a un ordine CON scarichi tracciati nel
+        // log, riaccredita al massimo quanto effettivamente scaricato per quell'ordine
+        // (scarichi clampati o annulli doppi non gonfiano più la giacenza).
+        // Movimenti manuali senza ordineId e ordini senza scarichi a log (es.
+        // pregressi) mantengono il comportamento storico (riaccredito pieno).
+        let credito = q;
+        if (mv.ordineId && scaricoEffOrdine[mv.ordineId] !== undefined) {
+          credito = Math.min(q, scaricoEffOrdine[mv.ordineId]);
+          scaricoEffOrdine[mv.ordineId] -= credito;
+        }
+        g.disponibile += credito;
         break;
+      }
       case "rettifica":
         // qta può essere positiva o negativa
         g.disponibile = g.disponibile + q;
