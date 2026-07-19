@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E, F1, F2 e F3 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F4 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 74 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F4 dell'audit in produzione su decisione esplicita di Patrizio — 74 finding su 145 chiusi)
 
 ---
 
@@ -60,7 +60,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E, F1, F2 e F3 dell'audit in pro
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F4 (blocco omogeneo "magazzino, lotti e scadenze minori"): finding #55, #57, #58, #59, #60, #61, #68, #69, #72, #112, #113 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio per il merge su `main`; il #71 è rinviato come decisione commerciale, vedi punto 3d). ⚠️ Il blocco tocca l'area magazzino/persistenza dei movimenti (nessuna modifica a login/RLS/PDF):
+- **2026-07-19 — Pacchetto F4 (blocco omogeneo "magazzino, lotti e scadenze minori"): finding #55, #57, #58, #59, #60, #61, #68, #69, #72, #112, #113 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio; il #71 è rinviato come decisione commerciale, vedi punto 3d). ⚠️ Il blocco tocca l'area magazzino/persistenza dei movimenti (nessuna modifica a login/RLS/PDF):
   - **#112** — rimossa la funzione `applicaMovimento` (percorso incrementale duplicato e divergente dal replay): ogni aggiornamento giacenza passa SOLO da `ricalcolaGiacenza` sul log movimenti. Nessun cambio di numeri: i punti che la usavano già ricalcolavano subito dopo.
   - **#57** — migrazione v49: i movimenti legacy dello stesso giorno senza orario ricevono timestamp progressivi che rispettano l'ordine cronologico originale (prima il replay li eseguiva al contrario e, con i clamp, poteva sbagliare la giacenza).
   - **#58** — il controllo disponibilità alla firma ordine ricalcola il disponibile DAL log movimenti (non più dalla cache `m.giacenza`, che può essere sovrastimata) escludendo scarichi/annulli dell'ordine stesso; assorbe e sostituisce il "credito" introdotto col fix B#19.
