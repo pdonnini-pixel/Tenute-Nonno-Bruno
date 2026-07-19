@@ -4732,9 +4732,9 @@ const D0 = {
 
 // v52-costi1: helper LEGACY mantenuti come stub neutri per non rompere call site rari.
 // La fonte di verità per i costi è ORA il BOM (Produzione: lotti + bottiglie).
-// costoFormato/costoOlioPerLitro non sono più chiamati dai tab Costi: ritornano 0.
-const costoOlioPerLitro = (_cfg) => 0;
-const costoFormato = (_formato, _cfg) => 0;
+// Audit F#141: rimossi gli stub sempre-0 costoOlioPerLitro/costoFormato — gli
+// unici call site erano le due Card disattivate con `null &&`, ora eliminate.
+// I costi reali passano da costoFormatoTot / costoOlioPerLitroLotto (BOM).
 
 // v52 — costo formato dal BOM reale (Produzione lotti + bottiglie).
 // Ritorna sempre un oggetto: { packaging, olioPerLitro, totale, fonte }.
@@ -17921,115 +17921,10 @@ function CostiMargini({
       /*#__PURE__*/React.createElement("strong", null, "voci straordinarie"),
       ". Indicatore: 🟢 BOM = costo completo · 🟡 Parziale = solo packaging · ⚪ N/D = nessuna bottiglia BOM."
     ),
-    // v52-C6: le 2 sezioni legacy "PARAMETRI PRODUZIONE (stima)" e "COSTI PER FORMATO"
-    // sono state DEFINITIVAMENTE rimosse. Fonte unica BOM (Produzione → lotti + bottiglie).
-    null && /*#__PURE__*/React.createElement(Card, {
-    ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 13,
-        fontWeight: 700,
-        color: C.grigio600,
-        marginBottom: 14,
-        letterSpacing: .5
-      }
-    }, "PARAMETRI PRODUZIONE (stima)"), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        flexDirection: "column",
-        gap: 12
-      }
-    }, /*#__PURE__*/React.createElement(Inp, {
-      label: "Costo olive (\u20AC/kg)",
-      type: "number",
-      v: cfg.costoOlivePerKg,
-      on: v => updCfg("costoOlivePerKg", v)
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Resa media (%)",
-      type: "number",
-      v: cfg.resaMedia,
-      on: v => updCfg("resaMedia", v)
-    }), /*#__PURE__*/React.createElement(Inp, {
-      label: "Costo frangitura (\u20AC/100kg olive)",
-      type: "number",
-      v: cfg.costoFrangituraPer100kg,
-      on: v => updCfg("costoFrangituraPer100kg", v)
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        background: C.grigio50,
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 12
-      }
-    }, /*#__PURE__*/React.createElement("strong", null, "Costo olio per litro:"), " ", (!cfg.resaMedia || cfg.resaMedia <= 0) ? "— (inserire resa media)" : (fmt(costoOlioPerLitro(cfg)) + " / L"), (cfg.resaMedia && cfg.resaMedia > 0) && /*#__PURE__*/React.createElement("div", {
-      style: {
-        color: C.grigio400,
-        marginTop: 4,
-        fontSize: 11
-      }
-    }, "= (\u20AC", cfg.costoOlivePerKg, "/kg \xD7 ", (100 / cfg.resaMedia).toFixed(2), " kg/L) + (\u20AC", cfg.costoFrangituraPer100kg, "/100kg \xF7 ", cfg.resaMedia, "%)"))))
-  }), null && /*#__PURE__*/React.createElement(Card, {
-    ch: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 13,
-        fontWeight: 700,
-        color: C.grigio600,
-        marginBottom: 14,
-        letterSpacing: .5
-      }
-    }, "COSTI PER FORMATO (\u20AC/pz)"), Object.entries(cfg.voci).map(([fmt2, v]) => /*#__PURE__*/React.createElement("div", {
-      key: fmt2,
-      style: {
-        marginBottom: 14,
-        paddingBottom: 14,
-        borderBottom: `1px solid ${C.grigio100}`
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        fontWeight: 700,
-        color: C.olivaScuro,
-        marginBottom: 8
-      }
-    }, fmt2), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr 1fr 1fr",
-        gap: 8
-      }
-    }, ["bottiglia", "etichetta", "packaging", "logistica"].map(k => /*#__PURE__*/React.createElement("div", {
-      key: k
-    }, /*#__PURE__*/React.createElement("label", {
-      style: {
-        fontSize: 10,
-        color: C.grigio400,
-        fontWeight: 600
-      }
-    }, k.toUpperCase()), /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      step: "0.01",
-      value: v[k],
-      onChange: e => updVoce(fmt2, k, e.target.value),
-      style: {
-        width: "100%",
-        border: `1px solid ${C.grigio200}`,
-        borderRadius: 4,
-        padding: "4px 6px",
-        fontSize: 12,
-        marginTop: 2,
-        outline: "none"
-      }
-    })))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        color: C.grigio600,
-        marginTop: 6
-      }
-    }, "Costo totale / pz: ", /*#__PURE__*/React.createElement("strong", {
-      style: {
-        color: C.olivaScuro
-      }
-    }, fmt(costoFormato(fmt2, cfg)))))))
-  }), /*#__PURE__*/React.createElement(Card, {
+    // v52-C6 + audit F#141: le 2 sezioni legacy "PARAMETRI PRODUZIONE (stima)" e
+    // "COSTI PER FORMATO" sono state rimosse DAVVERO (prima erano solo disattivate
+    // con `null &&`). Fonte unica BOM (Produzione → lotti + bottiglie).
+  /*#__PURE__*/React.createElement(Card, {
     ch: /*#__PURE__*/React.createElement("div", null,
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.grigio600, marginBottom: 14, letterSpacing: 0.5 } }, "COSTI STRUTTURA MENSILI"),
       /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, marginBottom: 8 } }, "Costi fissi ricorrenti (hosting, fiscale, marketing, affitti...). Verranno sottratti dal margine lordo per calcolare il margine netto."),
