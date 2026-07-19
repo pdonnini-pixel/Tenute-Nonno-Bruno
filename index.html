@@ -2945,11 +2945,28 @@ const generaMovimentiResaCv = (ordine, magazzino, qtaDeltaResa) => {
     }));
 };
 
+// Netto scaricato per SKU di un ordine: somma qta scarico_ordine − annullo_ordine.
+// Audit B#15/#19: è la base dei guard di idempotenza — la sola ESISTENZA di
+// scarichi storici non basta, perché potrebbero essere già stati compensati.
+const _nettoScaricoOrdine = (movimenti, ordineId) => {
+  const netto = new Map(); // skuId → qta netta ancora scaricata
+  (movimenti || []).forEach(mv => {
+    if (mv.ordineId !== ordineId) return;
+    const sid = mv.skuId || mv.magId;
+    if (!sid) return;
+    const q = Number(mv.qta) || 0;
+    if (mv.tipo === "scarico_ordine") netto.set(sid, (netto.get(sid) || 0) + q);
+    else if (mv.tipo === "annullo_ordine") netto.set(sid, (netto.get(sid) || 0) - q);
+  });
+  return netto;
+};
+
 // Hook unico di transizione magazzino su cambio stato ordine.
 // Da chiamare dentro setDati(d => applicaTransizioneOrdineMagazzino(d, ordine, vecchioStato)).
-// Idempotente: skip se per l'ordineId esistono già movimenti del tipo target.
-// - vecchio !== "firmato" && nuovo === "firmato"     → genera scarico_ordine per ogni riga
-// - vecchio !== "annullato" && nuovo === "annullato" → genera annullo_ordine per ogni scarico_ordine esistente
+// Idempotente sul NETTO scarichi−annulli per ordineId (audit B#15):
+// - passaggio → firmato con netto ≤ 0   → genera scarico_ordine per ogni riga
+//   (vale anche per un ordine annullato e poi riaperto: gli scarichi vengono rigenerati)
+// - passaggio → annullato con netto > 0 → genera annullo_ordine per il netto residuo per SKU
 const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
   if (!prevDati || !ordine || !ordine.id) return prevDati;
   const nuovoStato = ordine.stato;
@@ -2957,10 +2974,11 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
   let newMov = Array.isArray(prevDati.movimenti) ? prevDati.movimenti : [];
   const skuToccati = new Set();
   let cambiato = false;
-  // Auto-scarico al primo passaggio → firmato
+  // Auto-scarico al passaggio → firmato (se non c'è già uno scarico netto attivo)
   if (vecchioStato !== "firmato" && nuovoStato === "firmato") {
-    const giaScaricato = newMov.some(mv => mv.ordineId === ordine.id && mv.tipo === "scarico_ordine");
-    if (!giaScaricato) {
+    const netto = _nettoScaricoOrdine(newMov, ordine.id);
+    const nettoTot = Array.from(netto.values()).reduce((s, x) => s + x, 0);
+    if (nettoTot <= 0) {
       const scarichi = generaMovimentiOrdine(ordine, prevDati.magazzino);
       if (scarichi.length > 0) {
         newMov = [...scarichi, ...newMov];
@@ -2969,27 +2987,28 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
       }
     }
   }
-  // Auto-annullo al primo passaggio → annullato (rollback degli scarichi auto esistenti)
+  // Auto-annullo al passaggio → annullato: compensa il netto ancora scaricato per SKU.
+  // (Con cicli annullo→riapri→annullo genera sempre e solo la compensazione residua.)
   if (vecchioStato !== "annullato" && nuovoStato === "annullato") {
-    const scarichiOrdine = newMov.filter(mv => mv.ordineId === ordine.id && mv.tipo === "scarico_ordine");
-    const giaAnnullati = newMov.some(mv => mv.ordineId === ordine.id && mv.tipo === "annullo_ordine");
-    if (scarichiOrdine.length > 0 && !giaAnnullati) {
+    const netto = _nettoScaricoOrdine(newMov, ordine.id);
+    const daAnnullare = Array.from(netto.entries()).filter(([, q]) => q > 0);
+    if (daAnnullare.length > 0) {
       const dataAnn = todayStr();
       const ts0 = Date.now();
       const ddtRefAnn = ddtFromOrdine(ordine);
-      const annulli = scarichiOrdine.map((s, i) => ({
+      const annulli = daAnnullare.map(([skuId, q], i) => ({
         id: uid(),
         tipo: "annullo_ordine",
-        qta: s.qta,
+        qta: q,
         data: dataAnn,
         nota: `Auto: annullo ordine ${ordine.numero || ordine.id}`,
         ordineId: ordine.id,
         lottoId: null,
-        ddtNum: s.ddtNum || ddtRefAnn.ddtNum,
-        ddtDoc: s.ddtDoc || ddtRefAnn.ddtDoc,
+        ddtNum: ddtRefAnn.ddtNum,
+        ddtDoc: ddtRefAnn.ddtDoc,
         auto: true,
-        skuId: s.skuId,
-        magId: s.skuId,
+        skuId: skuId,
+        magId: skuId,
         timestamp: ts0 + i
       }));
       newMov = [...annulli, ...newMov];
