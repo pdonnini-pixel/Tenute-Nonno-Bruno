@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1 in produzione; Pacchetto F2 — UI e usabilità: 10 finding medi/bassi corretti sul branch, merge da decidere)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1 in produzione; Pacchetti F2 e F3 — UI/usabilità + guide/coerenza: 21 finding medi/bassi corretti sul branch, merge da decidere)
 
 ---
 
@@ -36,6 +36,10 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1 in produzione; Pacchetto 
 
 ## 🟡 Opzionali / pulizia
 
+### 3c. Consolidamento skuId/magId sui movimenti (audit #145 — rinviato deliberatamente)
+- I movimenti magazzino portano lo stesso campo con due nomi (`skuId` e `magId`): il codice nuovo scrive entrambi e ~25 punti leggono col fallback `(mv.skuId || mv.magId)`. La migrazione al load normalizza già `skuId`, ma consolidare davvero (smettere di scrivere `magId`, togliere i fallback) tocca decine di punti di lettura: **troppo invasivo per un blocco di pulizia** — serve una passata dedicata con verifica completa dei flussi magazzino. Fino ad allora il doppio alias resta (innocuo ma fragile per il codice futuro).
+- Correlato: il PDF `docs/Guida-DDT-Magazzino.pdf` va rigenerato dal `.md` aggiornato (fix #138 applicato a .md e .html, il PDF derivato è rimasto quello vecchio).
+
 ### 3b. Limiti residui noti del magazzino (post-Pacchetto B, non bloccanti)
 - **Storici con clamp su movimenti "terzi" (audit B#5):** il riaccredito di annullo/resa è ora limitato allo scaricato effettivo *di quell'ordine*, e il nuovo controllo in saveMov (B#17) impedisce di creare nuovi scarichi oltre disponibilità. Resta però il caso storico in cui il clamp aveva assorbito un movimento di un ALTRO ordine/scarico manuale: quei pezzi fantasma già presenti nei dati non si correggono da soli → sanabili con un inventario fisico + rettifiche manuali (il bottone "🔄 Ricalcola" evidenzia le discrepanze in console).
 - **Riapertura di ordini storici senza scarichi a log:** un ordine vecchio (pre-tracciamento) annullato e poi riaperto genera ora lo scarico coerente con il documento, ma l'annullo precedente non aveva accreditato nulla → il netto magazzino scende. Era già così per la riapertura a "Firmato"; ora vale anche per "Consegnato/Fatturato". Dopo riaperture di ordini storici, controllare la giacenza.
@@ -53,6 +57,12 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1 in produzione; Pacchetto 
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F3 (blocco omogeneo "guide e coerenza del codice"): finding #134, #135, #136, #137, #138, #139, #140, #141, #142, #143, #144 del report corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione, insieme al Pacchetto F2: merge da decidere; il #145 è rinviato — vedi punto 3c):
+  - **#134–#137, #139** — testi della guida in-app allineati al comportamento reale (eliminazione cliente via annullo ordini, KPI Agenda, preset report inesistente, nome del pulsante Doppioni); **#135** — sezione "Accordi Fornitori" aggiunta all'indice della Guida; **#138** — nomi dei movimenti nella guida DDT (.md e .html) allineati alle etichette del menu (PDF da rigenerare, punto 3c).
+  - **#140** — ⚠️ area PDF: l'IBAN dei documenti passa da `getTnbIban()` (rispetta gli override di dati.azienda); output identico a dati invariati.
+  - **#141** — rimossi i due blocchi `null &&` di CostiMargini (~100 righe mai renderizzate) e gli stub sempre-0 `costoOlioPerLitro`/`costoFormato`.
+  - **#142–#144** — rimosse `CANALI_LABEL` (orfana e incompatibile con la mappa CANALE) e `getScaglioneLabel` (mai chiamata); semplificato il ternario a rami identici su `ddtDoc`.
+  - **Verifica:** 15 controlli in Chromium con backend simulato: app avviata senza errori JS, testi guida nuovi presenti e vecchi assenti, indice con Accordi Fornitori, tab Configurazione di CostiMargini integro senza le sezioni legacy, `getTnbIban()` con default e override, simboli morti assenti a runtime, registrazione movimento invariata.
 - **2026-07-19 — Pacchetto F2 (blocco omogeneo "UI e usabilità"): finding #45, #48, #49, #103, #106, #107, #128, #130, #132, #133 del report corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge da decidere esplicitamente):
   - **#45/#103** — grafico "Confronto prezzo/costo/margine": barre che non invadono più i gruppi adiacenti e asse Y in euro (prop fmtFn allineata agli altri chart).
   - **#107** — grafico a ciambella disegnato anche con un'unica categoria al 100% (prima compariva solo la legenda).
