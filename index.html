@@ -23210,7 +23210,7 @@ function ReportAIPage({ dati }) {
 
   var copiaReport = function() {
     if (!navigator.clipboard) { window.tnbToast("⚠ Clipboard non disponibile", "err"); return; }
-    navigator.clipboard.writeText(report).then(function() { window.tnbToast("📋 Report copiato"); });
+    navigator.clipboard.writeText(report).then(function() { window.tnbToast("📋 Report copiato"); }).catch(function() { window.tnbToast("⚠ Copia non riuscita — seleziona e copia manualmente il testo", "err"); });
   };
 
   return CE("div", null,
@@ -23519,7 +23519,7 @@ function MarketingPage({ dati, setDati, logAction }) {
                 CE("a", { href: item.url, target: "_blank", style: { flex: 1, textAlign: "center", padding: "6px 0", borderRadius: 6, background: "#e3f2fd", color: "#1565c0", textDecoration: "none", fontSize: 11, fontWeight: 700 } }, "👁 Anteprima"),
                 CE("button", {
                   onClick: function() {
-                    navigator.clipboard.writeText(item.url).then(function() { window.tnbToast("✅ Link copiato"); });
+                    navigator.clipboard.writeText(item.url).then(function() { window.tnbToast("✅ Link copiato"); }).catch(function() { window.tnbToast("⚠ Copia non riuscita — copia il link manualmente", "err"); });
                   },
                   style: { flex: 1, padding: "6px 0", borderRadius: 6, border: "1px solid " + C.grigio200, background: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 600, color: C.grigio600 }
                 }, "📋 Copia link")
@@ -23988,6 +23988,8 @@ function MailingSystem({ dati, setDati, logAction }) {
   var copia = function() {
     navigator.clipboard.writeText("OGGETTO: " + oggetto + "\n\n" + corpo).then(function(){
       setCopied(true); setTimeout(function(){ setCopied(false); }, 2000);
+    }).catch(function(){
+      if (window.tnbToast) window.tnbToast("⚠ Copia non riuscita — seleziona e copia manualmente il testo", "err");
     });
   };
 
@@ -25220,6 +25222,8 @@ Data: ___/___/______                      Data: ___/___/______
       ch: "\uD83D\uDCCB Copia testo",
       v: "sec",
       onClick: () => navigator.clipboard.writeText(renderPreview(preview))
+        .then(() => { if (window.tnbToast) window.tnbToast("\uD83D\uDCCB Testo copiato"); })
+        .catch(() => { if (window.tnbToast) window.tnbToast("\u26A0 Copia non riuscita \u2014 seleziona e copia manualmente il testo", "err"); })
     }), /*#__PURE__*/React.createElement(Btn, {
       ch: "\uD83D\uDCC4 Scarica PDF",
       onClick: () => scaricaPDF(preview),
