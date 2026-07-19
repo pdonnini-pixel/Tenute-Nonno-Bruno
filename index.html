@@ -4997,14 +4997,23 @@ const tracciabilitaLotto = (lotto, dati) => {
     dettaglioPerFormato[key].qta += qtaVendutaLotto;
     dettaglioPerFormato[key].ricavo += ricavoLotto;
   });
-  const margineLotto = totRicavi - costoTotaleProduzione;
+  // Audit F#66: il margine confronta grandezze OMOGENEE — ricavi del venduto vs
+  // COSTO DEL SOLO VENDUTO (costo unitario bottiglia × qta venduta attribuita),
+  // non più il costo dell'INTERA produzione (incluso olio non imbottigliato e
+  // bottiglie invendute in giacenza). Prima ogni lotto non esaurito risultava
+  // "in perdita". Il costo della produzione non ancora recuperato è esposto a
+  // parte (costoGiacenzaNonRecuperato) per non perdere l'informazione.
+  const costoVendutoAttribuito = Object.values(dettaglioPerFormato).reduce((s, d) => s + (d.qta * (d.costoBott || 0)), 0);
+  const margineLotto = totRicavi - costoVendutoAttribuito;
   const marginePct = totRicavi > 0 ? (margineLotto / totRicavi) * 100 : 0;
+  const costoGiacenzaNonRecuperato = Math.max(0, costoTotaleProduzione - costoVendutoAttribuito);
   const pctVenduto = totQtaProdotta > 0 ? (totQtaVenduta / totQtaProdotta) * 100 : 0;
   return {
     costoOlive, costoFrantoio, costoTrasporto, costoAltro,
     costoOlioBase, qtaOlio, costoOlioL,
     imbottigliamenti,
     costoTotImbott, costoTotaleProduzione,
+    costoVendutoAttribuito, costoGiacenzaNonRecuperato,
     totRicavi, margineLotto, marginePct,
     totQtaVenduta, totQtaProdotta, pctVenduto,
     dettaglioPerFormato
@@ -18242,7 +18251,8 @@ function CostiMargini({
     const tracce = lotti.map(l => ({ lotto: l, tr: tracciabilitaLotto(l, dati) }));
     const sorted = tracce.slice().sort((a, b) => b.tr.margineLotto - a.tr.margineLotto);
     const totRicavi = sorted.reduce((s, x) => s + x.tr.totRicavi, 0);
-    const totCosto = sorted.reduce((s, x) => s + x.tr.costoTotaleProduzione, 0);
+    // Audit F#66: margine medio su costo del VENDUTO (omogeneo con i ricavi).
+    const totCosto = sorted.reduce((s, x) => s + x.tr.costoVendutoAttribuito, 0);
     const margMedio = totRicavi > 0 ? ((totRicavi - totCosto) / totRicavi) * 100 : 0;
     const best = sorted[0];
     const worst = sorted[sorted.length - 1];
@@ -18320,8 +18330,10 @@ function CostiMargini({
                 /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } }, Math.round(tr.totQtaVenduta), " bottiglie vendute")
               ),
               /*#__PURE__*/React.createElement("div", { style: { padding: 10, background: tr.margineLotto >= 0 ? "#e8f5e9" : "#ffebee", borderRadius: 6 } },
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: tr.margineLotto >= 0 ? "#2e7d32" : "#c62828", fontWeight: 700, letterSpacing: 0.5 } }, "MARGINE LOTTO"),
-                /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: tr.margineLotto >= 0 ? "#2e7d32" : "#c62828", marginTop: 2 } }, fmt(tr.margineLotto), " (", tr.marginePct.toFixed(1), "%)")
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: tr.margineLotto >= 0 ? "#2e7d32" : "#c62828", fontWeight: 700, letterSpacing: 0.5 } }, "MARGINE SUL VENDUTO"),
+                /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: tr.margineLotto >= 0 ? "#2e7d32" : "#c62828", marginTop: 2 } }, fmt(tr.margineLotto), " (", tr.marginePct.toFixed(1), "%)"),
+                // Audit F#66: costo della produzione non ancora recuperato (giacenza + olio non imbottigliato), mostrato a parte
+                tr.costoGiacenzaNonRecuperato > 0 && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400, marginTop: 2 } }, "Costo non ancora recuperato: ", fmt(tr.costoGiacenzaNonRecuperato))
               )
             ),
             // Progress vendute
