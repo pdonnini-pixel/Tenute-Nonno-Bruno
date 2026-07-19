@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F4 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F5 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 85 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F5 dell'audit in produzione su decisione esplicita di Patrizio — 85 finding su 145 chiusi)
 
 ---
 
@@ -57,7 +57,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F4 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F5 (blocco omogeneo "formati, listino e monodose"): finding #30, #31, #32, #33, #34, #44, #67, #71, #115, #116, #117 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio). Base del blocco: **decisione della proprietà (Patrizio, 2026-07-19) sul #71**: olio e aceto 20 ml sono articoli a sé, l'unità è la bottiglia singola, il collo monodose è da 50 pezzi; la "combo" resta solo come nota descrittiva. ⚠️ Il blocco tocca le aree persistenza (migrazione v54, solo rinomina formati/chiavi) e PDF (numero colli):
+- **2026-07-19 — Pacchetto F5 (blocco omogeneo "formati, listino e monodose"): finding #30, #31, #32, #33, #34, #44, #67, #71, #115, #116, #117 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Base del blocco: **decisione della proprietà (Patrizio, 2026-07-19) sul #71**: olio e aceto 20 ml sono articoli a sé, l'unità è la bottiglia singola, il collo monodose è da 50 pezzi; la "combo" resta solo come nota descrittiva. ⚠️ Il blocco tocca le aree persistenza (migrazione v54, solo rinomina formati/chiavi) e PDF (numero colli):
   - **#30/#117** — i monodose sono due articoli distinti "Olio 20 ml"/"Aceto 20 ml" ovunque: migrazione idempotente v54 che rinomina gli SKU legacy "20 ml" in base al prodotto, allinea le bottiglie BOM, sdoppia la voce di listino (preservando prezzi personalizzati) e le voci costi. I movimenti non vengono toccati (referenziano skuId). Prima un ordine monodose finiva SEMPRE in "SKU non trovato" e non era firmabile.
   - **#31/#71** — LISTINO con le chiavi monodose reali: l'auto-prezzo propone 2,00 € (1,80 € da 100 pz) invece di lasciare il 19,50 € del formato precedente; pezziCollo 50 coerente con scaglioni e PDF (era 25).
   - **#32** — l'auto-prezzo delle righe ordine (Ordini + wizard Pipeline) legge il listino EDITABILE della pagina Listino via getListino, con fallback alla const; anche il placeholder "auto" dei colli usa la stessa fonte.
