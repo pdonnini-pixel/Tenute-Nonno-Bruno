@@ -10688,7 +10688,9 @@ function ClienteAutocomplete({ clienti, value, onChange, disabled, label, error 
     if (!query || query.trim().length === 0) return [];
     const q = query.trim().toLowerCase();
     return (clienti || [])
-      .filter(c => ((c.insegna || c.ragioneSociale || "").toLowerCase()).includes(q))
+      // Audit F#49: cerca su ENTRAMBI i campi — con l'insegna valorizzata la
+      // ragione sociale (quella in fattura) non veniva mai considerata.
+      .filter(c => (c.insegna || "").toLowerCase().includes(q) || (c.ragioneSociale || "").toLowerCase().includes(q))
       .sort((a, b) => (a.insegna || a.ragioneSociale || "").localeCompare(b.insegna || b.ragioneSociale || ""))
       .slice(0, 10);
   }, [clienti, query]);
