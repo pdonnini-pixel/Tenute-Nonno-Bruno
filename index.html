@@ -22549,22 +22549,29 @@ function AlertsPage({
       color: C.giallo
     };
   }),
-  // v53-golive (GL4): Lotti senza imbottigliamento da >30gg dalla frangitura
-  // (rischio ossidazione / valore commerciale fermo nel serbatoio).
+  // v53-golive (GL4): olio fermo in serbatoio da >30gg (rischio ossidazione).
+  // Audit F#69: l'alert si basa sui LITRI RESIDUI, non sull'esistenza di un
+  // imbottigliamento — un imbottigliamento parziale (50 L su 3000) non
+  // silenzia più l'avviso finché resta olio grezzo fermo. La data di
+  // riferimento è l'ultimo imbottigliamento (o la frangitura se nessuno).
   ...(dati.lotti || []).filter(l => {
     if (!l.dataFrangitura) return false;
+    if (litriDisponibiliLotto(l) <= 0) return false; // tutto imbottigliato
     const imb = Array.isArray(l.imbottigliamenti) ? l.imbottigliamenti : [];
-    if (imb.length > 0) return false; // già imbottigliato almeno una volta
-    const gg = Math.floor((new Date(oggi) - new Date(l.dataFrangitura)) / 86400000);
+    const ultimaData = imb.map(x => x.data).filter(Boolean).sort().slice(-1)[0] || l.dataFrangitura;
+    const gg = Math.floor((new Date(oggi) - new Date(ultimaData)) / 86400000);
     return gg > 30;
   }).map(l => {
-    const gg = Math.floor((new Date(oggi) - new Date(l.dataFrangitura)) / 86400000);
+    const imb = Array.isArray(l.imbottigliamenti) ? l.imbottigliamenti : [];
+    const ultimaData = imb.map(x => x.data).filter(Boolean).sort().slice(-1)[0] || l.dataFrangitura;
+    const gg = Math.floor((new Date(oggi) - new Date(ultimaData)) / 86400000);
+    const residui = Math.round(litriDisponibiliLotto(l));
     return {
       id: "lotto_noimb_" + l.id,
       tipo: "lotto_imbott_pending",
       priorita: "media",
-      titolo: `Lotto ${l.annata || l.id} senza imbottigliamento`,
-      desc: `Frangitura il ${fmtD(l.dataFrangitura)} (${gg} giorni fa) — ${l.qtaOlio || 0} L in attesa di imbottigliamento`,
+      titolo: `Lotto ${l.annata || l.id}: olio fermo in serbatoio`,
+      desc: `${residui} L residui da imbottigliare — ${imb.length ? "ultimo imbottigliamento" : "frangitura"} il ${fmtD(ultimaData)} (${gg} giorni fa)`,
       cta: "Vai a Produzione",
       modulo: "produzione",
       targetId: l.id,
