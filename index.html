@@ -10991,6 +10991,13 @@ function Ordini({
     } else if (righeZeroIdx.length > 0) {
       errs.righe = "Riga " + righeZeroIdx.join(", ") + ": quantità 0 — indica i pezzi (o un omaggio) oppure elimina la riga";
     }
+    // Audit F#122: numero ordine inserito a mano (pregressi) — unicità obbligatoria
+    // (i numeri finiscono su conferme, DDT e fatture).
+    if (form.numero && String(form.numero).trim()) {
+      const numNorm = String(form.numero).trim();
+      const dupNum = (dati.ordini || []).find(o => o.id !== form.id && String(o.numero || "").trim() === numNorm);
+      if (dupNum) errs.numero = `Numero ordine "${numNorm}" già usato da un altro ordine`;
+    }
     if (Object.keys(errs).length > 0) {
       setFormErrors(errs);
       const missing = Object.values(errs).join(" · ");
@@ -10999,6 +11006,11 @@ function Ordini({
     }
     setFormErrors({});
     const anno = (form.data || todayStr()).slice(0, 4);
+    // Audit F#122: avviso (non bloccante) se un numero manuale ricade nel formato
+    // NNNN/annoCorrente della numerazione automatica — può far saltare nextNum.
+    if (form.numero && new RegExp("^\\d{1,4}\\/" + new Date().getFullYear() + "$").test(String(form.numero).trim()) && form.pregresso) {
+      if (window.tnbToast) window.tnbToast("ℹ️ Il numero inserito usa il formato della numerazione automatica dell'anno corrente: la numerazione dei prossimi ordini ripartirà da qui.");
+    }
     // G4: rileva cambio stato manuale dal dropdown e appendi statoLog
     const ordinePrev = form.id ? (dati.ordini || []).find(o => o.id === form.id) : null;
     const statoCambiato = ordinePrev && ordinePrev.stato && form.stato && ordinePrev.stato !== form.stato;
