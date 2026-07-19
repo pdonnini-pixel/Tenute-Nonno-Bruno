@@ -5755,7 +5755,7 @@ const LISTINO = {
     usi: "Uso cucina · Ristorazione"
   },
   "5 L (latta)": {
-    annata: "2024",
+    annata: "2025", // audit F#72: allineata all'unico SKU 5 L presente in magazzino
     pubblico: 62.88,
     pezziCollo: 1,
     scatola: false,
@@ -8428,8 +8428,8 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
               var p = getPrezzoListino(fmt, qty, updated.confezione !== false);
               if (p) updated.prezzoUnitario = p;
               if (key === "formato") {
-                var li = LISTINO[fmt];
-                if (li) updated.annata = li.annata || updated.annata;
+                // Audit F#72: annata dagli SKU reali (vedi updRiga in Ordini)
+                updated.annata = annataDefaultPerFormato(dati, fmt) || updated.annata;
               }
             }
             return updated;
@@ -11466,10 +11466,10 @@ function Ordini({
       const p = getPrezzoListino(fmt2, qty, conConf);
       if (p) r[i].prezzoUnitario = p;
       if (k === "formato") {
-        const l = LISTINO[fmt2];
-        if (l) {
-          r[i].annata = l.annata || r[i].annata;
-        }
+        // Audit F#72: annata dagli SKU reali (più vecchia con stock, fallback
+        // più recente) — la const LISTINO proponeva annate non a magazzino
+        // (es. 5 L → 2024 con solo la 2025 disponibile → "SKU non trovato").
+        r[i].annata = annataDefaultPerFormato(dati, fmt2) || r[i].annata;
       }
     }
     if (k === "confezione") {
