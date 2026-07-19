@@ -13678,7 +13678,24 @@ function Magazzino({
   const [filtroSku, setFiltroSku] = useState("");           // v54-mag: filtro movimenti per formato/SKU
   const [ddtDir, setDdtDir] = useState("tutti");             // tutti | entrata | uscita
   const [ddtSearch, setDdtSearch] = useState("");
+  const [ddtLimit, setDdtLimit] = useState(150);             // Audit F#85: paginazione "mostra altre"
   const [rettForm, setRettForm] = useState({});
+  // Audit F#85: Archivio DDT — il join movimento→SKU/ordine (prima un find lineare
+  // su magazzino e ordini per OGNI movimento, O(mov×(sku+ord)) rieseguito a ogni
+  // carattere digitato nella ricerca) è ora costruito una volta con due Map su
+  // [dati.movimenti, dati.magazzino, dati.ordini]. Il filtro testo/direzione resta
+  // nella vista (O(n) sul risultato già unito).
+  const movDDTBase = React.useMemo(() => {
+    const skuById = new Map((dati.magazzino || []).map(s => [s.id, s]));
+    const ordById = new Map((dati.ordini || []).map(o => [o.id, o]));
+    return (dati.movimenti || [])
+      .filter(mv => movRichiedeDDT(mv.tipo))
+      .map(mv => {
+        const sku = skuById.get(mv.skuId || mv.magId);
+        const ord = mv.ordineId ? ordById.get(mv.ordineId) : null;
+        return { ...mv, dir: movDirezioneDDT(mv.tipo), skuObj: sku, ordObj: ord };
+      });
+  }, [dati.movimenti, dati.magazzino, dati.ordini]);
   // Ricalcolo forzato giacenze: safety net per coerenza con il log movimenti.
   const ricalcolaTutteGiacenze = () => {
     setDati(d => ({
@@ -14592,13 +14609,7 @@ function Magazzino({
   tab === "ddt" && (() => {
     // Archivio DDT: tutti i movimenti di entrata/uscita che richiedono DDT, con numero + documento.
     // I movimenti gated privi di DDT sono evidenziati come "da regolarizzare".
-    const movDDT = (dati.movimenti || [])
-      .filter(mv => movRichiedeDDT(mv.tipo))
-      .map(mv => {
-        const sku = dati.magazzino.find(s => s.id === (mv.skuId || mv.magId));
-        const ord = mv.ordineId && (dati.ordini || []).find(o => o.id === mv.ordineId);
-        return { ...mv, dir: movDirezioneDDT(mv.tipo), skuObj: sku, ordObj: ord };
-      });
+    const movDDT = movDDTBase; // Audit F#85: join precomputato/memoizzato a monte
     const conDDT = movDDT.filter(mv => mv.ddtNum || (mv.ddtDoc && mv.ddtDoc.path));
     const senzaDDT = movDDT.filter(mv => !(mv.ddtNum || (mv.ddtDoc && mv.ddtDoc.path)));
     const filtrati = movDDT
@@ -14650,7 +14661,7 @@ function Magazzino({
       /*#__PURE__*/React.createElement(Card, {
         ch: /*#__PURE__*/React.createElement(Tbl, {
           cols: ["Data", "Dir.", "N° DDT", "Movimento", "SKU", "Qtà", "Ordine", "Documento"],
-          data: filtrati,
+          data: filtrati.slice(0, ddtLimit),
           renderRow: mov => {
             const tipoInfo = TIPI_MOV.find(t => t.v === mov.tipo);
             const hasDoc = mov.ddtDoc && mov.ddtDoc.path;
@@ -14699,7 +14710,15 @@ function Magazzino({
             });
           }
         })
-      })
+      }),
+      // Audit F#85: paginazione "mostra altre" — evita di montare migliaia di righe
+      // DOM tutte insieme quando l'archivio cresce (soglia 150, poi +300 per click).
+      filtrati.length > ddtLimit && /*#__PURE__*/React.createElement("div", {
+        style: { textAlign: "center", padding: "10px 0" }
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: () => setDdtLimit(l => l + 300),
+        style: { padding: "8px 18px", borderRadius: 6, border: "1px solid #d4d2cc", background: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#5f5e5a" }
+      }, `Mostra altre (${filtrati.length - ddtLimit} rimanenti)`))
     );
   })(),
   tab === "rettifiche" && /*#__PURE__*/React.createElement(Card, {
