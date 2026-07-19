@@ -11554,6 +11554,19 @@ function Ordini({
     const oldRese = Number(ordPrev && ordPrev.bottiglieRese) || 0;
     const newRese = Number(cvForm.bottiglieRese) || 0;
     const deltaRese = newRese - oldRese;
+    // Audit F#38: niente carichi magazzino fantasma da refusi. Rese e vendute
+    // non possono essere negative e la loro somma non può superare i pezzi
+    // consegnati dell'ordine (qta + omaggi delle righe).
+    const venduteCv = Number(cvForm.bottiglieVendute) || 0;
+    const pezziConsegnati = ((ordPrev && ordPrev.righe) || []).reduce((s, r) => s + (Number(r.qta) || 0) + (Number(r.omaggio) || 0), 0);
+    if (newRese < 0 || venduteCv < 0) {
+      if (window.tnbToast) window.tnbToast("⚠ Bottiglie rese e vendute non possono essere negative", "err");
+      return;
+    }
+    if (pezziConsegnati > 0 && (newRese + venduteCv) > pezziConsegnati) {
+      if (window.tnbToast) window.tnbToast(`⛔ Rese (${newRese}) + vendute (${venduteCv}) = ${newRese + venduteCv} pz: superano i ${pezziConsegnati} pezzi consegnati con l'ordine. Controlla i numeri prima di salvare la liquidazione.`, "err");
+      return;
+    }
     setDati(d => {
       const ordini = d.ordini.map(o => o.id === cvModal.id ? { ...o, ...cvForm } : o);
       let d1 = { ...d, ordini };
