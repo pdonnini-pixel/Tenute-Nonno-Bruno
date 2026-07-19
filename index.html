@@ -13298,6 +13298,15 @@ function Magazzino({
   const [expandedId, setExpandedId] = useState(null);
   const [filterSottoSoglia, setFilterSottoSoglia] = useState(false);
   useEffect(() => { setTimeout(() => { if(window._tnbNav){ if(window._tnbNav.soloSottoSoglia){ setFilterSottoSoglia(true); } window._tnbNav=null; } }, 80); }, []);
+  // Audit E#4: prelievo guidato — quando si sceglie uno scarico, proponi di
+  // default il lotto più vecchio con residuo (FIFO). L'utente può cambiarlo.
+  useEffect(() => {
+    if (modal !== "mov") return;
+    if (!form.magId || !(form.tipo === "scarico_manuale" || form.tipo === "scarico_ordine")) return;
+    if (form.lottoId) return;
+    const fifo = lottiDisponibiliFifo((dati.movimenti || []).filter(mv => (mv.skuId || mv.magId) === form.magId), form.magId).filter(r => r.residuo > 0);
+    if (fifo.length > 0) setForm(f => (f.lottoId ? f : { ...f, lottoId: fifo[0].lottoId }));
+  }, [modal, form.magId, form.tipo, form.lottoId]);
   // v49-mag1: audit coerenza al mount. Logga (non auto-corregge) gli SKU il cui m.giacenza
   // diverge da ricalcolaGiacenza(movimentiSku). L'utente può cliccare "🔄 Ricalcola" per
   // sincronizzare. Visibile in console come [TNB_MAG_AUDIT].
@@ -13441,6 +13450,15 @@ function Magazzino({
     if (movRichiedeDDT(form.tipo)) {
       if (!String(form.ddtNum || "").trim()) { window.alert('⛔ Numero DDT obbligatorio per questo movimento (entrata/uscita merce).'); return; }
       if (!form.ddtDoc || !form.ddtDoc.path) { window.alert('⛔ Documento DDT obbligatorio: carica il file del DDT prima di registrare il movimento.'); return; }
+    }
+    // Audit E#23: i carichi di prodotto finito devono indicare il lotto (quando
+    // esistono lotti in anagrafica): un carico senza lotto crea giacenza vendibile
+    // non tracciabile e falsa le quote di tracciabilità dei lotti reali.
+    // Compromesso documentato in DA-FARE.md: senza lotti in anagrafica il carico
+    // resta permesso (non blocchiamo il flusso su dati storici/aziende senza lotti).
+    if ((form.tipo === "carico" || form.tipo === "carico_produzione") && (dati.lotti || []).length > 0 && !form.lottoId) {
+      window.alert('⛔ Lotto obbligatorio per i carichi di prodotto finito: seleziona il lotto di produzione.\n\nSe la merce non appartiene a nessun lotto registrato, crea prima il lotto nel modulo Produzione.');
+      return;
     }
     // Audit B#17: i movimenti in uscita non possono superare la giacenza dello
     // stato di origine. Senza questo controllo il clamp del ricalcolo assorbe
@@ -14435,11 +14453,54 @@ function Magazzino({
       v: form.tipo || "",
       on: v => setForm(f => ({
         ...f,
-        tipo: v
+        tipo: v,
+        lottoId: null // il lotto va riscelto quando cambia il tipo
       })),
       req: true,
       opts: TIPI_MOV
-    }), /*#__PURE__*/React.createElement("div", {
+    }), (() => {
+      // Audit E#23 + E#4: selezione lotto nel movimento manuale.
+      // - Carichi di prodotto finito (carico, carico_produzione): lotto
+      //   OBBLIGATORIO se esistono lotti in anagrafica (tracciabilità in entrata).
+      // - Scarichi da disponibile (scarico_manuale, scarico_ordine): lotto
+      //   proposto in ordine FIFO (dal carico più vecchio) con residuo visibile.
+      // - Rientri manuali (resa_cv, annullo_ordine): lotto facoltativo.
+      const TIPI_LOTTO_OBBLIGO = ["carico", "carico_produzione"];
+      const TIPI_LOTTO_FIFO = ["scarico_manuale", "scarico_ordine"];
+      const TIPI_LOTTO_LIBERO = ["resa_cv", "annullo_ordine"];
+      const lotti = dati.lotti || [];
+      if (!(TIPI_LOTTO_OBBLIGO.includes(form.tipo) || TIPI_LOTTO_FIFO.includes(form.tipo) || TIPI_LOTTO_LIBERO.includes(form.tipo))) return null;
+      const isFifo = TIPI_LOTTO_FIFO.includes(form.tipo);
+      const obbligo = TIPI_LOTTO_OBBLIGO.includes(form.tipo) && lotti.length > 0;
+      let opts, hint = null;
+      if (isFifo) {
+        const fifo = form.magId
+          ? lottiDisponibiliFifo((dati.movimenti || []).filter(mv => (mv.skuId || mv.magId) === form.magId), form.magId).filter(r => r.residuo > 0)
+          : [];
+        opts = fifo.map((r, i) => {
+          const l = lotti.find(x => x.id === r.lottoId);
+          return { v: r.lottoId, l: `${i === 0 ? "▶ " : ""}Raccolta ${l ? l.annata : "?"}${l && l.dataRaccolta ? " · " + fmtD(l.dataRaccolta) : ""} — residuo ${r.residuo} pz${i === 0 ? " (FIFO)" : ""}` };
+        });
+        hint = opts.length > 0
+          ? "Rotazione FIFO: preleva prima dal lotto caricato per primo (proposto con ▶)."
+          : "Nessun lotto tracciato con residuo per questo SKU: il movimento uscirà senza lotto.";
+      } else {
+        opts = lotti.slice()
+          .sort((a, b) => String(a.dataRaccolta || "").localeCompare(String(b.dataRaccolta || "")))
+          .map(l => ({ v: l.id, l: `Raccolta ${l.annata}${l.dataRaccolta ? " · " + fmtD(l.dataRaccolta) : ""}` }));
+        if (obbligo) hint = "Obbligatorio: un carico senza lotto crea giacenza non tracciabile (richiami, quote lotto).";
+        else if (lotti.length === 0) hint = "Nessun lotto in anagrafica: crea prima il lotto nel modulo Produzione per tracciare il carico.";
+      }
+      return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Sel, {
+        label: "Lotto" + (obbligo ? "" : " (facoltativo)"),
+        v: form.lottoId || "",
+        on: v => setForm(f => ({ ...f, lottoId: v || null })),
+        req: obbligo,
+        opts: opts
+      }), hint && /*#__PURE__*/React.createElement("div", {
+        style: { fontSize: 11, color: C.grigio400, marginTop: 4 }
+      }, hint));
+    })(), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "grid",
         gridTemplateColumns: "1fr 1fr",
