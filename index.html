@@ -683,16 +683,76 @@ const _supaHeaders = {
   'Content-Type': 'application/json'
 };
 
+// ── Audit #2: controllo di concorrenza sulle scritture app_kv ──
+// _kvMeta[key]  : ultimo updated_at visto sul server per quella chiave;
+//                 null = riga assente (primo avvio); undefined = mai letto.
+// _kvQueue[key] : coda che serializza le set() per chiave — due richieste in
+//                 volo contemporanee possono arrivare al server fuori ordine
+//                 e farebbero scattare il controllo di versione contro noi stessi.
+const _kvMeta = {};
+const _kvQueue = {};
+
+async function _kvSetRemote(key, value) {
+  const nowIso = new Date().toISOString();
+  try {
+    let newMeta;
+    if (_kvMeta[key] === undefined || _kvMeta[key] === null) {
+      // Riga assente sul server (primo salvataggio della chiave) o stato mai
+      // letto: upsert come in passato, con return=representation per
+      // registrare l'updated_at effettivamente scritto.
+      const resp = await fetch(SUPA_URL + '/rest/v1/app_kv', {
+        method: 'POST',
+        headers: Object.assign({}, _supaHeaders, { 'Prefer': 'resolution=merge-duplicates,return=representation' }),
+        body: JSON.stringify({ key: key, value: value, updated_at: nowIso })
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const rows = await resp.json().catch(() => []);
+      newMeta = (rows && rows[0] && rows[0].updated_at) || nowIso;
+    } else {
+      // Scrittura CONDIZIONALE: aggiorna la riga solo se updated_at sul server
+      // è ancora quello che abbiamo letto noi. Se un altro utente ha salvato
+      // nel frattempo il filtro non trova righe → conflitto, niente overwrite.
+      const resp = await fetch(
+        SUPA_URL + '/rest/v1/app_kv?key=eq.' + encodeURIComponent(key) + '&updated_at=eq.' + encodeURIComponent(_kvMeta[key]),
+        {
+          method: 'PATCH',
+          headers: Object.assign({}, _supaHeaders, { 'Prefer': 'return=representation' }),
+          body: JSON.stringify({ value: value, updated_at: nowIso })
+        }
+      );
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const rows = await resp.json().catch(() => null);
+      if (!rows || rows.length === 0) return { ok: false, conflict: true, key: key };
+      newMeta = rows[0].updated_at || nowIso;
+    }
+    _kvMeta[key] = newMeta;
+    // Cache locale per accesso offline
+    try { localStorage.setItem('tnb__' + key, value); } catch (_) {}
+    return { ok: true, key: key, value: value };
+  } catch (e) {
+    // Fallback a localStorage se offline: la modifica esiste solo su questo
+    // dispositivo. L'esito ok:false/offline:true viene mostrato dal chiamante.
+    try { localStorage.setItem('tnb__' + key, value); } catch (_) {}
+    return { ok: false, offline: true, key: key, value: value, error: String((e && e.message) || e) };
+  }
+}
+
 window.storage = {
   get: async function(key) {
     try {
       const resp = await fetch(
-        SUPA_URL + '/rest/v1/app_kv?key=eq.' + encodeURIComponent(key) + '&select=key,value',
+        SUPA_URL + '/rest/v1/app_kv?key=eq.' + encodeURIComponent(key) + '&select=key,value,updated_at',
         { headers: _supaHeaders }
       );
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const data = await resp.json();
-      return data.length > 0 ? { key: key, value: data[0].value } : null;
+      if (data.length > 0) {
+        // Registra la versione letta: servirà alla scrittura condizionale.
+        _kvMeta[key] = data[0].updated_at || undefined;
+        return { key: key, value: data[0].value };
+      }
+      _kvMeta[key] = null; // riga assente: primo avvio legittimo
+      return null;
     } catch (e) {
       // Fallback a localStorage se offline. Se non esiste NEMMENO la copia
       // locale l'errore deve emergere: un null qui verrebbe scambiato dal
@@ -705,24 +765,12 @@ window.storage = {
     }
   },
   set: async function(key, value) {
-    try {
-      // Scrivi su Supabase
-      const resp = await fetch(SUPA_URL + '/rest/v1/app_kv', {
-        method: 'POST',
-        headers: Object.assign({}, _supaHeaders, { 'Prefer': 'resolution=merge-duplicates' }),
-        body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() })
-      });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      // Cache locale per accesso offline
-      try { localStorage.setItem('tnb__' + key, value); } catch (_) {}
-      return { key: key, value: value };
-    } catch (e) {
-      // Fallback a localStorage se offline
-      try {
-        localStorage.setItem('tnb__' + key, value);
-        return { key: key, value: value };
-      } catch (_) { return null; }
-    }
+    // Serializza le scritture per chiave (vedi _kvQueue). Non rigetta mai:
+    // restituisce { ok:true } | { ok:false, conflict:true } | { ok:false, offline:true }.
+    const run = () => _kvSetRemote(key, value);
+    const p = (_kvQueue[key] || Promise.resolve()).then(run, run);
+    _kvQueue[key] = p.catch(() => {});
+    return p;
   },
   delete: async function(key) {
     try {
@@ -730,6 +778,7 @@ window.storage = {
         SUPA_URL + '/rest/v1/app_kv?key=eq.' + encodeURIComponent(key),
         { method: 'DELETE', headers: _supaHeaders }
       );
+      _kvMeta[key] = null; // riga rimossa dal server
       try { localStorage.removeItem('tnb__' + key); } catch (_) {}
       return { key: key, deleted: true };
     } catch (e) {
@@ -18669,7 +18718,7 @@ function App() {
       const __json = JSON.stringify(next);
       const __strMs = performance.now() - __ts;
       const __post0 = performance.now();
-      window.storage.set("tnb-pro-v2", __json).finally(() => {
+      window.storage.set("tnb-pro-v2", __json).then(res => {
         setSaving(false);
         try {
           const rec = { updMs: Math.round(__updMs), strMs: Math.round(__strMs), postMs: Math.round(performance.now() - __post0), kb: Math.round(__json.length / 1024) };
@@ -18677,6 +18726,13 @@ function App() {
           if (window.__tnbSavePerf.length > 30) window.__tnbSavePerf.shift();
           if (rec.updMs + rec.strMs > 200 || rec.postMs > 3000) console.warn("[TNB perf] salvataggio lento", rec);
         } catch (_) {}
+        // Audit #2: conflitto di concorrenza — un altro utente ha salvato dopo
+        // di noi. La nostra scrittura NON è avvenuta: avvisa e ricarica per
+        // ripartire dai dati aggiornati del server.
+        if (res && res.conflict) {
+          alert("⚠️ CONFLITTO DI SALVATAGGIO\n\nUn altro utente (o un'altra scheda del browser) ha salvato dati più recenti sul server.\nPer non sovrascriverli, la tua ultima modifica NON è stata salvata.\n\nLa pagina verrà ricaricata con i dati aggiornati: dopo il caricamento ripeti la modifica.");
+          window.location.reload();
+        }
       });
       // v53-golive (GL2): tieni allineato lo stash window._tnbAzienda usato da
       // PDF/email generators che non hanno accesso al React state.
