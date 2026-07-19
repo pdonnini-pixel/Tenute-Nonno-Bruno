@@ -6422,7 +6422,9 @@ function Dashboard({
     icon: "\uD83E\uDED2",
     val: fmt(totVendita),
     label: "Fatturato Vendite",
-    sub: `${dati.ordini.filter(o => o.modalita === "vendita").length} ordini`,
+    // Audit C#104: il conteggio segue lo stesso criterio dell'importo (totVendita
+    // esclude gli annullati; i campioni valgono 0 €, quindi esclusi anche loro).
+    sub: `${dati.ordini.filter(o => o.stato !== "annullato" && !o.campione && o.modalita === "vendita").length} ordini`,
     color: C.oliva,
     onClick: () => { window._tnbNav = {tab: "vendita"}; window._nav("ordini"); }
   }), /*#__PURE__*/React.createElement(KPI, {
