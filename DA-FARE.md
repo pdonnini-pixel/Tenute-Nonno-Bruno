@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetto A audit — persistenza dati: finding critici #1–#4 corretti, in attesa di test multi-dispositivo e merge)
+Ultimo aggiornamento: 2026-07-19 (Pacchetto A in produzione; Pacchetto B — integrità magazzino: finding #5, #15, #17, #19, #56 corretti sul branch, merge da decidere)
 
 ---
 
@@ -36,6 +36,11 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetto A audit — persistenza dati: findin
 
 ## 🟡 Opzionali / pulizia
 
+### 3b. Limiti residui noti del magazzino (post-Pacchetto B, non bloccanti)
+- **Storici con clamp su movimenti "terzi" (audit B#5):** il riaccredito di annullo/resa è ora limitato allo scaricato effettivo *di quell'ordine*, e il nuovo controllo in saveMov (B#17) impedisce di creare nuovi scarichi oltre disponibilità. Resta però il caso storico in cui il clamp aveva assorbito un movimento di un ALTRO ordine/scarico manuale: quei pezzi fantasma già presenti nei dati non si correggono da soli → sanabili con un inventario fisico + rettifiche manuali (il bottone "🔄 Ricalcola" evidenzia le discrepanze in console).
+- **Riapertura di ordini storici senza scarichi a log:** un ordine vecchio (pre-tracciamento) annullato e poi riaperto genera ora lo scarico coerente con il documento, ma l'annullo precedente non aveva accreditato nulla → il netto magazzino scende. Era già così per la riapertura a "Firmato"; ora vale anche per "Consegnato/Fatturato". Dopo riaperture di ordini storici, controllare la giacenza.
+- **Finding magazzino correlati NON in questo pacchetto** (restano aperti nel report): #16 affido_spedizioniere doppio decremento riservato+confezionamento, #18 apertura non-lineare in saveSku, #57 migrazione v49 ordine inverso stesso giorno, #58 verificaDisponibilitaOrdine legge la giacenza memorizzata anziché il ricalcolo.
+
 ### 4. Limiti residui noti della persistenza (post-Pacchetto A, non bloccanti)
 - **Log attività su blob unico (`tnb-log`):** con il controllo di concorrenza un conflitto in scrittura ora NON sovrascrive più le voci degli altri utenti, ma la voce in conflitto viene scartata (con warning in console). La finestra di race read-modify-write resta: è il finding del **Pacchetto D** (voce #3) del report audit.
 - **Primo inserimento di una chiave assente:** usa ancora il POST upsert (nessuna riga da confrontare); una race tra due "primi salvataggi" simultanei resta teoricamente possibile solo al primissimo avvio su DB vuoto.
@@ -48,6 +53,13 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetto A audit — persistenza dati: findin
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto B audit (integrità magazzino): finding #5 (critico), #15, #17, #19, #56 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge su `main` da decidere esplicitamente):
+  - **#5** — scarico/riaccredito simmetrici nel replay: annullo_ordine e resa_cv riaccreditano al massimo quanto EFFETTIVAMENTE scaricato per quell'ordine (scarichi clampati e annulli doppi non fabbricano più pezzi). Invariato per movimenti manuali senza ordine e ordini senza scarichi a log. Limite residuo documentato al punto 3b.
+  - **#17** — saveMov blocca i movimenti in uscita oltre la giacenza dello stato di origine (scarichi/riserve da disponibile, consegnato da in spedizione, affido da riservato+confezionamento) con messaggio chiaro in italiano.
+  - **#15** — guard di idempotenza sul NETTO scarichi−annulli: riaprire un ordine annullato rigenera lo scarico (righe correnti, previo check disponibilità) e il secondo annullo compensa esattamente il residuo.
+  - **#19** — rimozione firma → "Da firmare": al salvataggio la giacenza viene ripristinata (annullo_ordine con nota "ripristino magazzino"), come promesso dalla Guida; il check disponibilità considera restituibili le quantità dell'ordine stesso (niente falso "stock insufficiente"); alla ri-firma gli scarichi si rigenerano con le righe aggiornate.
+  - **#56** — movimenti retrodatati: il timestamp deriva dalla data dichiarata (mezzogiorno + progressivo), così replay e "giacenza al" rispettano la cronologia; l'orario reale resta nel nuovo campo `inseritoTs`.
+  - **Verifica:** 17 controlli unitari sulle funzioni reali (ricalcolaGiacenza, applicaTransizioneOrdineMagazzino, timestampPerData) eseguiti nel browser + flusso UI completo in Chromium con backend simulato (mai il DB reale): ricalcolo → rettifica +10 → scarico oltre soglia BLOCCATO → scarico retrodatato con data corretta → annullo ordine (nessun riaccredito fantasma su ordine legacy) → riapertura con scarico rigenerato e giacenze verificate sullo stato persistito.
 - **2026-07-19 — Pacchetto A audit (persistenza dati): finding critici #1–#4 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio; ⚠️ area a rischio persistenza — verifiche post-deploy nel punto aperto #0):
   - **#1** — errore al caricamento iniziale: niente più `setDati(D0)` silenzioso; schermata bloccante in italiano (casi "rete" e "dati illeggibili" distinti dal legittimo primo avvio `r === null`), nessun salvataggio possibile finché i dati reali non sono caricati.
   - **#2** — controllo di concorrenza: le scritture su `app_kv` sono condizionali (PATCH filtrato su `key` + `updated_at` letto in precedenza, riuso della colonna esistente, nessuna migrazione schema) e serializzate per chiave; in caso di conflitto avviso in italiano e ricarica automatica, la modifica altrui sopravvive.
