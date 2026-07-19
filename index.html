@@ -14594,8 +14594,18 @@ function Magazzino({
 }
 function Produzione({
   dati,
-  setDati
+  setDati,
+  readonly
 }) {
+  // Audit D#39: sola lettura (ROLE_READONLY). Guardia centrale: ogni tentativo
+  // di modifica passa da setDati, quindi basta neutralizzarlo qui — vale per
+  // tutti i pulsanti del modulo senza doverli disabilitare uno a uno.
+  if (readonly) {
+    setDati = () => { if (window.tnbToast) window.tnbToast("🔒 Modulo in sola lettura per il tuo ruolo", "err"); };
+  }
+  useEffect(() => {
+    if (readonly && window.tnbToast) window.tnbToast("🔒 Sola lettura: puoi consultare ma non modificare");
+  }, [readonly]);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   // v50-prod1: filtri + expand card
@@ -15957,8 +15967,16 @@ const TIPI_DOCUMENTO_FORNITORE = [
 ];
 function Fornitori({
   dati,
-  setDati
+  setDati,
+  readonly
 }) {
+  // Audit D#39: sola lettura (ROLE_READONLY) — vedi nota in Produzione.
+  if (readonly) {
+    setDati = () => { if (window.tnbToast) window.tnbToast("🔒 Modulo in sola lettura per il tuo ruolo", "err"); };
+  }
+  useEffect(() => {
+    if (readonly && window.tnbToast) window.tnbToast("🔒 Sola lettura: puoi consultare ma non modificare");
+  }, [readonly]);
   const [tab, setTab] = useState("ana");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
@@ -16995,8 +17013,16 @@ function Fornitori({
 // ─── COSTI & MARGINI ─────────────────────────────────────────────────────────
 function CostiMargini({
   dati,
-  setDati
+  setDati,
+  readonly
 }) {
+  // Audit D#39: sola lettura (ROLE_READONLY) — vedi nota in Produzione.
+  if (readonly) {
+    setDati = () => { if (window.tnbToast) window.tnbToast("🔒 Modulo in sola lettura per il tuo ruolo", "err"); };
+  }
+  useEffect(() => {
+    if (readonly && window.tnbToast) window.tnbToast("🔒 Sola lettura: puoi consultare ma non modificare");
+  }, [readonly]);
   const [tab, setTab] = useState("overview");
   const [campagnaSel, setCampagnaSel] = useState(campagnaCorrente());
   // v52-costi1: toggle per includere/escludere ordini CV nel tab "Per Ordine"
@@ -19499,14 +19525,17 @@ function App() {
   }), modulo === "produzione" && /*#__PURE__*/React.createElement(Produzione, {
     dati: dati,
     setDati: setDatiSave,
+    readonly: isReadonly("produzione"),
     logAction: logAction
   }), modulo === "fornitori" && /*#__PURE__*/React.createElement(Fornitori, {
     dati: dati,
     setDati: setDatiSave,
+    readonly: isReadonly("fornitori"),
     logAction: logAction
   }), modulo === "costi" && /*#__PURE__*/React.createElement(CostiMargini, {
     dati: dati,
-    setDati: setDatiSave
+    setDati: setDatiSave,
+    readonly: isReadonly("costi")
   }), modulo === "utenti" && /*#__PURE__*/React.createElement(GestioneUtenti, null), modulo === "oggi" && /*#__PURE__*/React.createElement(OggiAzioni, {
     dati: dati,
     setDati: setDatiSave,
