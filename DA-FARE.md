@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (TUTTI i pacchetti principali dell'audit A–E in produzione su decisione esplicita di Patrizio)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E in produzione; Pacchetto F1 — validazione input e feedback: 10 finding medi/bassi corretti sul branch, merge da decidere)
 
 ---
 
@@ -53,6 +53,17 @@ Ultimo aggiornamento: 2026-07-19 (TUTTI i pacchetti principali dell'audit A–E 
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F1 (blocco omogeneo "validazione input e feedback utente"): finding #42, #70, #75, #76, #77, #78, #105, #121, #122, #129 del report corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ NON ancora in produzione: merge da decidere esplicitamente):
+  - **#42** — niente più click "senza effetto": saveMov/saveSku/saveOF elencano i campi mancanti; movimento registrato → toast di conferma.
+  - **#70** — `todayStr` e scadenze follow-up in ora LOCALE (prima, tra mezzanotte e le 2, movimenti/DDT/scadenze/numerazione slittavano al giorno prima). ⚠️ Tocca le date che finiscono nei PDF, nel senso che ora sono quelle corrette.
+  - **#105** — Report Periodo: default "Dal" = 1° gennaio (non più 31/12 anno prima) e preset 30/90gg in locale.
+  - **#76** — saveOrdine: almeno una riga, e ogni riga con pezzi > 0 (o omaggio); **#75** — stessa validazione replicata nel wizard prospect→ordine (verificata via #76: logica identica).
+  - **#77** — codice cliente auto: max progressivo + guardia di unicità (niente duplicati dopo cancellazioni); **#78** — salvataggio cliente senza ragione sociale non più muto; email validata come la PEC.
+  - **#121** — consegne ricorrenti: negativi bloccati (modal + guardia nel generatore + min=1 sugli input).
+  - **#122** — numero ordine manuale (pregressi): duplicato → salvataggio bloccato; formato NNNN/anno corrente → avviso.
+  - **#129** — screenshot ticket non caricato → toast di avviso dedicato (verificato a codice: il percorso di errore richiede un guasto Storage reale).
+  - **Verifica:** 17 controlli in Chromium con backend simulato (date locali, schedule negativi → vuoto e caso valido invariato, toast su movimento/ordine/cliente vuoti, email malformata bloccata, codice cliente TNB-2026-NNN unico, numero duplicato bloccato su ordine pregresso reale).
+  - Restano da smaltire gli altri finding medi/bassi del report (blocchi futuri: UX/accessibilità #128-#133, guide #134-#139, performance #83-#84/#126-#127, coerenza codice #140-#145, magazzino minori #57-#58-#59…).
 - **2026-07-19 — Pacchetto E audit (tracciabilità lotti e rotazione FIFO): finding #20, #23, #29 e prelievo guidato FIFO del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Novità operative per chi carica/scarica: il selettore Lotto nei movimenti (obbligatorio sui carichi se esistono lotti) e il lotto proposto FIFO sugli scarichi:
   - **#20** — lo scarico generato dalla firma dell'ordine ora registra il lotto: ripartizione FIFO sui lotti con residuo (un movimento per lotto, dal carico più vecchio); l'annullo/ripristino eredita il lotto dello scarico originale (netto per SKU invariato rispetto ai fix B). Badge lotto visibile anche sui movimenti legati a un ordine.
   - **#23** — nel modal "Registra Movimento" c'è il selettore Lotto: OBBLIGATORIO per carico/carico_produzione quando esistono lotti in anagrafica; facoltativo per i rientri manuali.
