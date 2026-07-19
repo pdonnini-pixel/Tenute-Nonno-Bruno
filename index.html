@@ -5102,12 +5102,12 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
   const costoVariabile = ordiniCampagna.reduce((s, o) => {
     const includeCosto = o.modalita === "vendita" || (o.modalita === "conto_vendita" && o.statoPagamento === "pagato");
     if (!includeCosto) return s;
-    return s + (o.righe || []).reduce((ss, r) => ss + (r.qta || 0) * costoFormatoTot(r.formato, dati), 0);
+    return s + (o.righe || []).reduce((ss, r) => ss + ((Number(r.qta)||0) + (Number(r.omaggio)||0)) * costoFormatoTot(r.formato, dati), 0);
   }, 0);
   // Costo variabile dei CV in corso (informativo, non sottratto da margine)
   const costoVariabileCVInCorso = ordiniCampagna.reduce((s, o) => {
     if (o.modalita !== "conto_vendita" || o.statoPagamento === "pagato") return s;
-    return s + (o.righe || []).reduce((ss, r) => ss + (r.qta || 0) * costoFormatoTot(r.formato, dati), 0);
+    return s + (o.righe || []).reduce((ss, r) => ss + ((Number(r.qta)||0) + (Number(r.omaggio)||0)) * costoFormatoTot(r.formato, dati), 0);
   }, 0);
   const vociExtraCampagna = (cfg.vociExtra || []).filter(v => !v.data || (v.data >= range.inizio && v.data <= range.fine));
   const costoExtra = vociExtraCampagna.reduce((s, v) => s + (v.importo || 0), 0);
@@ -5161,7 +5161,7 @@ const calcolaMargineCliente = (anno, dati, cfg) => {
       ricavo: 0, costo: 0, margine: 0, marginePct: 0, nOrdini: 0
     };
     const ricavoOrd = totOrdine(o);
-    const costoOrd = (o.righe || []).reduce((s, r) => s + (r.qta || 0) * costoFormatoTot(r.formato, dati), 0);
+    const costoOrd = (o.righe || []).reduce((s, r) => s + ((Number(r.qta)||0) + (Number(r.omaggio)||0)) * costoFormatoTot(r.formato, dati), 0);
     map[cl.id].ricavo += ricavoOrd;
     map[cl.id].costo += costoOrd;
     map[cl.id].nOrdini += 1;
@@ -17541,7 +17541,8 @@ function CostiMargini({
       const righe = (o.righe || []).map(r => {
         const costo = costoFormatoTot(r.formato, dati);
         const ricavo = r.qta * (r.prezzoUnitario || 0);
-        const costoTot = r.qta * costo;
+        // Audit F#27: anche i pezzi omaggio escono dal magazzino → sostengono il costo.
+        const costoTot = ((Number(r.qta) || 0) + (Number(r.omaggio) || 0)) * costo;
         const margine = ricavo - costoTot;
         const pct = ricavo ? Math.round(margine / ricavo * 100) : 0;
         return {
