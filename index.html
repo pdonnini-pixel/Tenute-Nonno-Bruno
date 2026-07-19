@@ -6014,7 +6014,9 @@ const Btn = ({
   v = "pri",
   sz = "md",
   dis,
-  style: sx
+  style: sx,
+  title, // audit F#91: tooltip
+  ariaLabel // audit F#91: nome accessibile (fallback su title)
 }) => {
   const vs = {
     pri: {
@@ -6057,6 +6059,11 @@ const Btn = ({
   return /*#__PURE__*/React.createElement("button", {
     onClick: onClick,
     disabled: dis,
+    // Audit F#91: title e aria-label ora arrivano al <button> (prima scartati):
+    // riattiva i tooltip già scritti nel codice e dà un nome accessibile ai
+    // pulsanti-icona (matita, cestino, X di chiusura, ecc.).
+    title: title || undefined,
+    "aria-label": ariaLabel || title || undefined,
     style: {
       background: st.bg,
       color: st.c,
@@ -6278,6 +6285,7 @@ const Modal = ({
   ch: /*#__PURE__*/React.createElement(I.x, null),
   v: "gh",
   sz: "sm",
+  title: "Chiudi", // audit F#91
   onClick: onClose
 })), /*#__PURE__*/React.createElement("div", {
   ref: contentRef,
