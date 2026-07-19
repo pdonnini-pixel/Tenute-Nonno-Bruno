@@ -2468,6 +2468,9 @@ const ordineConsegneInAttesa = o => (o.righe || []).some(rigaConsegneInAttesa);
 
 const generaScheduleRicorrente = (qtaTot, qtaPerStacco, frequenzaGiorni, primaData) => {
   if (!qtaTot || !qtaPerStacco || !frequenzaGiorni || !primaData) return [];
+  // Audit F#121: guardia difensiva — con valori ≤ 0 il loop produrrebbe
+  // 200 stacchi negativi o date a ritroso.
+  if (Number(qtaTot) <= 0 || Number(qtaPerStacco) <= 0 || Number(frequenzaGiorni) <= 0) return [];
   const stacchi = [];
   const data = new Date(primaData);
   if (isNaN(data.getTime())) return [];
@@ -10558,6 +10561,12 @@ function RigaConsegnaModal({ riga, onSave, onClose }) {
         setErrore("Compila tutti i campi: quantità per stacco, frequenza giorni, prima consegna.");
         return;
       }
+      // Audit F#121: i negativi generavano uno schedule corrotto da 200 stacchi
+      // (o date all'indietro nel tempo).
+      if (Number(qtaPerStacco) <= 0 || Number(frequenza) <= 0) {
+        setErrore("Quantità per stacco e frequenza giorni devono essere maggiori di zero.");
+        return;
+      }
       const ric = { qtaPerStacco: Number(qtaPerStacco), frequenzaGiorni: Number(frequenza), primaConsegna: primaData, autoGeneraSchedule: autoGenera };
       const sch = autoGenera ? generaScheduleRicorrente(riga.qta, qtaPerStacco, frequenza, primaData) : [];
       onSave({ modalitaConsegna: "ricorrente", qtaConsegnata: 0, ricorrenza: ric, schedule: sch, consegne: [], prossimaConsegnaPrevista: primaData });
@@ -10605,11 +10614,11 @@ function RigaConsegnaModal({ riga, onSave, onClose }) {
         /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 } },
           /*#__PURE__*/React.createElement("div", null,
             /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, fontWeight: 600, color: "#5f5e5a" } }, "Quantità per stacco *"),
-            /*#__PURE__*/React.createElement("input", { type: "number", value: qtaPerStacco, onChange: e => setQtaPerStacco(e.target.value), style: { width: "100%", padding: 8, border: "1px solid #ccc", borderRadius: 6, marginTop: 4, boxSizing: "border-box" } })
+            /*#__PURE__*/React.createElement("input", { type: "number", min: 1, value: qtaPerStacco, onChange: e => setQtaPerStacco(e.target.value), style: { width: "100%", padding: 8, border: "1px solid #ccc", borderRadius: 6, marginTop: 4, boxSizing: "border-box" } })
           ),
           /*#__PURE__*/React.createElement("div", null,
             /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, fontWeight: 600, color: "#5f5e5a" } }, "Frequenza (giorni) *"),
-            /*#__PURE__*/React.createElement("input", { type: "number", value: frequenza, onChange: e => setFrequenza(e.target.value), style: { width: "100%", padding: 8, border: "1px solid #ccc", borderRadius: 6, marginTop: 4, boxSizing: "border-box" } })
+            /*#__PURE__*/React.createElement("input", { type: "number", min: 1, value: frequenza, onChange: e => setFrequenza(e.target.value), style: { width: "100%", padding: 8, border: "1px solid #ccc", borderRadius: 6, marginTop: 4, boxSizing: "border-box" } })
           )
         ),
         /*#__PURE__*/React.createElement("div", { style: { marginBottom: 12 } },
