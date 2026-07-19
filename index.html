@@ -3214,8 +3214,11 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
   return { ...prevDati, movimenti: newMov, magazzino: newMag };
 };
 
+// Audit F#100: aliquota IVA in un unico punto (prima 0.04 era ricalcolata
+// inline in 6+ posti, con rischio di dimenticanze se cambiasse).
+const IVA_ALIQUOTA = 0.04;
 const totOrdine = ord => (ord.righe || []).reduce((s, r) => s + (r.qta || 0) * (r.prezzoUnitario || 0), 0);
-const totIVA = t => Math.round(t * 0.04 * 100) / 100;
+const totIVA = t => Math.round(t * IVA_ALIQUOTA * 100) / 100;
 // tkt_1781179078824: reverse charge (clienti UE, art. 7-ter DPR 633/72) — IVA esclusa dall'ordine.
 // ivaOrdine(ord) o ivaOrdine(ord, imponibileGiaCalcolato): 0 se l'ordine ha reverseCharge.
 const ivaOrdine = (ord, imp) => (ord && ord.reverseCharge) ? 0 : totIVA(imp !== undefined ? imp : totOrdine(ord));
@@ -9724,7 +9727,7 @@ function generateModuloPDF(ordine, clienti, isCV) {
   doc.line(20, y, 190, y);
   y += 7;
   var totale = ordine.totale || 0;
-  var iva = ordine.reverseCharge ? 0 : totale * 0.04;
+  var iva = ordine.reverseCharge ? 0 : totale * IVA_ALIQUOTA;
   doc.setFontSize(10);
   doc.setTextColor(40, 40, 40);
   doc.text('Imponibile: €' + totale.toFixed(2), 130, y);
@@ -10167,7 +10170,7 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
     doc.setFillColor(...TNB_C_DARK);
     doc.rect(M + colSxW + 6, boxY, colDxW, 38, "F");
     doc.setFont(FONT_BODY, "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
-    const iva = ordine.reverseCharge ? 0 : imponibile * 0.04;
+    const iva = ordine.reverseCharge ? 0 : imponibile * IVA_ALIQUOTA;
     const spedC = costoSpedizione(ordine);
     const totaleFin = imponibile + iva + spedC;
     const spedLabel = spedC === 0 ? "GRATUITA" : fmtPdf(spedC);
@@ -10211,7 +10214,7 @@ async function _drawPdfPagina1Modulo(doc, ordine, cliente, opts, tipoDoc, layout
     doc.setFillColor(...TNB_C_DARK);
     doc.rect(colDx, boxY, colDxW, 36, "F");
     doc.setFont(FONT_BODY, "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
-    const iva = ordine.reverseCharge ? 0 : imponibile * 0.04;
+    const iva = ordine.reverseCharge ? 0 : imponibile * IVA_ALIQUOTA;
     const spedC = costoSpedizione(ordine);
     const totaleFin = imponibile + iva + spedC;
     const spedLabel = spedC === 0 ? "GRATUITA" : fmtPdf(spedC);
@@ -12178,7 +12181,7 @@ function Ordini({
         padding: 12,
         fontSize: 12
       }
-    }, /*#__PURE__*/React.createElement("strong", null, "Riepilogo:"), " ", fmt(cvForm.importoLiquidazione), " + IVA 4% ", fmt(cvForm.importoLiquidazione * 0.04), " = ", /*#__PURE__*/React.createElement("strong", null, fmt(cvForm.importoLiquidazione * 1.04))), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("strong", null, "Riepilogo:"), " ", fmt(cvForm.importoLiquidazione), " + IVA 4% ", fmt(cvForm.importoLiquidazione * IVA_ALIQUOTA), " = ", /*#__PURE__*/React.createElement("strong", null, fmt(cvForm.importoLiquidazione * (1 + IVA_ALIQUOTA)))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         justifyContent: "flex-end",
@@ -24794,7 +24797,7 @@ function PreventiviTab(p2){
   var updR=function(i,k,v){setFPv(function(f){return{...f,righe:f.righe.map(function(r,j){return j!==i?r:{...r,[k]:v};})};});};
   var tot=fPv.righe.reduce(function(s,r){return s+(r.qta||0)*(r.prezzoUnitario||0);},0);
   var sped=fPv.spedizione==="fuori"?15:fPv.spedizione==="fuori_regione"?30:0;
-  var cliPv=(dati.clienti||[]).find(function(c){return c.id===fPv.clienteId;});var rcPv=!!(cliPv&&cliPv.reverseCharge);var iva=rcPv?0:Math.round(tot*0.04*100)/100;
+  var cliPv=(dati.clienti||[]).find(function(c){return c.id===fPv.clienteId;});var rcPv=!!(cliPv&&cliPv.reverseCharge);var iva=rcPv?0:Math.round(tot*IVA_ALIQUOTA*100)/100;
   var getD=function(fmt2,ann){var s=dati.magazzino.find(function(m){return m.formato===fmt2&&m.annata===ann;});return s?(s.giacenza&&s.giacenza.disponibile||0):null;};
   var genPDF=function(){
     var cl=dati.clienti.find(function(c){return c.id===fPv.clienteId;})||{};
@@ -25154,8 +25157,8 @@ PRODOTTI E PREZZI
 ${(c.righe || []).map(r => `• ${r.qta} × ${r.formato} Raccolta ${r.annata} — ${fmt(r.prezzoUnitario)} cad. — Totale: ${fmt(r.qta * r.prezzoUnitario)}`).join("\n") || "Vedi allegato ordine"}
 
 Totale imponibile:  ${fmt((c.righe || []).reduce((s, r) => s + r.qta * r.prezzoUnitario, 0))}
-IVA 4%:             ${fmt((c.righe || []).reduce((s, r) => s + r.qta * r.prezzoUnitario, 0) * 0.04)}
-TOTALE IVA INCL.:   ${fmt((c.righe || []).reduce((s, r) => s + r.qta * r.prezzoUnitario, 0) * 1.04)}
+IVA 4%:             ${fmt((c.righe || []).reduce((s, r) => s + r.qta * r.prezzoUnitario, 0) * IVA_ALIQUOTA)}
+TOTALE IVA INCL.:   ${fmt((c.righe || []).reduce((s, r) => s + r.qta * r.prezzoUnitario, 0) * (1 + IVA_ALIQUOTA))}
 
 ══════════════════════════════════════════════════════
 CONDIZIONI GENERALI
@@ -25328,7 +25331,7 @@ Data: ___/___/______                      Data: ___/___/______
       }),
       renderRow: (c, i) => {
         const tot = (c.righe || []).reduce((s, r) => s + r.qta * r.prezzoUnitario, 0);
-        const importo = (typeof c.importo === "number" && c.importo > 0) ? c.importo : (tot > 0 ? tot * 1.04 : null);
+        const importo = (typeof c.importo === "number" && c.importo > 0) ? c.importo : (tot > 0 ? tot * (1 + IVA_ALIQUOTA) : null);
         const gg = giorniScadenza(c);
         const isFornitore = c.tipoControparte === "fornitore";
         return /*#__PURE__*/React.createElement(TR, {
@@ -25788,7 +25791,7 @@ Data: ___/___/______                      Data: ___/___/______
         color: C.olivaScuro,
         marginTop: 4
       }
-    }, "Totale IVA incl.: ", fmt((form.righe || []).reduce((s, r) => s + r.qta * r.prezzoUnitario, 0) * 1.04))), /*#__PURE__*/React.createElement(Inp, {
+    }, "Totale IVA incl.: ", fmt((form.righe || []).reduce((s, r) => s + r.qta * r.prezzoUnitario, 0) * (1 + IVA_ALIQUOTA)))), /*#__PURE__*/React.createElement(Inp, {
       label: "Note / clausole aggiuntive",
       v: form.note || "",
       on: v => setForm(f => ({
