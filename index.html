@@ -7146,7 +7146,7 @@ function Pipeline({
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [detailId, setDetailId] = useState(null);
-  useEffect(() => { setTimeout(() => { if(window._tnbNav && window._tnbNav.targetId){ setDetailId(window._tnbNav.targetId); window._tnbNav=null; } }, 80); }, []);
+  useEffect(() => { const _navT = setTimeout(() => { if(window._tnbNav && window._tnbNav.targetId){ setDetailId(window._tnbNav.targetId); window._tnbNav=null; } }, 80); return () => clearTimeout(_navT); }, []); // audit F#109: cleanup del timer
   const [callNota, setCallNota] = useState("");
   // UX1 — Vista Lista state
   const [vistaLista, setVistaLista] = useState(true);
@@ -10892,7 +10892,7 @@ function Ordini({
       })();
     setSolleciaModalData({ cons, cliente, oggetto, corpo });
   };
-  useEffect(() => { setTimeout(() => {
+  useEffect(() => { const _navT = setTimeout(() => {
     if (window._tnbNav) {
       if (window._tnbNav.targetId) { setNavTarget(window._tnbNav.targetId); setViewMode("lista"); }
       if (window._tnbNav.tab) { setTab(window._tnbNav.tab); }
@@ -10918,7 +10918,7 @@ function Ordini({
       setModal("new");
       window._tnbPendingOrdineCliente = null;
     }
-  }, 80); }, []);
+  }, 80); return () => clearTimeout(_navT); }, []); // audit F#109: cleanup del timer
   const [cvForm, setCvForm] = useState({});
   const [pdfInvioModal, setPdfInvioModal] = useState(null);
   const oggi = todayStr();
@@ -13513,7 +13513,7 @@ function Magazzino({
   };
   const [expandedId, setExpandedId] = useState(null);
   const [filterSottoSoglia, setFilterSottoSoglia] = useState(false);
-  useEffect(() => { setTimeout(() => { if(window._tnbNav){ if(window._tnbNav.soloSottoSoglia){ setFilterSottoSoglia(true); } window._tnbNav=null; } }, 80); }, []);
+  useEffect(() => { const _navT = setTimeout(() => { if(window._tnbNav){ if(window._tnbNav.soloSottoSoglia){ setFilterSottoSoglia(true); } window._tnbNav=null; } }, 80); return () => clearTimeout(_navT); }, []); // audit F#109: cleanup del timer
   // Audit E#4: prelievo guidato — quando si sceglie uno scarico, proponi di
   // default il lotto più vecchio con residuo (FIFO). L'utente può cambiarlo.
   useEffect(() => {
@@ -15016,7 +15016,7 @@ function Produzione({
   };
   // v51-forn1: gestisce navigazione cross-modulo da Fornitori (apri lotto/bottiglia specifico)
   useEffect(() => {
-    setTimeout(() => {
+    const _navT = setTimeout(() => {
       if (window._tnbNav && window._tnbNav.targetLottoId) {
         const lot = (dati.lotti || []).find(l => l.id === window._tnbNav.targetLottoId);
         if (lot) { setProdTab("lotti"); setForm(lot); setModal("new"); }
@@ -15030,6 +15030,7 @@ function Produzione({
         window._tnbNav = null;
       }
     }, 80);
+    return () => clearTimeout(_navT); // audit F#109: cleanup del timer
   }, []);
   // CRUD bottiglie
   const saveBottiglia = () => {
