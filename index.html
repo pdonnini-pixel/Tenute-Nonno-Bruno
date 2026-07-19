@@ -5094,7 +5094,12 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
   const venditeRicavo = vendite.reduce((s, o) => s + totOrdine(o), 0);
   const venditeRicavoIncassato = vendite.filter(o => o.statoPagamento === "pagato").reduce((s, o) => s + totOrdine(o), 0);
   const cv = ordiniCampagna.filter(o => o.modalita === "conto_vendita");
-  const cvLiquidato = cv.filter(o => o.statoPagamento === "pagato").reduce((s, o) => s + totOrdine(o), 0);
+  // Audit F#26: (1) un CV "pagato" vale la sua liquidazione reale, non l'intero
+  // totOrdine (che ignorava le rese); (2) le liquidazioni PARZIALI dei CV non
+  // ancora chiusi entravano solo in cvInCorso e sparivano dai ricaviTotali —
+  // ora sono contate come "CV liquidato parziale" incluso nei ricavi.
+  const cvLiquidato = cv.filter(o => o.statoPagamento === "pagato").reduce((s, o) => s + (o.importoLiquidazione != null ? Number(o.importoLiquidazione) : totOrdine(o)), 0);
+  const cvLiquidatoParziale = cv.filter(o => o.statoPagamento !== "pagato").reduce((s, o) => s + Math.min(Number(o.importoLiquidazione) || 0, totOrdine(o)), 0);
   const cvInCorso = cv.filter(o => o.statoPagamento !== "pagato").reduce((s, o) => s + (totOrdine(o) - (o.importoLiquidazione || 0)), 0);
   // Costo variabile coerente con ricavi competenza:
   // - vendite: SEMPRE (anche se non incassate, il costo è già stato sostenuto)
@@ -5121,7 +5126,7 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
     const mesiAttivi = mesiFrazionari(inizioOverlap, fineOverlap);
     return s + (cs.importoMensile || 0) * Math.max(0, mesiAttivi);
   }, 0);
-  const ricaviTotali = venditeRicavo + cvLiquidato;
+  const ricaviTotali = venditeRicavo + cvLiquidato + cvLiquidatoParziale; // audit F#26
   const margineLordo = ricaviTotali - costoVariabile - costoExtra;
   const margineNetto = margineLordo - costoStruttura;
   const margineLordoPct = ricaviTotali ? (margineLordo / ricaviTotali) * 100 : 0;
@@ -5129,7 +5134,7 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
   return {
     anno, label: campagnaLabel(anno), range,
     venditeRicavo, venditeRicavoIncassato,
-    cvLiquidato, cvInCorso,
+    cvLiquidato, cvLiquidatoParziale, cvInCorso,
     ricaviTotali,
     costoVariabile, costoVariabileCVInCorso, costoExtra, costoStruttura,
     costoTotale: costoVariabile + costoExtra + costoStruttura,
