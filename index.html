@@ -12532,9 +12532,24 @@ function Ordini({
                 break;
               }
             }
+            // Audit F#73: gli annullati non consumano la numerazione, quindi il
+            // numero può essere stato riassegnato a un altro ordine attivo. In
+            // quel caso la riapertura assegna un numero nuovo (due ordini attivi
+            // con lo stesso numero = ambiguità su PDF, email e causali bonifico).
+            const numAttuale = String(form.numero || "").trim();
+            const dupAttivo = numAttuale && (dati.ordini || []).some(o => o.id !== form.id && o.stato !== "annullato" && String(o.numero || "").trim() === numAttuale);
+            const annoNum = (numAttuale.match(/\/(\d{4})$/) || [])[1] || String(new Date().getFullYear());
+            const nuovoNumero = dupAttivo ? nextNum(annoNum) : null;
             window.tnbConfirm(
-              "Riaprire l'ordine riportandolo allo stato “" + (STATO_ORDINE[target]?.l || target) + "”?",
-              () => updateStatoForm(target, { trigger: "btn_riapri" }),
+              "Riaprire l'ordine riportandolo allo stato “" + (STATO_ORDINE[target]?.l || target) + "”?" +
+                (nuovoNumero ? " ⚠️ Il numero " + numAttuale + " è stato nel frattempo assegnato a un altro ordine: alla riapertura questo ordine prenderà il numero " + nuovoNumero + "." : ""),
+              () => {
+                updateStatoForm(target, { trigger: "btn_riapri" });
+                if (nuovoNumero) {
+                  setForm(f => ({ ...f, numero: nuovoNumero }));
+                  if (window.tnbToast) window.tnbToast("Numero ordine riassegnato: " + nuovoNumero);
+                }
+              },
               { title: "Conferma riapertura", okLabel: "Riapri", danger: false }
             );
           }
