@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F6 dell'audit in produzione su decisione esplicita di Patrizio — 96 finding su 145 chiusi)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F6 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F7 completato sul branch `claude/prompt-sessione-fix-1k2ast`, IN ATTESA di pubblicazione — 102 finding su 145 chiusi)
 
 ---
 
@@ -57,6 +57,15 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F6 dell'audit in produz
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F7 (blocco omogeneo "accessibilità e usabilità", completa l'area): finding #89, #91, #92, #93, #94, #131 corretti sul branch `claude/prompt-sessione-fix-1k2ast` — NON ancora in produzione** (in attesa dell'ok esplicito di Patrizio). Tutti fix a comportamento invariato che migliorano leggibilità e uso su tablet:
+  - **#89** — le conferme di eliminazione (ordini, clienti, SKU, fornitori, reset ordini) ora danno il focus a "Annulla", non al pulsante rosso, e Invio non conferma più: premere Invio per abitudine non cancella più nulla di irreversibile. I confirm non-distruttivi mantengono Invio come scorciatoia.
+  - **#91** — il componente Btn ora passa `title` e `aria-label` al pulsante (prima li scartava): tornano i tooltip già scritti nel codice e i pulsanti-icona (matita, cestino, X di chiusura) hanno un nome. Aggiunto title "Chiudi" alla X dei modali.
+  - **#92** — Inp e Sel associano etichetta e campo (htmlFor/id via React.useId): toccare la label porta il focus nel campo e gli screen reader annunciano il nome — su tutti i form.
+  - **#93** — i badge di stato scelgono il colore del testo dalla luminanza del fondo: testo scuro su oro/giallo/grigio (prima bianco, contrasto ~2,3:1, sotto la soglia WCAG), bianco sui fondi scuri (invariati). "INTERESSATO"/"DA CONTATTARE" ora leggibili.
+  - **#94** — il form "Nuovo movimento" manuale non offre più i tipi automatici/di sistema (scarico_ordine, annullo_ordine, carico_produzione, rettifica): niente più movimenti "automatici" con ordineId nullo che inquinavano storico e Archivio DDT. Per la rettifica resta il form dedicato col motivo obbligatorio.
+  - **#131** — pulsanti (componente Btn) con altezza minima cliccabile (sm 34 · md 40 · lg 46) verso la soglia touch; nella vista Ordini "Per cliente" le azioni di riga hanno più spazio (gap 10) e il cestino è separato; lo span-emoji cliccabile del cestino (materiali marketing) è diventato un vero pulsante con area touch.
+  - **Compromesso (residuo #131):** alcuni controlli inline minori restano sotto la soglia touch ideale (i tab-filtro degli Ordini ~26px, il pulsante "Esci", le chip-documento 📎🚚📄 nelle righe espanse "Per cliente"): non sono le azioni distruttive che il finding segnala come rischio di mis-tap (quelle passano da Btn, ora ≥34px, o sono state distanziate). Uno sweep completo di ogni pulsante inline è rinviato come pulizia a basso rischio.
+  - **Verifica:** 18 controlli in Chromium con backend simulato: unit su `_bdgTextColor` (chiari→scuro, scuri→bianco) e badge realmente renderizzati coerenti con l'helper; pulsanti con title+aria-label e X "Chiudi"; label `for` che punta a un campo e click-to-focus funzionante; select movimento manuale senza i 4 tipi di sistema e con i manuali; Btn con min-height ≥34; conferma distruttiva con focus su Annulla e Invio inerte, conferma non-danger con Invio attivo. Zero errori JS.
 - **2026-07-19 — Pacchetto F6 (blocco omogeneo "flussi ordine e documenti"): finding #35, #36, #37, #38, #43, #73, #74, #79, #90, #118, #119 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Il blocco tocca Storage/allegati (cosa viene cancellato all'annullo) e introduce due nuovi BLOCCHI operativi (documento alla consegna, tetto rese CV) — vedi note operative sotto:
   - **#35** — il check di disponibilità scatta su OGNI ingresso in uno stato con scarico: anche il salto diretto da_firmare → consegnato dal dropdown ora verifica lo stock (lo scarico era già generato dal replay, ma senza controllo).
   - **#37/#43** — la regola "niente consegna senza documento" ora esiste davvero: consegnato/fatturato richiedono un DDT allegato OPPURE le note manuali di trasporto (wizard e dropdown; pregressi esenti). Rimossa updateStato (codice morto che conteneva l'unico controllo). Guida in-app e docs/Guida-DDT-Magazzino (.md/.html) allineate (PDF derivato ancora da rigenerare, punto 3c). **Nota operativa: chi segnava consegne senza DDT ora deve compilare almeno le note manuali.**
