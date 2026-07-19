@@ -2583,74 +2583,9 @@ const giacenzaFisica = m => {
   return (g.disponibile || 0) + (g.in_confezionamento || 0) + (g.da_etichettare || 0);
 };
 
-// Movimento magazzino: aggiorna stati giacenza
-const applicaMovimento = (mag, magId, tipo, qta) => {
-  return mag.map(m => {
-    if (m.id !== magId) return m;
-    const g = {
-      ...(m.giacenza || {})
-    };
-    const q = Number(qta) || 0;
-    switch (tipo) {
-      case "carico":
-        g.disponibile = (g.disponibile || 0) + q;
-        break;
-      case "frantoio_ok":
-        g.disponibile = (g.disponibile || 0) + q;
-        g.in_frantoio = Math.max(0, (g.in_frantoio || 0) - q);
-        break;
-      case "etichettatura_ok":
-        g.disponibile = (g.disponibile || 0) + q;
-        g.da_etichettare = Math.max(0, (g.da_etichettare || 0) - q);
-        break;
-      case "confezionamento_ok":
-        g.disponibile = (g.disponibile || 0) + q;
-        g.in_confezionamento = Math.max(0, (g.in_confezionamento || 0) - q);
-        break;
-      case "riserva":
-        g.riservato = (g.riservato || 0) + q;
-        g.disponibile = Math.max(0, (g.disponibile || 0) - q);
-        break;
-      case "riserva_annullata":
-        g.disponibile = (g.disponibile || 0) + q;
-        g.riservato = Math.max(0, (g.riservato || 0) - q);
-        break;
-      case "affido_spedizioniere":
-        g.in_spedizione = (g.in_spedizione || 0) + q;
-        g.riservato = Math.max(0, (g.riservato || 0) - q);
-        g.in_confezionamento = Math.max(0, (g.in_confezionamento || 0) - q);
-        break;
-      case "consegnato":
-        g.in_spedizione = Math.max(0, (g.in_spedizione || 0) - q);
-        break;
-      case "scarico_manuale":
-        g.disponibile = Math.max(0, (g.disponibile || 0) - q);
-        break;
-      case "scarico_ordine":
-        g.disponibile = Math.max(0, (g.disponibile || 0) - q);
-        break;
-      case "resa_cv":
-        g.disponibile = (g.disponibile || 0) + q;
-        break;
-      case "carico_produzione":
-        g.disponibile = (g.disponibile || 0) + q;
-        break;
-      case "rettifica":
-        // qta positiva = aumento disponibile, negativa = diminuzione
-        g.disponibile = Math.max(0, (g.disponibile || 0) + q);
-        break;
-      case "annullo_ordine":
-        g.disponibile = (g.disponibile || 0) + q;
-        break;
-      default:
-        break;
-    }
-    return {
-      ...m,
-      giacenza: g
-    };
-  });
-};
+// Audit F#112: rimossa applicaMovimento — codice morto dal v49 (tutti i flussi
+// usano ricalcolaGiacenza) con logica ormai DIVERGENTE dal replay event-sourced:
+// riusarla avrebbe prodotto giacenze diverse dall'unica fonte di verità.
 
 // ─── EVENT-SOURCED GIACENZA (v49) ─────────────────────────────────────────────
 // Ricostruisce lo stato giacenza completo dalla cronologia dei movimenti.
