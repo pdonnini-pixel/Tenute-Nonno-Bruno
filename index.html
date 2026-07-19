@@ -26359,7 +26359,9 @@ const GUIDA_CONTENUTI = {
 function GuidaPage() {
   const [sezione, setSezione] = useState("intro");
   const C2 = { grigio100:"#f5f5f5", grigio200:"#e0e0e0", grigio400:"#bdbdbd", grigio600:"#757575", grigio800:"#424242", bianco:"#fff", verde:"#2e7d32", blu:"#1565c0" };
-  const sezioni = ["intro","ruoli","oggi","dashboard","pipeline","clienti","ordini","magazzino","produzione","fornitori","costi","listino","marketing","mailing","alerts","report","report_ai","log","impostazioni","utenti","doppioni","ticket"];
+  // Audit F#135: "contratti" (Accordi Fornitori) incluso nell'indice — il modulo
+  // è raggiungibile dalla scheda fornitore anche se nascosto dalla sidebar.
+  const sezioni = ["intro","ruoli","oggi","dashboard","pipeline","clienti","ordini","magazzino","produzione","fornitori","contratti","costi","listino","marketing","mailing","alerts","report","report_ai","log","impostazioni","utenti","doppioni","ticket"];
   const renderCorpo = (testo) => {
     return testo.split("\n\n").map(function(para, pi) {
       if (para.startsWith("•") || para.includes("\n•")) {
