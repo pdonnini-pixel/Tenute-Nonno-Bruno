@@ -40,7 +40,34 @@ export default async (req) => {
       status: 400, headers: { ...CORS, "Content-Type": "application/json" }
     });
   }
+  // Audit F#110: un body 'null' (JSON valido) supera il catch ma faceva
+  // crashare la destrutturazione → 500 senza CORS. Validiamo esplicitamente e
+  // limitiamo domanda + dimensione del payload.
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return new Response(JSON.stringify({ error: "Body non valido: atteso un oggetto JSON" }), {
+      status: 400, headers: { ...CORS, "Content-Type": "application/json" }
+    });
+  }
   const { domanda, datiProspect, datiClienti, datiOrdini, contesto } = body;
+  if (typeof domanda !== "string" || !domanda.trim()) {
+    return new Response(JSON.stringify({ error: "Campo 'domanda' obbligatorio" }), {
+      status: 400, headers: { ...CORS, "Content-Type": "application/json" }
+    });
+  }
+  if (domanda.length > 2000) {
+    return new Response(JSON.stringify({ error: "Campo 'domanda' troppo lungo (max 2000 caratteri)" }), {
+      status: 413, headers: { ...CORS, "Content-Type": "application/json" }
+    });
+  }
+  // Limite dimensione dei dati serializzati (evita prompt/payload smisurati).
+  const _dimDati = JSON.stringify(datiProspect || null).length +
+    JSON.stringify(datiClienti || null).length +
+    JSON.stringify(datiOrdini || null).length;
+  if (_dimDati > 500000) {
+    return new Response(JSON.stringify({ error: "Dati selezionati troppo grandi (max ~500 KB): restringi la selezione" }), {
+      status: 413, headers: { ...CORS, "Content-Type": "application/json" }
+    });
+  }
 
   const systemPrompt = `Sei l'assistente AI di Tenute Nonno Bruno, un'azienda agricola toscana che produce olio EVO e vino.
 Analizzi i dati dei prospect e clienti e generi report professionali per la proprietà.
