@@ -2808,6 +2808,27 @@ const skuPerRiga = (magazzino, r) => {
   return null;
 };
 
+// Audit E#29: annate derivate dai dati reali (magazzino + lotti), non hardcoded.
+// Più recente per prima; fallback storico se in anagrafica non c'è nulla.
+const annateDisponibili = (dati) => {
+  const set = new Set();
+  ((dati && dati.magazzino) || []).forEach(m => { if (m.annata) set.add(String(m.annata)); });
+  ((dati && dati.lotti) || []).forEach(l => { if (l.annata) set.add(String(l.annata)); });
+  const arr = Array.from(set).sort().reverse();
+  return arr.length ? arr : ["2025", "2024"];
+};
+// Default per una nuova riga ordine: annata più VECCHIA con disponibile > 0 per
+// il formato scelto (rotazione: prima si vende la vecchia annata); fallback
+// all'annata più recente in anagrafica.
+const annataDefaultPerFormato = (dati, formato) => {
+  const fmtN = _normSkuField(formato);
+  const conStock = ((dati && dati.magazzino) || [])
+    .filter(m => _normSkuField(m.formato) === fmtN && ((m.giacenza && m.giacenza.disponibile) || 0) > 0)
+    .map(m => String(m.annata || "")).filter(Boolean).sort();
+  if (conStock.length) return conStock[0];
+  return annateDisponibili(dati)[0];
+};
+
 // Verifica che il disponibile copra le richieste di tutte le righe di un ordine.
 // Aggrega le righe per SKU (più righe sullo stesso SKU sommano le qta).
 // Ritorna { ok: bool, errors: [{ tipo: "stock"|"sku_mancante", nome, disp, richiesti }] }.
@@ -7868,7 +7889,7 @@ function Pipeline({
               clienteId: existingClienteId,
               clienteForm: null,
               ordineForm: {
-                righe: [{ formato: "500 ml", annata: "2025", qta: 1, prezzoUnitario: 19.50, confezione: false, omaggio: 0 }],
+                righe: [{ formato: "500 ml", annata: annataDefaultPerFormato(dati, "500 ml"), qta: 1, prezzoUnitario: 19.50, confezione: false, omaggio: 0 }],
                 condizioniPagamento: (cl && cl.condizioniPagamentoDefault) || "",
                 modalitaPagamento: "bonifico",
                 note: ""
@@ -8394,7 +8415,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
               clienteId: newClienteId,
               _didConvert: true,
               ordineForm: {
-                righe: [{ formato: "500 ml", annata: "2025", qta: 1, prezzoUnitario: 19.50, confezione: false, omaggio: 0 }],
+                righe: [{ formato: "500 ml", annata: annataDefaultPerFormato(dati, "500 ml"), qta: 1, prezzoUnitario: 19.50, confezione: false, omaggio: 0 }],
                 condizioniPagamento: cf.condizioniPagamentoDefault || "",
                 modalitaPagamento: "bonifico",
                 note: ""
@@ -8408,7 +8429,8 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
     ordineWizard.step === 3 && ordineWizard.ordineForm && function() {
       var of = ordineWizard.ordineForm;
       var WIZ_FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml", "Aceto 20 ml"];
-      var WIZ_ANNATE = ["2025", "2024"];
+      // Audit E#29: annate dai dati reali, come nel form ordini
+      var WIZ_ANNATE = annateDisponibili(dati);
       var clienteLabel = function() {
         var cl = (dati.clienti || []).find(function(c) { return c.id === ordineWizard.clienteId; });
         return cl ? (cl.insegna || cl.ragioneSociale || "—") : "—";
@@ -8442,7 +8464,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
       var addRigaWiz = function() {
         setOrdineWizard(function(w) {
           return Object.assign({}, w, { ordineForm: Object.assign({}, w.ordineForm, {
-            righe: [...(w.ordineForm.righe || []), { formato: "500 ml", annata: "2025", qta: 1, colliManuale: "", prezzoUnitario: 19.50, confezione: false, omaggio: 0 }]
+            righe: [...(w.ordineForm.righe || []), { formato: "500 ml", annata: annataDefaultPerFormato(dati, "500 ml"), qta: 1, colliManuale: "", prezzoUnitario: 19.50, confezione: false, omaggio: 0 }]
           }) });
         });
       };
@@ -11383,7 +11405,8 @@ function Ordini({
     ...f,
     righe: [...(f.righe || []), {
       formato: "500 ml",
-      annata: "2025",
+      // Audit E#29: default = annata più vecchia con stock per il formato (rotazione)
+      annata: annataDefaultPerFormato(dati, "500 ml"),
       qta: 1,
       colliManuale: "",
       prezzoUnitario: 19.50,
@@ -11444,7 +11467,8 @@ function Ordini({
   const renderGruppoCliente = (gruppo) => { const cl = gruppo.cliente; const cid = cl?.id || '__nessuno__'; const isOpen = !!expandedClients[cid]; const ordini = gruppo.ordini; const totale = ordini.reduce((s,o) => s + totFinale(o), 0); const nDaPagare = ordini.filter(o => o.statoPagamento==='da_pagare'||o.statoPagamento==='parziale').length; const nDaFirmare = ordini.filter(o => o.stato==='da_firmare').length; const nCvScadute = ordini.filter(o => o.modalita==='conto_vendita'&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato').length; return React.createElement(React.Fragment, {key:cid}, React.createElement('tr',{onClick:()=>toggleClient(cid),style:{cursor:'pointer',background:isOpen?'#f0f4e8':((nDaPagare+nDaFirmare+nCvScadute>0)?'#fffbf0':'#fafaf8'),borderBottom:'1.5px solid #e8e6e0'}}, React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,color:'#2e3a1c'}},React.createElement('span',{style:{marginRight:8,fontSize:12}},isOpen?'▼':'▶'),cl?.insegna||cl?.ragioneSociale||'—'), React.createElement('td',{style:{padding:'10px 12px'}},React.createElement('span',{style:{background:'#e8f5e9',color:'#2e7d32',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11}},ordini.length+(ordini.length===1?' ordine':' ordini'))), React.createElement('td',{style:{padding:'10px 12px'}},nDaPagare>0&&React.createElement('span',{style:{background:'#fff3e0',color:'#e65100',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'💶 '+nDaPagare+' da pagare'),nDaFirmare>0&&React.createElement('span',{style:{background:'#e3f2fd',color:'#1565c0',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'✍️ '+nDaFirmare+' da firmare'),nCvScadute>0&&React.createElement('span',{style:{background:'#ffebee',color:'#c62828',borderRadius:10,padding:'2px 8px',fontWeight:600,fontSize:11,marginRight:4}},'⚠️ '+nCvScadute+' CV scadute')), React.createElement('td',{style:{padding:'10px 12px',fontWeight:700,fontSize:13,textAlign:'right'}},fmt(totale)), React.createElement('td',{style:{padding:'10px 12px',fontSize:11,color:'#888'},colSpan:4},ordini.map(o=>o.numero).join(' · '))), isOpen&&ordini.map(o=>{const isCV=o.modalita==='conto_vendita';const tot=totFinale(o);const scaduta=isCV&&o.scadenzaCV&&o.scadenzaCV<oggi&&o.statoPagamento!=='pagato';const prodotti=(o.righe||[]).map(formatRigaConIcona).join(' · ')||'—';return React.createElement('tr',{key:o.id,style:{background:'#fafbf6',borderBottom:'1px solid #ececec'}},React.createElement('td',{colSpan:5,style:{padding:'10px 18px 10px 36px'}},React.createElement('div',{style:{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}},React.createElement('div',{style:{minWidth:140}},React.createElement('div',{style:{fontWeight:700,fontSize:12,color:'#2e3a1c'}},o.numero||'—'),React.createElement('div',{style:{fontSize:10,color:'#888',marginBottom:3}},fmtD(o.data)),React.createElement(TimelineStato,{stato:o.stato,statoLog:o.statoLog,compact:true})),React.createElement('span',{style:{fontSize:10,background:isCV?'#7d4799':'#7a8c52',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},isCV?'C.Vendita':'Vendita'),React.createElement('div',{style:{flex:1,minWidth:140,fontSize:11,color:'#5f5e5a'}},prodotti),React.createElement('div',{style:{fontWeight:700,fontSize:13,color:'#2e3a1c',minWidth:90,textAlign:'right'}},o.campione?React.createElement('span',{style:{background:'#f3e8ff',color:'#7c3aed',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:600,whiteSpace:'nowrap'}},'🎁 Campione'):fmt(tot)),!o.campione&&React.createElement('span',{style:{fontSize:10,background:o.statoPagamento==='pagato'?'#2e7d32':o.statoPagamento==='parziale'?'#f57c00':'#c62828',color:'#fff',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},o.statoPagamento==='pagato'?'PAGATO':o.statoPagamento==='parziale'?'PARZIALE':'DA PAGARE'),scaduta&&React.createElement('span',{style:{fontSize:10,background:'#fff3e0',color:'#e65100',borderRadius:4,padding:'2px 7px',fontWeight:600,whiteSpace:'nowrap'}},'⚠ Scaduta'),React.createElement('div',{style:{display:'flex',gap:6,alignItems:'center'}},o.firma&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openFirma(o.firma);},title:'Vedi firma allegata',style:{background:'#e8f5e9',border:'1px solid #2e7d32',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#2e7d32',fontWeight:600}},'📎'),(Array.isArray(o.ddt)?o.ddt:(o.ddt?[o.ddt]:[])).length>0&&React.createElement('button',{onClick:e=>{e.stopPropagation();const arr=Array.isArray(o.ddt)?o.ddt:[o.ddt];window.tnbStorage.openDocumento(arr[0]);},title:(Array.isArray(o.ddt)?o.ddt:[o.ddt]).length+' DDT allegat'+((Array.isArray(o.ddt)?o.ddt:[o.ddt]).length===1?'o':'i'),style:{background:'#e3f2fd',border:'1px solid #1565c0',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#1565c0',fontWeight:600}},'🚚'+((Array.isArray(o.ddt)?o.ddt:[o.ddt]).length>1?(Array.isArray(o.ddt)?o.ddt:[o.ddt]).length:'')),(o.fatture||[]).length>0&&React.createElement('button',{onClick:e=>{e.stopPropagation();window.tnbStorage.openDocumento(o.fatture[0]);},title:(o.fatture||[]).length+' fattur'+((o.fatture||[]).length===1?'a':'e')+' allegat'+((o.fatture||[]).length===1?'a':'e'),style:{background:'#f3e5f5',border:'1px solid #6a1b9a',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#6a1b9a',fontWeight:600}},'📄'+((o.fatture||[]).length>1?(o.fatture||[]).length:'')),React.createElement('button',{onClick:e=>{e.stopPropagation();handleGeneraPDF(o);},title:'Stampa PDF',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 10px',fontSize:11,cursor:'pointer',color:'#5f5e5a',fontWeight:600}},'PDF'),React.createElement('button',{onClick:e=>{e.stopPropagation();setForm({...o});setModal('edit');},title:'Modifica ordine',style:{background:'#fff',border:'1px solid #d4d2cc',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer'}},'✎'),isSuperAdmin&&React.createElement('button',{onClick:e=>{e.stopPropagation();deleteOrdine(o);},title:'Elimina ordine (Super Admin)',style:{background:'#fff',border:'1px solid #c0392b',borderRadius:5,padding:'4px 8px',fontSize:11,cursor:'pointer',color:'#c0392b',fontWeight:600}},'🗑'),React.createElement('select',{value:o.statoPagamento||'da_pagare',onChange:e=>{e.stopPropagation();setDati(d=>({...d,ordini:d.ordini.map(x=>x.id===o.id?{...x,statoPagamento:e.target.value}:x)}));},onClick:e=>e.stopPropagation(),style:{fontSize:11,padding:'4px 6px',border:'1px solid #d4d2cc',borderRadius:5,background:'#fff'}},React.createElement('option',{value:'da_pagare'},'Da pagare'),React.createElement('option',{value:'parziale'},'Parziale'),React.createElement('option',{value:'pagato'},'Pagato'))))));})); };
 
   const FORMATI = ["100 ml", "250 ml", "500 ml", "3 L (latta)", "5 L (latta)", "Olio 20 ml", "Aceto 20 ml"];
-  const ANNATE = ["2025", "2024"];
+  // Audit E#29: annate dai dati reali (nuove annate selezionabili senza toccare il codice)
+  const ANNATE = annateDisponibili(dati);
   const renderOrdine = o => {
     const isCV = o.modalita === "conto_vendita";
     const tot = totFinale(o);
