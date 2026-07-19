@@ -9736,8 +9736,10 @@ const _TNB_ANAG_FALLBACK = {
   web: "www." + AZIENDA_DEFAULTS.sito
 };
 const getTnbAnag = () => ({ ..._TNB_ANAG_FALLBACK, ...(window._tnbAzienda_anag || {}) });
+// Audit F#140: unica via per l'IBAN nei documenti — rispetta l'override utente
+// di dati.azienda (window._tnbAzienda) come il resto dell'anagrafica PDF.
+// (Rimosso l'alias statico TNB_IBAN, che congelava l'IBAN ad AZIENDA_DEFAULTS.)
 const getTnbIban = () => (window._tnbAzienda && window._tnbAzienda.iban) || AZIENDA_DEFAULTS.iban;
-const TNB_IBAN = AZIENDA_DEFAULTS.iban; // legacy alias (mantenuto se referenziato altrove) — deriva dall'unica fonte
 const TNB_C_DARK = [48, 52, 50];
 const TNB_C_OLIVE = [191, 198, 113];
 const TNB_C_TEXT = [45, 45, 45];
@@ -9840,7 +9842,7 @@ function _pdfPagamentoLinee(ordine, isCV) {
     out.push("(art. 6 c.1 lett.d DPR 633/72)");
   } else {
     const MOD = {
-      bonifico: "Bonifico — IBAN: " + TNB_IBAN,
+      bonifico: "Bonifico — IBAN: " + getTnbIban(), // audit F#140
       contanti: "Pagamento in contanti alla consegna",
       rimessa_diretta: "Rimessa diretta",
       altro: "Modalità di pagamento concordata"
