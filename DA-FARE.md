@@ -9,16 +9,16 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetto A audit — persistenza dati: findin
 
 ## 🔴 Aperti — richiedono decisione o test (NON fare "al volo")
 
-### 0. Test end-to-end multi-dispositivo del Pacchetto A prima del merge su `main`
-- **Cosa:** i 4 fix critici di persistenza (branch `claude/prompt-sessione-fix-1k2ast`, finding #1–#4 del report `docs/AUDIT-Gestionale-2026-07-19.md`) sono verificati in locale con backend simulato, ma toccano il cuore della sincronizzazione multi-utente: serve una prova reale su Supabase prima di andare in produzione.
-- **Piano di test (2 dispositivi, es. PC + telefono, utenti diversi, su un deploy preview Netlify del branch — NON su produzione):**
+### 0. Verifica end-to-end multi-dispositivo del Pacchetto A — ora POST-deploy
+- **Cosa:** i 4 fix critici di persistenza (finding #1–#4 del report `docs/AUDIT-Gestionale-2026-07-19.md`) sono verificati in locale con backend simulato. Il **2026-07-19 Patrizio ha deciso la messa in produzione senza le prove multi-dispositivo preliminari**: il piano qui sotto resta valido e va eseguito **appena possibile sull'app in produzione** per confermare il comportamento sull'istanza Supabase reale (in particolare il PATCH condizionale, punto 5).
+- **Piano di verifica (2 dispositivi, es. PC + telefono, utenti diversi):**
   1. **Conflitto reale:** A e B aprono l'app; A salva una modifica (es. soglia alert 61); B, SENZA ricaricare, salva un'altra modifica → B deve vedere l'avviso "CONFLITTO DI SALVATAGGIO" e la pagina deve ricaricarsi con la modifica di A intatta; B ripete la sua modifica → entrambe presenti.
   2. **Offline e retry:** A attiva la modalità aereo, fa una modifica → banner rosso "Modifiche NON salvate sul server"; riattiva la rete → entro ~1 min toast "Modifiche sincronizzate" e banner sparito; B ricarica e vede la modifica.
   3. **Cache stantia:** A apre l'app offline (dopo averla già usata su quel dispositivo) → banner arancione "copia locale"; nel frattempo B (online) salva una modifica; A torna online e salva → deve comparire "SALVATAGGIO BLOCCATO" con ricarica, e la modifica di B deve sopravvivere.
   4. **Primo avvio bloccato:** su un dispositivo/browser mai usato (nessuna cache), aprire l'app senza rete → deve comparire la schermata "Impossibile caricare i dati del gestionale" SENZA form di login.
   5. **Compatibilità PostgREST:** verificare nel Network del browser che il PATCH condizionale (`updated_at=eq.…`) aggiorni davvero la riga (200 con 1 riga) — il confronto sul timestamp usa il formato restituito dal server, da confermare sull'istanza reale.
   6. **Regressione flussi a rischio:** login/logout, generazione di un PDF ordine, upload/rimozione firma (bucket `tnb-firme`), import/export backup da Impostazioni.
-- **Stato:** in attesa di esecuzione; il merge su `main` va deciso esplicitamente dopo questi test.
+- **Stato:** deploy in produzione eseguito il 2026-07-19 su decisione esplicita di Patrizio; verifiche post-deploy da eseguire. Se qualcosa non torna: rollback = ripristinare su `main` il commit `8c9c70a` (stato pre-Pacchetto A) o usare il rollback deploy di Netlify.
 
 ### 1. Autenticazione: password in chiaro + auth lato client — CRITICO
 - **Dove:** `index.html` — array `USERS` (~riga 19519) e verifica in `handleLogin` (~riga 19589).
@@ -48,7 +48,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetto A audit — persistenza dati: findin
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto A audit (persistenza dati): finding critici #1–#4 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti** sul branch `claude/prompt-sessione-fix-1k2ast` (⚠️ area a rischio persistenza; NON ancora in produzione — vedi punto aperto #0 per il piano di test pre-merge):
+- **2026-07-19 — Pacchetto A audit (persistenza dati): finding critici #1–#4 del report `docs/AUDIT-Gestionale-2026-07-19.md` corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio; ⚠️ area a rischio persistenza — verifiche post-deploy nel punto aperto #0):
   - **#1** — errore al caricamento iniziale: niente più `setDati(D0)` silenzioso; schermata bloccante in italiano (casi "rete" e "dati illeggibili" distinti dal legittimo primo avvio `r === null`), nessun salvataggio possibile finché i dati reali non sono caricati.
   - **#2** — controllo di concorrenza: le scritture su `app_kv` sono condizionali (PATCH filtrato su `key` + `updated_at` letto in precedenza, riuso della colonna esistente, nessuna migrazione schema) e serializzate per chiave; in caso di conflitto avviso in italiano e ricarica automatica, la modifica altrui sopravvive.
   - **#3** — fallimento di scrittura non più silenzioso: banner rosso persistente "Modifiche NON salvate sul server", retry automatico con backoff (5s→60s) e toast alla risincronizzazione; import backup e reset go-live ora si ANNULLANO con messaggio chiaro se la scrittura remota fallisce (prima mostravano successo anche offline); rimosso il banner morto `window._supaOk`.
