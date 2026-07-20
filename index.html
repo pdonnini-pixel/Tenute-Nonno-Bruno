@@ -4837,9 +4837,10 @@ const D0 = {
 //   fonte: "bom"      = packaging + olio reale ponderato sui lotti
 //   fonte: "parziale" = bottiglia BOM esiste, ma nessun imbottigliamento → solo packaging
 //   fonte: "nd"       = nessuna bottiglia BOM per questo formato (totale = null)
-// La firma accetta cfg come 3° parametro per retro-compatibilità ma lo ignora.
+// Audit F#64: il 3° parametro è ora `annata` (= campagna) per calcolare il costo
+// olio della SOLA campagna richiesta. Omesso → media su tutti i lotti (come prima).
 const _normFmt52 = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
-const costoFormatoReale = (formato, dati, _cfg) => {
+const costoFormatoReale = (formato, dati, annata) => {
   if (!dati) return { packaging: null, olioPerLitro: null, totale: null, fonte: "nd" };
   const target = _normFmt52(formato);
   let bot = (dati.bottiglie || []).find(b => _normFmt52(b.formato) === target);
@@ -4850,17 +4851,31 @@ const costoFormatoReale = (formato, dati, _cfg) => {
   }
   if (!bot) return { packaging: null, olioPerLitro: null, totale: null, fonte: "nd" };
   const pack = costoPackaging(bot);
-  // Media ponderata olio/L sui lotti che hanno imbottigliato questa bottiglia
-  let totL = 0, totC = 0;
-  (dati.lotti || []).forEach(l => {
-    (l.imbottigliamenti || []).forEach(imb => {
-      if (imb.bottigliaId === bot.id) {
-        const litri = _parseNum(imb.litriUsati);
-        totL += litri;
-        totC += costoOlioPerLitroLotto(l) * litri;
-      }
+  // Audit F#64: media ponderata olio/L sui lotti che hanno imbottigliato questa
+  // bottiglia. Se `annata` è indicata, si considerano SOLO i lotti di quell'annata
+  // (= campagna: olio franto in autunno N → campagna N, decisione di dominio). Prima
+  // la media era su TUTTI i lotti di tutte le campagne → ogni campagna usava lo
+  // stesso costo unitario e ogni nuovo lotto ricalcolava retroattivamente i P&L
+  // passati. Fallback: se l'annata richiesta non ha lotti tracciati, si usa la media
+  // globale (per non perdere il costo olio su annate senza produzione a log).
+  const _accumula = (filtra) => {
+    let tL = 0, tC = 0;
+    (dati.lotti || []).forEach(l => {
+      if (filtra && String(l.annata) !== String(annata)) return;
+      (l.imbottigliamenti || []).forEach(imb => {
+        if (imb.bottigliaId === bot.id) {
+          const litri = _parseNum(imb.litriUsati);
+          tL += litri;
+          tC += costoOlioPerLitroLotto(l) * litri;
+        }
+      });
     });
-  });
+    return { tL, tC };
+  };
+  const _perAnnata = (annata != null && annata !== "");
+  let acc = _accumula(_perAnnata);
+  if (_perAnnata && acc.tL <= 0) acc = _accumula(false); // fallback media globale
+  let totL = acc.tL, totC = acc.tC;
   if (totL <= 0) {
     // Audit F#25: caso "parziale" (BOM senza imbottigliamenti) → il packaging è
     // comunque noto: usalo come totale parziale invece di null (che a valle
@@ -4873,14 +4888,15 @@ const costoFormatoReale = (formato, dati, _cfg) => {
   return { packaging: pack, olioPerLitro, totale, fonte: "bom" };
 };
 // Helper numero diretto per call site che vogliono solo il numero (null/parziale → 0).
-const costoFormatoTot = (formato, dati) => {
-  const r = costoFormatoReale(formato, dati);
+// Audit F#64: `annata` opzionale = campagna, per il costo olio della sola campagna.
+const costoFormatoTot = (formato, dati, annata) => {
+  const r = costoFormatoReale(formato, dati, annata);
   return (r && typeof r.totale === "number") ? r.totale : 0;
 };
 // Compatibility: ritorna solo la "fonte" del costo per indicatori UI.
 // "bom" | "parziale" | "nd" (rimossa la categoria legacy "stima").
-const costoFormatoFonte = (formato, dati) => {
-  const r = costoFormatoReale(formato, dati);
+const costoFormatoFonte = (formato, dati, annata) => {
+  const r = costoFormatoReale(formato, dati, annata);
   return r ? r.fonte : "nd";
 };
 // v52-C5: export Excel .xlsx via SheetJS (CDN). File nativo, nessun warning Excel,
@@ -5166,12 +5182,12 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
   const costoVariabile = ordiniCampagna.reduce((s, o) => {
     const includeCosto = o.modalita === "vendita" || (o.modalita === "conto_vendita" && o.statoPagamento === "pagato");
     if (!includeCosto) return s;
-    return s + (o.righe || []).reduce((ss, r) => ss + ((Number(r.qta)||0) + (Number(r.omaggio)||0)) * costoFormatoTot(r.formato, dati), 0);
+    return s + (o.righe || []).reduce((ss, r) => ss + ((Number(r.qta)||0) + (Number(r.omaggio)||0)) * costoFormatoTot(r.formato, dati, r.annata), 0);
   }, 0);
   // Costo variabile dei CV in corso (informativo, non sottratto da margine)
   const costoVariabileCVInCorso = ordiniCampagna.reduce((s, o) => {
     if (o.modalita !== "conto_vendita" || o.statoPagamento === "pagato") return s;
-    return s + (o.righe || []).reduce((ss, r) => ss + ((Number(r.qta)||0) + (Number(r.omaggio)||0)) * costoFormatoTot(r.formato, dati), 0);
+    return s + (o.righe || []).reduce((ss, r) => ss + ((Number(r.qta)||0) + (Number(r.omaggio)||0)) * costoFormatoTot(r.formato, dati, r.annata), 0);
   }, 0);
   // Audit F#65: una voce extra SENZA data non va più sommata al costo di OGNI
   // campagna (doppio/triplo conteggio nei confronti YoY). Le voci senza data
@@ -5197,7 +5213,7 @@ const calcolaPLCampagna = (anno, dati, cfg) => {
     const includeCosto = o.modalita === "vendita" || (o.modalita === "conto_vendita" && o.statoPagamento === "pagato");
     if (!includeCosto) return;
     (o.righe || []).forEach(r => {
-      if (costoFormatoFonte(r.formato, dati) === "nd") pezziCostoIncompleto += (Number(r.qta) || 0) + (Number(r.omaggio) || 0);
+      if (costoFormatoFonte(r.formato, dati, r.annata) === "nd") pezziCostoIncompleto += (Number(r.qta) || 0) + (Number(r.omaggio) || 0);
     });
   });
   const ricaviTotali = venditeRicavo + cvLiquidato + cvLiquidatoParziale; // audit F#26
@@ -5241,7 +5257,7 @@ const calcolaMargineCliente = (anno, dati, cfg) => {
       ricavo: 0, costo: 0, margine: 0, marginePct: 0, nOrdini: 0
     };
     const ricavoOrd = totOrdine(o);
-    const costoOrd = (o.righe || []).reduce((s, r) => s + ((Number(r.qta)||0) + (Number(r.omaggio)||0)) * costoFormatoTot(r.formato, dati), 0);
+    const costoOrd = (o.righe || []).reduce((s, r) => s + ((Number(r.qta)||0) + (Number(r.omaggio)||0)) * costoFormatoTot(r.formato, dati, r.annata), 0);
     map[cl.id].ricavo += ricavoOrd;
     map[cl.id].costo += costoOrd;
     map[cl.id].nOrdini += 1;
@@ -6775,7 +6791,7 @@ function Dashboard({
     const mF = Object.entries(_voci).map(([fmt]) => {
       const sku = (dati.magazzino || []).find(m => m.formato === fmt && m.annata === _annataCorrente);
       const prezzoL = sku?.prezzoListino || 0;
-      const costo = costoFormatoTot(fmt, dati);
+      const costo = costoFormatoTot(fmt, dati, _annataCorrente); // Audit F#64: costo olio dell'annata corrente
       return {
         formato: fmt.replace(" (latta)", ""),
         prezzo: prezzoL,
@@ -17726,7 +17742,7 @@ function CostiMargini({
     return dati.ordini.filter(o => o.stato !== "annullato" && (o.modalita === "vendita" || (includiCV && o.modalita === "conto_vendita"))).map(o => {
       const cl = dati.clienti.find(c => c.id === o.clienteId);
       const righe = (o.righe || []).map(r => {
-        const costo = costoFormatoTot(r.formato, dati);
+        const costo = costoFormatoTot(r.formato, dati, r.annata);
         const ricavo = r.qta * (r.prezzoUnitario || 0);
         // Audit F#27: anche i pezzi omaggio escono dal magazzino → sostengono il costo.
         const costoTot = ((Number(r.qta) || 0) + (Number(r.omaggio) || 0)) * costo;
@@ -17757,9 +17773,10 @@ function CostiMargini({
     }).sort((a, b) => b.totMargine - a.totMargine);
   }, [dati, cfg, includiCV]);
   const formattiAnalisi = useMemo(() => {
-    // v52-costi1: fix annata hardcoded. Usa l'annata della campagna selezionata (campagnaSel+1
-    // perché la campagna inizia a novembre dell'anno N e copre l'olio prodotto in autunno N).
-    const annataTarget = String(Number(campagnaSel) + 1);
+    // Audit F#64: l'annata della campagna N è N (olio franto in autunno N → campagna
+    // N, decisione di dominio). Prima si usava campagnaSel+1 (mappatura errata, in
+    // contraddizione col commento stesso): sballava sia lo SKU/prezzo sia il costo.
+    const annataTarget = String(campagnaSel);
     // Audit F#67/F#115: lista unica — prima mancava "Aceto 20 ml" (mai
     // analizzato) e "Olio 20 ml" non trovava SKU/listino (chiave "20 ml").
     const FORMATI = FORMATI_VENDITA;
@@ -17769,7 +17786,7 @@ function CostiMargini({
       const sku = dati.magazzino.find(m => m.formato === fmt && m.annata === annataTarget)
               || dati.magazzino.find(m => m.formato === fmt);
       const prezzoL = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
-      const costoRes = costoFormatoReale(fmt, dati);
+      const costoRes = costoFormatoReale(fmt, dati, annataTarget); // Audit F#64: costo olio della campagna selezionata
       const costo = (costoRes && typeof costoRes.totale === "number") ? costoRes.totale : 0;
       const fonte = costoRes ? costoRes.fonte : "nd";
       const margine = prezzoL - costo;
@@ -17787,13 +17804,13 @@ function CostiMargini({
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SH, {
     title: "\uD83D\uDCB0 Costi & Margini"
   }), /*#__PURE__*/React.createElement(PageSummary, { items: (() => {
-    const annataTarget = String(Number(campagnaSel) + 1);
+    const annataTarget = String(campagnaSel);
     const formati = Object.entries(dati.costiConfig.voci || {}).map(([fmt2]) => {
       const listEntry = getListino(fmt2, dati);
       const sku = dati.magazzino.find(m => m.formato === fmt2 && m.annata === annataTarget)
               || dati.magazzino.find(m => m.formato === fmt2);
       const prezzoL = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
-      const costo = costoFormatoTot(fmt2, dati);
+      const costo = costoFormatoTot(fmt2, dati, annataTarget); // Audit F#64
       return { fmt: fmt2, prezzo: prezzoL, costo, margine: prezzoL - costo };
     }).filter(x => x.prezzo > 0);
     const inPerdita = formati.filter(f => f.margine < 0).length;
@@ -17934,14 +17951,14 @@ function CostiMargini({
     })(),
     (() => {
       const pl = calcolaPLCampagna(campagnaSel, dati, cfg);
-      const annataTargetAl = String(Number(campagnaSel) + 1);
+      const annataTargetAl = String(campagnaSel);
       const formatiPerdita = Object.entries(cfg.voci || {}).map(([f]) => {
         const listEntry = getListino(f, dati);
         const sku = dati.magazzino.find(m => m.formato === f && m.annata === annataTargetAl)
                 || dati.magazzino.find(m => m.formato === f);
         const prezzo = (listEntry && listEntry.pubblico) || (sku && sku.prezzoListino) || 0;
         // v52: solo formati con costo BOM completo entrano nel calcolo alert
-        const cRes = costoFormatoReale(f, dati);
+        const cRes = costoFormatoReale(f, dati, annataTargetAl); // Audit F#64
         if (!cRes || cRes.fonte !== "bom") return { fmt: f, margine: 0, skip: true };
         return { fmt: f, margine: prezzo - cRes.totale };
       }).filter(x => !x.skip && x.margine < 0);
@@ -17966,9 +17983,9 @@ function CostiMargini({
     (() => {
       const pl = calcolaPLCampagna(campagnaSel, dati, cfg);
       // Margine medio per bottiglia: media ponderata sui formati con BOM completo
-      const annataTargetBE = String(Number(campagnaSel) + 1);
+      const annataTargetBE = String(campagnaSel);
       const bottiglieBE = (dati.bottiglie || []).map(b => {
-        const cRes = costoFormatoReale(b.formato, dati);
+        const cRes = costoFormatoReale(b.formato, dati, annataTargetBE); // Audit F#64
         if (!cRes || cRes.fonte !== "bom") return null;
         const listEntry = getListino(b.formato, dati);
         const sku = (dati.magazzino || []).find(m => m.id === b.skuId);
