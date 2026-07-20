@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F14 in produzione; sul branch `claude/prompt-sessione-fix-1k2ast` in attesa di Pubblica: **F15** #126/#127 peso PDF e **F16** #64 costo olio per campagna. **Audit di fatto esaurito**: restano solo il **gruppo auth server** (#1 + remediation RLS #2 — piano dettagliato in `docs/PIANO-AUTH-E-RLS.md`) e due performance invasive/architetturali (#40 serializzazione intero stato, #87 bundle monolitico — spiegate nell'artefatto per Patrizio).)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F16 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit di fatto esaurito**: restano solo il **gruppo auth server** (#1 + remediation RLS #2 — piano dettagliato in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio) e due performance invasive/architetturali (#40 serializzazione intero stato, #87 bundle monolitico — spiegate nell'artefatto per Patrizio; #40 da abbinare all'auth, #87 lavoro a sé).)
 
 ---
 
@@ -73,12 +73,12 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F14 in produzione; sul 
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F16 (audit #64 — costo olio per campagna): PRONTO SUL BRANCH `claude/prompt-sessione-fix-1k2ast`, NON ancora in produzione.** ⚠️ **Cambia i NUMERI di Costi & Margini** (P&L campagna, margini cliente/canale, tab Per Ordine/Per Formato, break-even) — è una CORREZIONE (fine della media unica cross-campagna), non un calo reale.
+- **2026-07-19 — Pacchetto F16 (audit #64 — costo olio per campagna): IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ **Cambia i NUMERI di Costi & Margini** (P&L campagna, margini cliente/canale, tab Per Ordine/Per Formato, break-even) — è una CORREZIONE (fine della media unica cross-campagna), non un calo reale.
   - **Decisione di dominio di Patrizio:** l'olio franto in autunno N appartiene alla campagna N (anno di raccolta) → `lotto.annata == campagna`.
   - Prima `costoFormatoReale` calcolava il costo olio/L come media ponderata su TUTTI i lotti di TUTTE le campagne: ogni campagna usava lo stesso costo unitario e ogni nuovo lotto ricalcolava retroattivamente i P&L passati. Ora `costoFormatoReale/Tot/Fonte` accettano un 3° parametro `annata`: la media è sui SOLI lotti di quell'annata; se l'annata non ha lotti tracciati si ripiega sulla media globale (nessun costo olio perso).
   - I punti di calcolo passano l'annata giusta: le righe ordine passano `r.annata` (P&L campagna, margine cliente/canale, Per Ordine); dashboard e tab Costi&Margini passano l'annata della campagna selezionata. Corretta la mappatura `campagnaSel+1` → `campagnaSel` nel tab (allinea anche SKU/prezzo mostrato).
   - **Verifica:** unit su `costoFormatoReale` (lotto 2024=10 €/L, 2025=30 €/L → campagna 2024→10, 2025→30, senza annata→media 20, annata senza lotti→fallback 20) + smoke Costi & Margini renderizzata coi dati reali, zero errori JS.
-- **2026-07-19 — Pacchetto F15 (peso dei PDF): finding #126, #127 corretti — PRONTI SUL BRANCH `claude/prompt-sessione-fix-1k2ast`, NON ancora in produzione (in attesa dell'ok di Patrizio).** ⚠️ Area PDF, ma solo performance a output invariato:
+- **2026-07-19 — Pacchetto F15 (peso dei PDF): finding #126, #127 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Area PDF, ma solo performance a output invariato:
   - **#126** — `loadPdfFonts` convertiva i ~1 MB di font TTF in base64 byte-per-byte (~1 milione di concatenazioni sul main thread) → la UI si congelava per centinaia di ms mentre si attende il PDF. Ora la conversione è a blocchi da 8192 byte: stesso base64, senza freeze. (Resta come miglioria futura il self-hosting dei font, oggi da CDN — vedi punto 3f.)
   - **#127** — il logo veniva incorporato a piena risoluzione (~99-210 KB) in OGNI PDF, stampato a soli 11-20 mm. Ora è ridimensionato una sola volta su canvas a ~240 px e cachato: **~99 KB → ~44 KB (-55%)** per documento (più leggero da generare, scaricare, allegare via email e archiviare su Storage). Fallback sicuro all'originale se il canvas non è disponibile.
   - **Verifica:** test Node (base64 a blocchi == byte-per-byte su 7 dimensioni fino a 1 MB+) + Chromium: logo PNG a 240 px con -55% di peso, pipeline completa font+logo+jsPDF che genera un PDF valido, zero errori JS.
