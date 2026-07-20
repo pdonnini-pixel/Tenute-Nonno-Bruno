@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F12 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F13 pronto sul branch `claude/prompt-sessione-fix-1k2ast`, in attesa dell'ok di Patrizio — 141 finding su 145 chiusi; #51, #13, #64, #80 rinviati)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F13 dell'audit in produzione su decisione esplicita di Patrizio — 141 finding su 145 chiusi; #51, #13, #64, #80 rinviati)
 
 ---
 
@@ -72,7 +72,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F12 dell'audit in produ
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F13 (blocco omogeneo "integrità magazzino"): finding #16, #18, #21, #28 corretti — PRONTI SUL BRANCH `claude/prompt-sessione-fix-1k2ast`, NON ancora in produzione (in attesa dell'ok di Patrizio).** ⚠️ Area magazzino/produzione (integrità dati). #16/#18/#21 sono correzioni a comportamento invariato nei casi corretti; #28 è una funzione nuova, additiva:
+- **2026-07-19 — Pacchetto F13 (blocco omogeneo "integrità magazzino"): finding #16, #18, #21, #28 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Area magazzino/produzione (integrità dati). #16/#18/#21 sono correzioni a comportamento invariato nei casi corretti; #28 è una funzione nuova, additiva:
   - **#16** — `affido_spedizioniere`: in `ricalcolaGiacenza` la quantità veniva sottratta sia da `riservato` sia da `in_confezionamento`. Con entrambi valorizzati il totale calava del doppio e dei pezzi fisici sparivano dalla giacenza (es. riservato 10 + confez 8, affido 10 → totale 18 sceso a 10). Ora si scala una sola volta: prima da `riservato`, poi il solo residuo da `in_confezionamento`.
   - **#18** — `saveSku`: la giacenza digitata a mano veniva salvata così com'era, ma il replay event-sourced è non-lineare per via dei clamp e poteva non raggiungerla, facendola "sparire da sola" al primo movimento successivo. Ora si salva SEMPRE la giacenza ricalcolata dal log (apertura+movimenti); se diverge dal valore digitato, un toast invita a usare una rettifica.
   - **#21** — `deleteLotto`: la guardia leggeva `form.caricoMagazzino`, campo rimosso a livello di lotto dalla migrazione v50 → non scattava mai e si poteva eliminare un lotto già caricato lasciando movimenti `carico_produzione` orfani. Ora blocca se un imbottigliamento è caricato o se esistono movimenti col `lottoId`; il pulsante "Elimina lotto" e la nota "Non eliminabile" usano lo stesso controllo.
