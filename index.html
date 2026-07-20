@@ -697,6 +697,25 @@ const _kvMeta = {};
 const _kvQueue = {};
 const _kvCacheBoot = {};
 
+// Audit F#54: wrapper fetch con timeout via AbortController. Senza timeout una
+// richiesta appesa (rete mobile instabile, proxy, captive portal) non si risolve
+// MAI: la GET di boot su 'tnb-pro-v2' non chiamava setDati e l'app restava
+// bloccata a tempo indefinito sul caricamento, pur avendo una copia locale valida;
+// gli upload lasciavano lo spinner attivo per sempre. Sul timeout la promise viene
+// RIGETTATA e scattano i fallback localStorage / gli avvisi già previsti per gli
+// errori di rete. Nessun cambiamento quando la rete risponde entro il tempo.
+function _fetchWithTimeout(url, opts, ms) {
+  ms = ms || 15000;
+  if (typeof AbortController === 'undefined') return fetch(url, opts);
+  const ctrl = new AbortController();
+  const timer = setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, ms);
+  const o = Object.assign({}, opts || {}, { signal: ctrl.signal });
+  return fetch(url, o).then(
+    function (r) { clearTimeout(timer); return r; },
+    function (e) { clearTimeout(timer); throw e; }
+  );
+}
+
 async function _kvSetRemote(key, value) {
   const nowIso = new Date().toISOString();
   try {
@@ -704,9 +723,9 @@ async function _kvSetRemote(key, value) {
     if (_kvCacheBoot[key] && _kvMeta[key] === undefined) {
       // Audit #4: stiamo per scrivere partendo da una copia locale mai
       // verificata col server. Rileggi il server PRIMA di scrivere.
-      const respV = await fetch(
+      const respV = await _fetchWithTimeout(
         SUPA_URL + '/rest/v1/app_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at',
-        { headers: _supaHeaders }
+        { headers: _supaHeaders }, 15000
       );
       if (!respV.ok) throw new Error('HTTP ' + respV.status);
       const rowsV = await respV.json();
@@ -727,11 +746,11 @@ async function _kvSetRemote(key, value) {
       // Riga assente sul server (primo salvataggio della chiave) o stato mai
       // letto: upsert come in passato, con return=representation per
       // registrare l'updated_at effettivamente scritto.
-      const resp = await fetch(SUPA_URL + '/rest/v1/app_kv', {
+      const resp = await _fetchWithTimeout(SUPA_URL + '/rest/v1/app_kv', {
         method: 'POST',
         headers: Object.assign({}, _supaHeaders, { 'Prefer': 'resolution=merge-duplicates,return=representation' }),
         body: JSON.stringify({ key: key, value: value, updated_at: nowIso })
-      });
+      }, 15000);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const rows = await resp.json().catch(() => []);
       newMeta = (rows && rows[0] && rows[0].updated_at) || nowIso;
@@ -739,13 +758,13 @@ async function _kvSetRemote(key, value) {
       // Scrittura CONDIZIONALE: aggiorna la riga solo se updated_at sul server
       // è ancora quello che abbiamo letto noi. Se un altro utente ha salvato
       // nel frattempo il filtro non trova righe → conflitto, niente overwrite.
-      const resp = await fetch(
+      const resp = await _fetchWithTimeout(
         SUPA_URL + '/rest/v1/app_kv?key=eq.' + encodeURIComponent(key) + '&updated_at=eq.' + encodeURIComponent(_kvMeta[key]),
         {
           method: 'PATCH',
           headers: Object.assign({}, _supaHeaders, { 'Prefer': 'return=representation' }),
           body: JSON.stringify({ value: value, updated_at: nowIso })
-        }
+        }, 15000
       );
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const rows = await resp.json().catch(() => null);
@@ -771,9 +790,9 @@ async function _kvSetRemote(key, value) {
 window.storage = {
   get: async function(key) {
     try {
-      const resp = await fetch(
+      const resp = await _fetchWithTimeout(
         SUPA_URL + '/rest/v1/app_kv?key=eq.' + encodeURIComponent(key) + '&select=key,value,updated_at',
-        { headers: _supaHeaders }
+        { headers: _supaHeaders }, 15000
       );
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const data = await resp.json();
@@ -820,9 +839,9 @@ window.storage = {
     // non deve più riportare deleted:true. Prima non si controllava resp.ok, così
     // un chiamante avrebbe creduto la chiave rimossa mentre restava sul server.
     try {
-      const resp = await fetch(
+      const resp = await _fetchWithTimeout(
         SUPA_URL + '/rest/v1/app_kv?key=eq.' + encodeURIComponent(key),
-        { method: 'DELETE', headers: _supaHeaders }
+        { method: 'DELETE', headers: _supaHeaders }, 15000
       );
       try { localStorage.removeItem('tnb__' + key); } catch (_) {}
       if (!resp.ok) {
@@ -844,7 +863,7 @@ window.storage = {
       const url = prefix
         ? SUPA_URL + '/rest/v1/app_kv?key=like.' + encodeURIComponent(prefix + '%') + '&select=key'
         : SUPA_URL + '/rest/v1/app_kv?select=key';
-      const resp = await fetch(url, { headers: _supaHeaders });
+      const resp = await _fetchWithTimeout(url, { headers: _supaHeaders }, 15000);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const data = await resp.json();
       return { keys: data.map(r => r.key), prefix: prefix };
@@ -865,7 +884,7 @@ window.tnbStorage = {
     const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
     const ts = Date.now();
     const path = ordineId + '/' + ts + (ext ? '.' + ext : '');
-    const resp = await fetch(
+    const resp = await _fetchWithTimeout(
       SUPA_URL + '/storage/v1/object/' + SUPA_BUCKET + '/' + path,
       {
         method: 'POST',
@@ -876,7 +895,7 @@ window.tnbStorage = {
           'x-upsert': 'true'
         },
         body: file
-      }
+      }, 45000
     );
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
@@ -891,7 +910,7 @@ window.tnbStorage = {
   },
   getSignedUrl: async function(path, ttlSeconds) {
     ttlSeconds = ttlSeconds || 3600;
-    const resp = await fetch(
+    const resp = await _fetchWithTimeout(
       SUPA_URL + '/storage/v1/object/sign/' + SUPA_BUCKET + '/' + path,
       {
         method: 'POST',
@@ -901,7 +920,7 @@ window.tnbStorage = {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ expiresIn: ttlSeconds })
-      }
+      }, 45000
     );
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
@@ -912,9 +931,9 @@ window.tnbStorage = {
   },
   deleteFirma: async function(path) {
     try {
-      const resp = await fetch(
+      const resp = await _fetchWithTimeout(
         SUPA_URL + '/storage/v1/object/' + SUPA_BUCKET + '/' + path,
-        { method: 'DELETE', headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY } }
+        { method: 'DELETE', headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY } }, 45000
       );
       return resp.ok;
     } catch (_) { return false; }
@@ -928,7 +947,7 @@ window.tnbStorage = {
     const ts = Date.now();
     const safePrefix = (prefix || 'doc').replace(/[^a-z0-9_-]/gi, '');
     const path = safePrefix + '/' + ordineId + '/' + ts + (ext ? '.' + ext : '');
-    const resp = await fetch(
+    const resp = await _fetchWithTimeout(
       SUPA_URL + '/storage/v1/object/' + SUPA_BUCKET + '/' + path,
       {
         method: 'POST',
@@ -939,7 +958,7 @@ window.tnbStorage = {
           'x-upsert': 'true'
         },
         body: file
-      }
+      }, 45000
     );
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
