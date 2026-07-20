@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F13 dell'audit in produzione su decisione esplicita di Patrizio — 141 finding su 145 chiusi; #51, #13, #64, #80 rinviati)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F13 in produzione; Pacchetto F14 — #13, #51, #80 corretti — pronto sul branch `claude/prompt-sessione-fix-1k2ast`. 144 finding su 145 chiusi; resta **#64** (serve decisione di dominio annata↔campagna) e il **gruppo auth server** (#1 + remediation RLS #2, da pianificare insieme). La verifica RLS #2 è stata eseguita: policy troppo permissive — vedi punto 2.)
 
 ---
 
@@ -26,11 +26,14 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F13 dell'audit in produ
 - **Fix corretto:** spostare la verifica lato server (Supabase Auth, oppure una Netlify Function). **Cambia l'architettura del login → non toccare senza test end-to-end.**
 - **Stato:** deciso di NON toccare finché non pianificato insieme.
 
-### 2. RLS Supabase da verificare — SICUREZZA
-- **Dove:** `index.html:677` (`SUPA_KEY`, anon key JWT, scadenza 2090) + bucket `tnb-firme`.
-- **Problema:** la anon key è pubblica per natura; tutta la sicurezza dei dati (firme, ticket, ordini, PDF, marketing) dipende **solo** dalle policy RLS su Supabase.
-- **Da fare:** verificare che RLS sia attivo e restrittivo su ogni bucket/tabella. Serve accesso Supabase (connettore MCP da autorizzare in sessione interattiva).
-- **Stato:** in attesa di accesso/verifica.
+### 2. RLS Supabase — VERIFICATA il 2026-07-19: policy troppo permissive (CRITICO, va con #1)
+- **Dove:** progetto Supabase `njwtfmiviijszzxschll` (NonnoBruno) + bucket `tnb-firme`.
+- **Verifica eseguita** via advisor di sicurezza Supabase (MCP, sola lettura). Risultati:
+  - ⛔ **Tabella `public.app_kv`** ha una policy RLS `anon_all` per **TUTTE** le operazioni con `USING(true) WITH CHECK(true)`: il ruolo **anon legge e scrive qualunque riga** senza restrizione. Siccome la anon key è pubblica nel bundle, oggi **chiunque abbia la chiave può leggere/riscrivere l'intero stato dell'app** (`tnb-pro-v2`) e il registro attività (`tnb-log`). RLS è "attivo" ma le policy sono di fatto aperte.
+  - ⛔ **Bucket `tnb-firme` è PUBBLICO** con una policy SELECT ampia (`tnb_firme_anon_select`) che consente di **elencare tutti i file**: firme, DDT e fatture caricati sono potenzialmente listabili/scaricabili con la sola anon key.
+  - ⚠️ Funzione `trigger_set_updated_at` con `search_path` mutabile (hardening minore).
+- **Perché non è correggibile "al volo":** restringere le policy anon **romperebbe subito l'app**, che scrive/legge proprio con la anon key. La correzione corretta è **legare le policy a un'identità autenticata** → si fa INSIEME al punto #1 (auth lato server: Supabase Auth). Prima di allora l'esposizione resta.
+- **Stato:** verificata (problema confermato). Remediation da pianificare con #1. Link Supabase: database-linter lint 0024 (RLS permissiva) e 0025 (bucket pubblico listabile).
 
 ---
 
@@ -39,11 +42,8 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F13 dell'audit in produ
 ### 80. Token di sessione / scadenza login (audit #80 — rinviato, area login)
 - Il login non ha un token di sessione con scadenza: la "sessione ricordata" resta valida a tempo indefinito nel `localStorage` del dispositivo, senza invalidazione lato server. È lo stesso nodo del punto critico #1 (auth lato client): un vero token di sessione ha senso solo insieme allo spostamento della verifica credenziali su server (Supabase Auth o Netlify Function). **Area login a rischio → non toccare da solo, va pianificato con #1.** Fino ad allora resta il comportamento attuale.
 
-### 51. setDatiSave: effetti collaterali dentro l'updater di setDati (audit #51 — rinviato, tocca il salvataggio)
-- `setDatiSave` esegue `setSaving`, `JSON.stringify`, la POST `window.storage.set` e la mutazione di `window._tnbAzienda` DENTRO l'updater passato a `setDati`, che React può rieseguire (StrictMode / render interrotti in React 18) generando POST duplicate. Il fix corretto (calcolare `next` puro e spostare persistenza/`setSaving` in un `useEffect` su `dati`) **riscrive il cuore del percorso di salvataggio** — l'area più a rischio dell'app (persistenza, già oggetto del Pacchetto A). Troppo invasivo per uno smaltimento: va pianificato con una verifica end-to-end dedicata (conflitto, offline, retry). Fino ad allora il comportamento resta quello attuale (in pratica stabile: l'app non gira in StrictMode in produzione).
-
-### 13. Endpoint report-ai pubblico senza autenticazione né rate limit (audit #13 — rinviato, decisione di architettura)
-- La Netlify Function `report-ai` è raggiungibile da chiunque conosca l'URL (CORS `*`, nessun token, nessun rate limit): un abuso consuma la API key Anthropic a spese dell'azienda. Un fix seri (token condiviso client↔function, controllo origine, rate limit) è una **scelta di architettura sull'autenticazione** — lo stesso nodo di #1/#80 (l'app non ha oggi un'identità server con cui firmare le richieste). Da decidere insieme, non "al volo". Mitigazione già presente: la function valida il body e limita domanda (2000 char) e payload (~500 KB) — vedi #110.
+### 13/51/80 — chiusi col Pacchetto F14 (vedi "Fatto di recente")
+- **#51** e **#80** corretti; **#13** mitigato col controllo origine (il token server completo resta parte di #1). Restano solo #64 e il gruppo auth (#1 + remediation RLS #2).
 
 ### 3f. Performance residue — invasive/architetturali (audit #40, #87, #126, #127 — rinviate)
 - Restano aperti i finding performance che NON si risolvono con una memoizzazione a comportamento invariato (il Pacchetto F11 ha chiuso #83–#86, che erano ricalcoli di liste): **#40** (ogni modifica serializza e ritrasmette l'INTERO stato — tocca la persistenza, va con la tabella log dedicata del punto 4), **#87** (bundle monolitico da ~1,9 MB: servirebbe estrarre le librerie vendor in file separati con cache immutabile + header su `netlify.toml`), **#126/#127** (font PDF ~1 MB da CDN e logo PNG a piena risoluzione incorporati in ogni PDF — ⚠️ area PDF a rischio). Sono ottimizzazioni di build/architettura o toccano PDF/persistenza: da pianificare a parte, non "al volo".
@@ -72,6 +72,12 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F13 dell'audit in produ
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F14 (sicurezza/robustezza del nucleo): finding #51, #80, #13 corretti + verifica RLS (#2) — PRONTI SUL BRANCH `claude/prompt-sessione-fix-1k2ast`, NON ancora in produzione (in attesa dell'ok di Patrizio).** ⚠️ Tocca persistenza (#51), login (#80, additivo) ed edge function (#13):
+  - **#51** — l'updater di `setDatiSave` è ora PURO (solo `setDati(upd)`); la persistenza (POST, `setSaving`, stash `window._tnbAzienda`) è stata spostata in un `useEffect` keyed su `[dati]`, attivato SOLO dai salvataggi utente tramite un flag ref. Prima quei side-effect erano dentro l'updater, che React può rieseguire (StrictMode / render interrotti) → rischio di POST duplicate. **Verifica:** 0 scritture su `tnb-pro-v2` al boot (non ri-scrive ciò che ha appena letto), esattamente 1 scrittura per modifica (nessun doppione), banner offline invariato.
+  - **#80** — la sessione "ricordami" ora scade dopo 30 giorni (finestra scorrevole: si rinnova a ogni avvio con sessione valida); alla scadenza si torna al login. Salvata come `{id, exp}`, retrocompatibile col vecchio formato (id in chiaro, aggiornato al primo avvio). NOTA: è una scadenza lato client (auto-logout/igiene), non sostituisce l'auth server (#1). **Verifica:** sessione scaduta → login; valida → auto-restore con exp rinnovato; legacy → accettata e migrata.
+  - **#13** — ⚠️ edge function `report-ai.mjs`: aggiunto un controllo origine (Origin/Referer) contro l'URL del sito (`process.env.URL`, con i deploy preview): le richieste browser da altre origini ricevono 403. Retrocompatibile (inattivo se `URL` non è impostato). **Mitigazione, non auth completa** (l'Origin è falsificabile da client non-browser; un vero rate-limit richiede uno store esterno) → il token server resta parte di #1. **Verifica:** 5 casi Node (origine sito → passa, terzi → 403, referer, URL assente, senza origin).
+  - **#2 (RLS) — VERIFICATA** via advisor Supabase (sola lettura): la tabella `app_kv` ha policy `anon_all` permissiva (anon legge/scrive tutto) e il bucket `tnb-firme` è pubblico e listabile. **Problema confermato** — vedi punto aperto 2. La remediation va fatta con #1 (non correggibile senza rompere l'app basata su anon key).
+  - **Verifica complessiva:** 9 controlli in Chromium (backend simulato) per #51/#80 + 5 Node per #13. Zero errori JS.
 - **2026-07-19 — Pacchetto F13 (blocco omogeneo "integrità magazzino"): finding #16, #18, #21, #28 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Area magazzino/produzione (integrità dati). #16/#18/#21 sono correzioni a comportamento invariato nei casi corretti; #28 è una funzione nuova, additiva:
   - **#16** — `affido_spedizioniere`: in `ricalcolaGiacenza` la quantità veniva sottratta sia da `riservato` sia da `in_confezionamento`. Con entrambi valorizzati il totale calava del doppio e dei pezzi fisici sparivano dalla giacenza (es. riservato 10 + confez 8, affido 10 → totale 18 sceso a 10). Ora si scala una sola volta: prima da `riservato`, poi il solo residuo da `in_confezionamento`.
   - **#18** — `saveSku`: la giacenza digitata a mano veniva salvata così com'era, ma il replay event-sourced è non-lineare per via dei clamp e poteva non raggiungerla, facendola "sparire da sola" al primo movimento successivo. Ora si salva SEMPRE la giacenza ricalcolata dal log (apertura+movimenti); se diverge dal valore digitato, un toast invita a usare una rettifica.
