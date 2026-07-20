@@ -23538,7 +23538,11 @@ function ReportAIPage({ dati }) {
       setStoricoReport(function(h) {
         return [{ data: new Date().toISOString(), domanda: domanda, report: t, nSoggetti: selezionati.length, fonte: fonte }].concat(h).slice(0, 20);
       });
-      window.tnbToast("✅ Report generato");
+      // Audit F#53: la function inoltra un marcatore quando Anthropic interrompe
+      // (overloaded) o tronca (max_tokens): non spacciare il parziale per completo.
+      if (/\[⚠ ERRORE:/.test(t)) window.tnbToast("⚠ Generazione interrotta dal servizio AI — riprova", "err");
+      else if (/\[⚠ Report troncato/.test(t)) window.tnbToast("⚠ Report troncato per limite di lunghezza — restringi la selezione", "err");
+      else window.tnbToast("✅ Report generato");
       setLoading(false);
     }
   };

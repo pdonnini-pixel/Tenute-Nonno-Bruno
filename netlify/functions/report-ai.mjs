@@ -156,6 +156,20 @@ Genera il report richiesto basandoti su questi dati.`;
           if (!data || data === "[DONE]") continue;
           try {
             const evt = JSON.parse(data);
+            // Audit F#53: gli eventi 'error' a metà stream (es. overloaded_error) e
+            // il troncamento per stop_reason 'max_tokens' venivano scartati in
+            // silenzio, così il frontend riceveva un report parziale e lo mostrava
+            // come completo. Ora inoltriamo un marcatore riconoscibile.
+            if (evt.type === "error") {
+              const em = (evt.error && (evt.error.message || evt.error.type)) || "errore sconosciuto";
+              controller.enqueue(encoder.encode("\n\n[⚠ ERRORE: generazione interrotta dal servizio AI (" + em + ") — riprova]"));
+              controller.close();
+              try { reader.cancel(); } catch (_) {}
+              return;
+            }
+            if (evt.type === "message_delta" && evt.delta && evt.delta.stop_reason === "max_tokens") {
+              controller.enqueue(encoder.encode("\n\n[⚠ Report troncato: limite di lunghezza raggiunto — restringi la selezione o la domanda]"));
+            }
             if (evt.type === "content_block_delta" && evt.delta && typeof evt.delta.text === "string") {
               controller.enqueue(encoder.encode(evt.delta.text));
             }
