@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F11 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F12 pronto sul branch `claude/prompt-sessione-fix-1k2ast`, in attesa dell'ok di Patrizio — 137 finding su 145 chiusi; #51, #13, #64, #80 rinviati)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F12 dell'audit in produzione su decisione esplicita di Patrizio — 137 finding su 145 chiusi; #51, #13, #64, #80 rinviati)
 
 ---
 
@@ -72,7 +72,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F11 dell'audit in produ
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F12 (blocco omogeneo "robustezza rete e ciclo di vita"): finding #50, #52, #53, #54 corretti — PRONTI SUL BRANCH `claude/prompt-sessione-fix-1k2ast`, NON ancora in produzione (in attesa dell'ok di Patrizio).** ⚠️ #53 tocca l'edge function `report-ai.mjs` e #54 tocca la persistenza (layer Supabase): entrambi segnalati sotto. Comportamento invariato quando tutto va bene; cambiano solo i casi di errore/rete lenta:
+- **2026-07-19 — Pacchetto F12 (blocco omogeneo "robustezza rete e ciclo di vita"): finding #50, #52, #53, #54 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ #53 tocca l'edge function `report-ai.mjs` e #54 tocca la persistenza (layer Supabase): entrambi segnalati sotto. Comportamento invariato quando tutto va bene; cambiano solo i casi di errore/rete lenta:
   - **#50** — il watcher di auto-aggiornamento ricaricava la pagina al rientro sulla tab anche con una POST di salvataggio in volo o un modal aperto con una bozza (es. ordine in compilazione), buttando via il lavoro. Ora la ricarica automatica aspetta anche l'assenza di un salvataggio in corso (`window._tnbSaving`) e di un modale aperto (`[aria-modal]`); altrimenti il banner "Nuova versione" resta e la ricarica avviene a un rientro successivo o col pulsante "Aggiorna adesso".
   - **#52** — la generazione del Report AI (fetch streaming, può durare decine di secondi) non veniva interrotta se si cambiava modulo: la chiamata AI a pagamento veniva consumata a vuoto e i toast comparivano fuori contesto. Ora un `AbortController` viene abortito allo smontaggio e i `setState`/toast sono guardati (nessun avviso per l'abort volontario).
   - **#53** — ⚠️ edge function `report-ai.mjs`: gli errori a metà stream (es. `overloaded_error`) e il troncamento per `max_tokens` venivano scartati e il report parziale mostrato come completo ("✅ Report generato"). Ora la function inoltra un marcatore riconoscibile (`[⚠ ERRORE: …]` / `[⚠ Report troncato …]`) e il client mostra un toast d'errore invece del successo.
