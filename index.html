@@ -15846,7 +15846,11 @@ function Produzione({
                 /*#__PURE__*/React.createElement("div", null, "Raccolta: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataRaccolta))),
                 /*#__PURE__*/React.createElement("div", null, "Frangitura: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataFrangitura))),
                 /*#__PURE__*/React.createElement("div", null, "Imbottigl.: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataImbottigliamento))),
-                /*#__PURE__*/React.createElement("div", null, "Etichett.: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataEtichettatura)))
+                /*#__PURE__*/React.createElement("div", null, "Etichett.: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.dataEtichettatura))),
+                // Audit F#28: TMC / scadenza del lotto, evidenziato se prossimo o superato
+                l.scadenza && /*#__PURE__*/React.createElement("div", { style: { gridColumn: "1 / -1", color: (new Date(l.scadenza) < new Date(todayStr()) ? C.rosso : ((new Date(l.scadenza) - new Date(todayStr())) / 86400000 <= 60 ? C.arancio : C.grigio600)) } },
+                  "TMC / scadenza: ", /*#__PURE__*/React.createElement("strong", null, fmtD(l.scadenza)),
+                  (new Date(l.scadenza) < new Date(todayStr()) ? " ⛔ scaduto" : ((new Date(l.scadenza) - new Date(todayStr())) / 86400000 <= 60 ? " ⏳ in scadenza" : "")))
               )
             ),
             // 🤝 FORNITORI
@@ -16240,6 +16244,12 @@ function Produzione({
         /*#__PURE__*/React.createElement(Inp, {
           label: "Data raccolta", type: "date", v: form.dataRaccolta || "",
           on: v => setForm(f => ({ ...f, dataRaccolta: v }))
+        }),
+        /*#__PURE__*/React.createElement(Inp, {
+          // Audit F#28: Termine Minimo di Conservazione del lotto (facoltativo).
+          // Genera gli alert "in scadenza" / "scaduto" nel centro Alert.
+          label: "TMC / Scadenza (facoltativa)", type: "date", v: form.scadenza || "",
+          on: v => setForm(f => ({ ...f, scadenza: v || null }))
         }),
         /*#__PURE__*/React.createElement(Inp, {
           label: "Olive raccolte (kg)", type: "number", min: 0, step: 1,
@@ -22871,6 +22881,27 @@ function AlertsPage({
     icon: "📦",
     color: C.rosso
   })),
+  // Audit F#28: lotti col TMC (scadenza) prossimo o superato, ancora in giacenza.
+  // "In giacenza" è approssimato dalla presenza di almeno un imbottigliamento
+  // caricato in magazzino (product entrato in stock); soglia di preavviso 60 giorni.
+  ...(dati.lotti || []).filter(l => l.scadenza && (l.imbottigliamenti || []).some(i => i.caricoMagazzino) && Math.round((new Date(l.scadenza) - new Date(oggi)) / 86400000) <= 60).map(l => {
+    const gg = Math.round((new Date(l.scadenza) - new Date(oggi)) / 86400000);
+    const scaduto = gg < 0;
+    return {
+      id: "scad_" + l.id,
+      tipo: "scadenza_lotto",
+      priorita: scaduto ? "alta" : "media",
+      titolo: (scaduto ? "Lotto SCADUTO: " : "Lotto in scadenza: ") + "Raccolta " + (l.annata || "") + (l.codLotto ? " · " + l.codLotto : ""),
+      desc: scaduto
+        ? `TMC superato da ${Math.abs(gg)} giorni (${fmtD(l.scadenza)}) — verifica la giacenza residua`
+        : `TMC tra ${gg} giorni (${fmtD(l.scadenza)})`,
+      cta: "Vai a Produzione",
+      modulo: "produzione",
+      targetId: l.id,
+      icon: scaduto ? "⛔" : "⏳",
+      color: scaduto ? C.rosso : C.arancio
+    };
+  }),
   // CV scadute
   ...dati.ordini.filter(o => o.stato !== "annullato" && o.modalita === "conto_vendita" && o.scadenzaCV && o.scadenzaCV < oggi && o.statoPagamento !== "pagato").map(o => {
     const cl = dati.clienti.find(c => c.id === o.clienteId);
