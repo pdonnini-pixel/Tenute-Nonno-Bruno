@@ -25,6 +25,27 @@ export default async (req) => {
     return new Response("Method not allowed", { status: 405, headers: CORS });
   }
 
+  // Audit F#13: difesa base contro l'abuso dell'endpoint da siti terzi. L'endpoint
+  // resta pubblico (CORS *), ma se la richiesta arriva da un browser su un'altra
+  // origine (Origin/Referer diversi dal sito) la respingiamo. Netlify espone l'URL
+  // del sito in process.env.URL (+ i deploy preview in DEPLOY_PRIME_URL/DEPLOY_URL):
+  // nessuna configurazione manuale necessaria. NOTA: è una mitigazione, non
+  // un'autenticazione — un client non-browser può falsificare l'header Origin, e
+  // un vero rate-limit richiede uno stato condiviso (store esterno) non presente
+  // qui. Se process.env.URL non è impostato (es. sviluppo locale) il controllo è
+  // inattivo, così non blocca nulla per errore.
+  const _allowedOrigins = [process.env.URL, process.env.DEPLOY_PRIME_URL, process.env.DEPLOY_URL].filter(Boolean);
+  if (_allowedOrigins.length) {
+    const _org = (req.headers && typeof req.headers.get === "function")
+      ? (req.headers.get("origin") || req.headers.get("referer") || "")
+      : "";
+    if (_org && !_allowedOrigins.some(a => _org === a || _org.indexOf(a) === 0)) {
+      return new Response(JSON.stringify({ error: "Origine non autorizzata" }), {
+        status: 403, headers: { ...CORS, "Content-Type": "application/json" }
+      });
+    }
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY non configurata" }), {
