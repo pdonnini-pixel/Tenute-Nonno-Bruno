@@ -9814,12 +9814,40 @@ async function loadTnbLogo(variante) {
   try {
     const path = "./assets/logo_tnb_" + variante + ".png";
     const blob = await fetch(path).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); });
-    const dataUrl = await new Promise((res, rej) => {
+    const fullDataUrl = await new Promise((res, rej) => {
       const fr = new FileReader();
       fr.onload = () => res(fr.result);
       fr.onerror = rej;
       fr.readAsDataURL(blob);
     });
+    // Audit F#127: il logo viene stampato nei PDF a soli 11-20 mm di larghezza ma
+    // era incorporato a piena risoluzione (~100-210 KB) in OGNI documento generato
+    // (più pesante da generare, scaricare, allegare e archiviare). Lo ridimensioniamo
+    // UNA sola volta su canvas a ~240 px di larghezza (ampio per la stampa) e
+    // cachiamo quello: pochi KB per PDF. Se il canvas non è disponibile o l'immagine
+    // è già piccola, si usa l'originale (fallback sicuro).
+    let dataUrl = fullDataUrl;
+    try {
+      dataUrl = await new Promise((res) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const TARGET_W = 240;
+            if (!img.width || img.width <= TARGET_W) { res(fullDataUrl); return; }
+            const scale = TARGET_W / img.width;
+            const cv = document.createElement("canvas");
+            cv.width = TARGET_W;
+            cv.height = Math.max(1, Math.round(img.height * scale));
+            const ctx = cv.getContext("2d");
+            if (!ctx) { res(fullDataUrl); return; }
+            ctx.drawImage(img, 0, 0, cv.width, cv.height);
+            res(cv.toDataURL("image/png"));
+          } catch (_) { res(fullDataUrl); }
+        };
+        img.onerror = () => res(fullDataUrl);
+        img.src = fullDataUrl;
+      });
+    } catch (_) { dataUrl = fullDataUrl; }
     window._tnbLogos = window._tnbLogos || {};
     window._tnbLogos[variante] = dataUrl;
     return dataUrl;
@@ -9842,10 +9870,17 @@ async function loadPdfFonts() {
     garamond_normal: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/eb-garamond/400Regular/EBGaramond_400Regular.ttf",
     garamond_bold: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/eb-garamond/700Bold/EBGaramond_700Bold.ttf"
   };
+  // Audit F#126: conversione a BLOCCHI invece che byte-per-byte. Prima, per ~1 MB
+  // di font, il vecchio `binary += String.fromCharCode(bytes[i])` faceva ~1 milione
+  // di concatenazioni di stringa sul main thread, congelando la UI per centinaia di
+  // ms proprio mentre l'utente aspetta il PDF. Output base64 identico.
   const arrayBufferToBase64 = buf => {
     const bytes = new Uint8Array(buf);
     let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const CHUNK = 8192;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
     return btoa(binary);
   };
   const result = { loaded: false, b64: {} };
