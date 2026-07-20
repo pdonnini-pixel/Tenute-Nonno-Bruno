@@ -19442,12 +19442,14 @@ function App() {
       const next = typeof upd === "function" ? upd(prev) : upd;
       const __updMs = performance.now() - __t0;
       setSaving(true);
+      window._tnbSaving = true; // Audit F#50: flag leggibile dal watcher di auto-reload (fuori React)
       const __ts = performance.now();
       const __json = JSON.stringify(next);
       const __strMs = performance.now() - __ts;
       const __post0 = performance.now();
       window.storage.set("tnb-pro-v2", __json).then(res => {
         setSaving(false);
+        window._tnbSaving = false; // Audit F#50
         try {
           const rec = { updMs: Math.round(__updMs), strMs: Math.round(__strMs), postMs: Math.round(performance.now() - __post0), kb: Math.round(__json.length / 1024) };
           (window.__tnbSavePerf = window.__tnbSavePerf || []).push(rec);
@@ -23348,6 +23350,21 @@ function ReportAIPage({ dati }) {
   var _s7 = useState(""); var filtroTipo = _s7[0]; var setFiltroTipo = _s7[1];
   var _s8 = useState(""); var filtroStato = _s8[0]; var setFiltroStato = _s8[1];
 
+  // Audit F#52: AbortController per la fetch streaming del Report AI. Se l'utente
+  // cambia modulo mentre la generazione è in corso (può durare decine di secondi),
+  // il componente si smonta e lo stream va abortito, altrimenti la chiamata AI (a
+  // pagamento) viene consumata per intero a vuoto. _mounted evita setState/toast
+  // fuori contesto dopo lo smontaggio.
+  var _abortRef = React.useRef(null);
+  var _mountedRef = React.useRef(true);
+  React.useEffect(function() {
+    _mountedRef.current = true;
+    return function() {
+      _mountedRef.current = false;
+      try { if (_abortRef.current) _abortRef.current.abort(); } catch (e) {}
+    };
+  }, []);
+
   var CE = React.createElement;
 
   // Lista soggetti (prospect o clienti)
@@ -23462,9 +23479,12 @@ function ReportAIPage({ dati }) {
     var azienda = dati.azienda || {};
     var contesto = (azienda.nome || "Tenute Nonno Bruno") + " — " + (azienda.settore || "olio EVO e vino") + ", " + (azienda.citta || "Bagno a Ripoli") + " (" + (azienda.provincia || "FI") + ")";
 
+    var ctrl = new AbortController();      // Audit F#52
+    _abortRef.current = ctrl;
     fetch("/.netlify/functions/report-ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: ctrl.signal,
       body: JSON.stringify({
         domanda: domanda,
         datiProspect: datiSel,
@@ -23501,12 +23521,17 @@ function ReportAIPage({ dati }) {
       return res.text().then(function(txt) { finalizzaReport(txt); });
     })
     .catch(function(err) {
+      // Audit F#52: abort volontario (cambio modulo / smontaggio) → nessun avviso,
+      // il componente potrebbe non essere più montato.
+      if (err && err.name === "AbortError") return;
+      if (!_mountedRef.current) return;
       window.tnbToast("⚠ Errore: " + err.message, "err");
       setReport("");
       setLoading(false);
     });
 
     function finalizzaReport(testo) {
+      if (!_mountedRef.current) return; // Audit F#52
       var t = (testo || "").trim();
       if (!t) { window.tnbToast("⚠ Report vuoto", "err"); setLoading(false); return; }
       setReport(t);
@@ -27180,9 +27205,15 @@ function ListinoPage({ dati, setDati }) {
     pending = true;
     fetchBuildTs(function(ts){ mostraBanner(ts); });
   }
+  // Audit F#50: un modal aperto contiene tipicamente una bozza non ancora salvata
+  // (ordine in compilazione, ecc.). location.reload() la butterebbe via.
+  function modaleAperto(){ try { return !!document.querySelector('[aria-modal="true"]'); } catch(e){ return false; } }
   function controlla(fromVisibility){
-    // al rientro sulla tab, se c'è già un aggiornamento in attesa e non si sta scrivendo, ricarica
-    if (pending && fromVisibility && !staScrivendo()){ ricarica(); return; }
+    // Audit F#50: al rientro sulla tab, ricarica per l'aggiornamento SOLO se non si
+    // sta scrivendo, non c'è una POST di salvataggio in volo (window._tnbSaving) e
+    // non c'è un modal aperto con una bozza. Altrimenti il banner resta e la
+    // ricarica avverrà a un rientro successivo (o col pulsante "Aggiorna adesso").
+    if (pending && fromVisibility && !staScrivendo() && !window._tnbSaving && !modaleAperto()){ ricarica(); return; }
     if (busy) return; busy = true;
     fetchTag(function(tag){
       busy = false;
