@@ -2756,11 +2756,18 @@ const ricalcolaGiacenza = (movimenti) => {
         g.disponibile += q;
         g.riservato = Math.max(0, g.riservato - q);
         break;
-      case "affido_spedizioniere":
+      case "affido_spedizioniere": {
+        // Audit F#16: la merce affidata esce UNA sola volta. Prima veniva sottratta
+        // q sia da `riservato` sia da `in_confezionamento`: con entrambi valorizzati
+        // il totale calava del doppio e dei pezzi fisici sparivano dalla giacenza.
+        // Ora si scala prima da `riservato`, poi il solo residuo da `in_confezionamento`.
         g.in_spedizione += q;
-        g.riservato = Math.max(0, g.riservato - q);
-        g.in_confezionamento = Math.max(0, g.in_confezionamento - q);
+        const daRiservato = Math.min(q, g.riservato);
+        g.riservato -= daRiservato;
+        const residuoAffido = q - daRiservato;
+        if (residuoAffido > 0) g.in_confezionamento = Math.max(0, g.in_confezionamento - residuoAffido);
         break;
+      }
       case "consegnato":
         g.in_spedizione = Math.max(0, g.in_spedizione - q);
         break;
@@ -13923,48 +13930,57 @@ function Magazzino({
       riservato: 0,
       in_spedizione: 0
     };
-    const sku = { ...form, id: skuId, giacenza: giacenzaDesiderata };
-    setDati(d => {
-      // tkt_magazzino-riserva: il magazzino è event-sourced — `ricalcolaGiacenza` ricostruisce
-      // la giacenza SOLO dai movimenti. La giacenza digitata a mano nel form non deriva da alcun
-      // movimento, quindi al primo movimento (es. una "riserva") il ricalcolo ripartirebbe da zero
-      // e azzererebbe la disponibilità invece di sottrarre la quantità. Per coerenza emettiamo/
-      // aggiorniamo un movimento "apertura" (timestamp=0) pari al delta tra la giacenza voluta e
-      // quella ricostruita dai soli movimenti reali, esattamente come fa la migrazione v49.
-      const movTutti = d.movimenti || [];
-      const movRealiSku = movTutti.filter(mv => (mv.skuId || mv.magId) === skuId && mv.tipo !== "apertura");
-      const calc = ricalcolaGiacenza(movRealiSku);
-      const delta = {};
-      let hasDelta = false;
-      STATI_MAG_ORDINE.forEach(k => {
-        const dlt = (Number(giacenzaDesiderata[k]) || 0) - (Number(calc[k]) || 0);
-        if (dlt !== 0) { delta[k] = dlt; hasDelta = true; }
-      });
-      // Rimuovi eventuali aperture precedenti dello SKU, poi reinseriscine una aggiornata se serve.
-      let movimenti = movTutti.filter(mv => !((mv.skuId || mv.magId) === skuId && mv.tipo === "apertura"));
-      if (hasDelta) {
-        movimenti = [{
-          id: uid(),
-          tipo: "apertura",
-          qta: 0,
-          stati: delta,
-          data: "1970-01-01",
-          nota: isNew ? "Apertura giacenza iniziale SKU" : "Riconciliazione giacenza manuale SKU",
-          ordineId: null,
-          lottoId: null,
-          auto: true,
-          skuId: skuId,
-          magId: skuId,
-          timestamp: 0
-        }, ...movimenti];
-      }
-      return {
-        ...d,
-        movimenti,
-        magazzino: isNew ? [...d.magazzino, sku] : d.magazzino.map(m => m.id === sku.id ? sku : m)
-      };
+    // tkt_magazzino-riserva: il magazzino è event-sourced — `ricalcolaGiacenza` ricostruisce
+    // la giacenza SOLO dai movimenti. La giacenza digitata a mano nel form non deriva da alcun
+    // movimento, quindi al primo movimento (es. una "riserva") il ricalcolo ripartirebbe da zero
+    // e azzererebbe la disponibilità invece di sottrarre la quantità. Per coerenza emettiamo/
+    // aggiorniamo un movimento "apertura" (timestamp=0) pari al delta tra la giacenza voluta e
+    // quella ricostruita dai soli movimenti reali, esattamente come fa la migrazione v49.
+    const movTutti = dati.movimenti || [];
+    const movRealiSku = movTutti.filter(mv => (mv.skuId || mv.magId) === skuId && mv.tipo !== "apertura");
+    const calc = ricalcolaGiacenza(movRealiSku);
+    const delta = {};
+    let hasDelta = false;
+    STATI_MAG_ORDINE.forEach(k => {
+      const dlt = (Number(giacenzaDesiderata[k]) || 0) - (Number(calc[k]) || 0);
+      if (dlt !== 0) { delta[k] = dlt; hasDelta = true; }
     });
+    // Rimuovi eventuali aperture precedenti dello SKU, poi reinseriscine una aggiornata se serve.
+    let movimenti = movTutti.filter(mv => !((mv.skuId || mv.magId) === skuId && mv.tipo === "apertura"));
+    if (hasDelta) {
+      movimenti = [{
+        id: uid(),
+        tipo: "apertura",
+        qta: 0,
+        stati: delta,
+        data: "1970-01-01",
+        nota: isNew ? "Apertura giacenza iniziale SKU" : "Riconciliazione giacenza manuale SKU",
+        ordineId: null,
+        lottoId: null,
+        auto: true,
+        skuId: skuId,
+        magId: skuId,
+        timestamp: 0
+      }, ...movimenti];
+    }
+    // Audit F#18: NON salvare la giacenza digitata così com'è. Il replay è non-lineare
+    // per via dei clamp: se lo storico contiene uno scarico maggiore di quanto poi
+    // disponibile, l'apertura+delta non riesce a raggiungere il valore voluto e il
+    // numero salvato divergeva dal log, "sparendo da solo" al primo movimento
+    // successivo. Salviamo SEMPRE la giacenza ricalcolata dal log (apertura+movimenti);
+    // se non coincide col valore digitato, avvisiamo l'utente.
+    const giacenzaCoerente = ricalcolaGiacenza(movimenti.filter(mv => (mv.skuId || mv.magId) === skuId));
+    const scostamento = STATI_MAG_ORDINE.some(k => (Number(giacenzaDesiderata[k]) || 0) !== (Number(giacenzaCoerente[k]) || 0));
+    const sku = { ...form, id: skuId, giacenza: giacenzaCoerente };
+    setDati(d => ({
+      ...d,
+      movimenti,
+      magazzino: isNew ? [...d.magazzino, sku] : d.magazzino.map(m => m.id === sku.id ? sku : m)
+    }));
     if (logAction) logAction(isNew ? "Nuovo SKU" : "Modifica SKU", "magazzino", `${sku.prodotto} ${sku.formato} ${sku.annata}`);
+    if (scostamento && window.tnbToast) {
+      window.tnbToast("⚠ Giacenza adeguata ai movimenti esistenti: il valore digitato non era coerente con lo storico. Per correggere usa una rettifica manuale.", "err");
+    }
     setModal(null);
   };
   // tkt_1781161595244: eliminazione SKU dal magazzino (con cleanup movimenti collegati)
@@ -15316,8 +15332,16 @@ function Produzione({
   // P3 — elimina lotto (solo se non già in magazzino)
   const deleteLotto = () => {
     if (!form.id) return;
-    if (form.caricoMagazzino) {
-      if (window.tnbToast) window.tnbToast("Impossibile eliminare: il lotto è già stato caricato in magazzino. Annulla prima il carico.", "err");
+    // Audit F#21: la vecchia guardia leggeva form.caricoMagazzino, campo che dalla
+    // migrazione v50 non esiste più a livello di lotto (il flag vive nei singoli
+    // imbottigliamenti) → non scattava mai e si poteva eliminare un lotto già
+    // caricato, lasciando movimenti carico_produzione orfani verso un lotto
+    // inesistente. Ora blocchiamo se un imbottigliamento è caricato O se esiste un
+    // qualsiasi movimento collegato al lotto.
+    const imbCaricato = (form.imbottigliamenti || []).some(i => i.caricoMagazzino);
+    const haMovimenti = (dati.movimenti || []).some(mv => mv.lottoId === form.id);
+    if (imbCaricato || haMovimenti) {
+      if (window.tnbToast) window.tnbToast("Impossibile eliminare: il lotto ha imbottigliamenti già caricati in magazzino (o movimenti collegati). Annulla prima i carichi.", "err");
       return;
     }
     if (!window.tnbConfirm) return;
@@ -16512,11 +16536,11 @@ function Produzione({
       /*#__PURE__*/React.createElement("div", {
         style: { display: "flex", justifyContent: "flex-end", gap: 8, borderTop: `1px solid ${C.grigio200}`, paddingTop: 14, marginTop: 4 }
       },
-        form.id && !form.caricoMagazzino && /*#__PURE__*/React.createElement(Btn, {
+        form.id && !((form.imbottigliamenti || []).some(i => i.caricoMagazzino) || (dati.movimenti || []).some(mv => mv.lottoId === form.id)) && /*#__PURE__*/React.createElement(Btn, {
           ch: "🗑 Elimina lotto", v: "dan", sz: "sm",
           style: { marginRight: "auto" }, onClick: deleteLotto
         }),
-        form.id && form.caricoMagazzino && /*#__PURE__*/React.createElement("div", {
+        form.id && ((form.imbottigliamenti || []).some(i => i.caricoMagazzino) || (dati.movimenti || []).some(mv => mv.lottoId === form.id)) && /*#__PURE__*/React.createElement("div", {
           style: { marginRight: "auto", fontSize: 11, color: C.grigio400, alignSelf: "center", fontStyle: "italic" }
         }, "Non eliminabile: già in magazzino"),
         /*#__PURE__*/React.createElement(Btn, {
