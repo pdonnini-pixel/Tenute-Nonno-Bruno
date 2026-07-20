@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F10 dell'audit in produzione su decisione esplicita di Patrizio; Pacchetto F11 pronto sul branch `claude/prompt-sessione-fix-1k2ast`, in attesa dell'ok di Patrizio — 133 finding su 145 chiusi; #64 e #80 rinviati)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F11 dell'audit in produzione su decisione esplicita di Patrizio — 133 finding su 145 chiusi; #64 e #80 rinviati)
 
 ---
 
@@ -66,7 +66,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F10 dell'audit in produ
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F11 (blocco omogeneo "performance / reattività delle liste grandi"): finding #83, #84, #85, #86 corretti — PRONTI SUL BRANCH `claude/prompt-sessione-fix-1k2ast`, NON ancora in produzione (in attesa dell'ok di Patrizio).** Tutti fix a comportamento invariato (memoizzazione): stessi numeri e stessa UI, solo meno ricalcoli per render. Nessuna area login/RLS/persistenza/PDF toccata. Le liste che crescono senza limite (Archivio DDT, Registro Attività) hanno ora una paginazione "Mostra altre" con soglia alta, così l'uso normale resta identico:
+- **2026-07-19 — Pacchetto F11 (blocco omogeneo "performance / reattività delle liste grandi"): finding #83, #84, #85, #86 corretti e portati IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). Tutti fix a comportamento invariato (memoizzazione): stessi numeri e stessa UI, solo meno ricalcoli per render. Nessuna area login/RLS/persistenza/PDF toccata. Le liste che crescono senza limite (Archivio DDT, Registro Attività) hanno ora una paginazione "Mostra altre" con soglia alta, così l'uso normale resta identico:
   - **#83** — Ordini: `allOrdini` (spread+sort), i 6 filtri delle view e il conteggio consegne del tab erano ricreati a OGNI render — quindi anche a ogni tasto premuto nei form del modal (stesso componente) — e `nCl` faceva un find lineare per ogni riga (O(ordini×clienti)). Ora bundle ordini e conteggio consegne in un `useMemo` su `[dati.ordini]`, e `nCl` usa una Map clienteId→cliente memoizzata su `[dati.clienti]`.
   - **#84** — Clienti (e ClientiCommerciale, ReportUltimiDocCliente): ogni card faceva `dati.ordini.filter(o => o.clienteId === c.id)` → O(clienti×ordini) rieseguito a ogni carattere di ricerca, insieme ai filter/reduce dei totali. Ora una Map clienteId→ordini costruita una volta per `[dati.ordini]` e i totali del PageSummary memoizzati.
   - **#85** — Archivio DDT: il join movimento→SKU/ordine (prima un `find` lineare su magazzino e ordini per OGNI movimento, O(mov×(sku+ord)), a ogni carattere) è ora in un `useMemo` con due Map id→oggetto; la tabella mostra 150 righe con pulsante "Mostra altre" (+300). Filtro testo/direzione e conteggi DDT invariati.
