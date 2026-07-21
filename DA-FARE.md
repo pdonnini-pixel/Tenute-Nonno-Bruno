@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F16 IN PRODUZIONE; **F17 (#87 estrazione vendor) pronto sul branch** `claude/prompt-sessione-fix-1k2ast`, in attesa di Pubblica. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F17 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.)
 
 ---
 
@@ -74,7 +74,7 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F16 IN PRODUZIONE; **F1
 ---
 
 ## ✅ Fatto di recente
-- **2026-07-19 — Pacchetto F17 (audit #87 — peso di caricamento dell'app): PRONTO SUL BRANCH `claude/prompt-sessione-fix-1k2ast`, NON ancora in produzione.** ⚠️ Cambia la **struttura/deploy** dell'app (build); comportamento a runtime invariato.
+- **2026-07-19 — Pacchetto F17 (audit #87 — peso di caricamento dell'app): IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Cambia la **struttura/deploy** dell'app (build); comportamento a runtime invariato.
   - Prima tutta l'app (~1,98 MB) era in un unico `index.html` che includeva anche React, ReactDOM e jsPDF (~562 KB, librerie immutabili): ogni deploy — anche per una riga — costringeva tutti a riscaricare l'intero file, librerie comprese (primo caricamento pesante su rete mobile in campo).
   - Ora le librerie sono in **`assets/vendor-v1.js`** (referenziato con `<script src>`), servito da Netlify con **cache lunga immutabile** (`netlify.toml`): dopo il primo caricamento il browser lo tiene in memoria e a ogni aggiornamento riscarica solo `index.html` (~1,4 MB invece di ~2 MB). `stamp-build.sh` riscrive solo `index.html`, quindi il vendor resta identico tra i deploy.
   - ⚠️ **Disciplina:** se in futuro si aggiorna React/jsPDF, RINOMINARE il file (`vendor-v2.js`) e aggiornare il riferimento in `index.html` (commento in `netlify.toml`).
