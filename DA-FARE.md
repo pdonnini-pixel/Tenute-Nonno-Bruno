@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F16 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit di fatto esaurito**: restano solo il **gruppo auth server** (#1 + remediation RLS #2 — piano dettagliato in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio) e due performance invasive/architetturali (#40 serializzazione intero stato, #87 bundle monolitico — spiegate nell'artefatto per Patrizio; #40 da abbinare all'auth, #87 lavoro a sé).)
+Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F16 IN PRODUZIONE; **F17 (#87 estrazione vendor) pronto sul branch** `claude/prompt-sessione-fix-1k2ast`, in attesa di Pubblica. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.)
 
 ---
 
@@ -45,8 +45,9 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F16 IN PRODUZIONE su de
 ### 13/51/80 — chiusi col Pacchetto F14 (vedi "Fatto di recente")
 - **#51** e **#80** corretti; **#13** mitigato col controllo origine (il token server completo resta parte di #1). Restano solo #64 e il gruppo auth (#1 + remediation RLS #2).
 
-### 3f. Performance residue — invasive/architetturali (audit #40, #87 — rinviate)
-- Restano aperti i finding performance che NON si risolvono a comportamento invariato in modo contenuto (F11 ha chiuso #83–#86; **F15 ha chiuso #126/#127**, il peso dei PDF): **#40** (ogni modifica serializza e ritrasmette l'INTERO stato — tocca la persistenza, va con la tabella log dedicata del punto 4) e **#87** (bundle monolitico da ~1,9 MB: servirebbe estrarre le librerie vendor in file separati con cache immutabile + header su `netlify.toml` + `stamp-build.sh`). Sono ottimizzazioni di build/architettura o toccano la persistenza: da pianificare a parte, non "al volo".
+### 3f. Performance residue (audit #40 — resta; #87 CHIUSO con F17)
+- **#87** — CHIUSO col Pacchetto F17: librerie vendor (React/ReactDOM/jsPDF, ~562 KB) estratte in `assets/vendor-v1.js` con cache immutabile (vedi "Fatto di recente" e la disciplina di versionamento in `netlify.toml`).
+- **#40** — RESTA aperto e va fatto **insieme al cantiere backend/auth** (piano `docs/PIANO-AUTH-E-RLS.md`): "ogni modifica serializza e ritrasmette l'INTERO stato" non ha una versione sicura solo lato client — la soluzione (salvataggio incrementale + tabella log dedicata in append su Supabase, 1 INSERT per voce invece del blob unico) è una modifica allo schema del database, quindi si progetta e si testa su staging insieme all'auth e alla remediation RLS #2. Fino ad allora il comportamento resta quello attuale (in pratica stabile).
 - **Nota su #126:** la conversione base64 dei font è ora a blocchi (niente freeze); resta come possibile miglioria futura il **self-hosting dei 4 TTF in `/assets`** (oggi da CDN jsdelivr, ri-scaricati a ogni sessione) per togliere la dipendenza esterna e la latenza — non fatto perché richiede i file font nel repo, non è un rischio attuale.
 
 ### 3e. Costo olio ponderato per campagna (audit #64) — CHIUSO col Pacchetto F16
@@ -73,6 +74,12 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F16 IN PRODUZIONE su de
 ---
 
 ## ✅ Fatto di recente
+- **2026-07-19 — Pacchetto F17 (audit #87 — peso di caricamento dell'app): PRONTO SUL BRANCH `claude/prompt-sessione-fix-1k2ast`, NON ancora in produzione.** ⚠️ Cambia la **struttura/deploy** dell'app (build); comportamento a runtime invariato.
+  - Prima tutta l'app (~1,98 MB) era in un unico `index.html` che includeva anche React, ReactDOM e jsPDF (~562 KB, librerie immutabili): ogni deploy — anche per una riga — costringeva tutti a riscaricare l'intero file, librerie comprese (primo caricamento pesante su rete mobile in campo).
+  - Ora le librerie sono in **`assets/vendor-v1.js`** (referenziato con `<script src>`), servito da Netlify con **cache lunga immutabile** (`netlify.toml`): dopo il primo caricamento il browser lo tiene in memoria e a ogni aggiornamento riscarica solo `index.html` (~1,4 MB invece di ~2 MB). `stamp-build.sh` riscrive solo `index.html`, quindi il vendor resta identico tra i deploy.
+  - ⚠️ **Disciplina:** se in futuro si aggiorna React/jsPDF, RINOMINARE il file (`vendor-v2.js`) e aggiornare il riferimento in `index.html` (commento in `netlify.toml`).
+  - ⚠️ **Da testare da Patrizio prima del deploy:** aprire l'app sul telefono dopo la pubblicazione per confermare il caricamento (è un cambio di struttura). Rollback banale = revert del commit.
+  - **Verifica:** Chromium con serving statico (come Netlify): il browser richiede `vendor-v1.js`, React/ReactDOM/jsPDF risultano caricati, login+dashboard rendono, navigazione multi-modulo senza crash, jsPDF genera un PDF valido dalla libreria esterna. Zero errori JS.
 - **2026-07-19 — Pacchetto F16 (audit #64 — costo olio per campagna): IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ **Cambia i NUMERI di Costi & Margini** (P&L campagna, margini cliente/canale, tab Per Ordine/Per Formato, break-even) — è una CORREZIONE (fine della media unica cross-campagna), non un calo reale.
   - **Decisione di dominio di Patrizio:** l'olio franto in autunno N appartiene alla campagna N (anno di raccolta) → `lotto.annata == campagna`.
   - Prima `costoFormatoReale` calcolava il costo olio/L come media ponderata su TUTTI i lotti di TUTTE le campagne: ogni campagna usava lo stesso costo unitario e ogni nuovo lotto ricalcolava retroattivamente i P&L passati. Ora `costoFormatoReale/Tot/Fonte` accettano un 3° parametro `annata`: la media è sui SOLI lotti di quell'annata; se l'annata non ha lotti tracciati si ripiega sulla media globale (nessun costo olio perso).
