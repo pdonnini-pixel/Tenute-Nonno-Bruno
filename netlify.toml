@@ -8,3 +8,22 @@
 
 [functions]
   directory = "netlify/functions"
+
+# Audit F#87: le librerie vendorizzate (React, ReactDOM, jsPDF, ~562 KB) sono state
+# estratte in assets/vendor-v1.js — file IMMUTABILE che non cambia tra un deploy e
+# l'altro (stamp-build.sh riscrive solo index.html). Lo serviamo con cache lunga:
+# dopo il primo caricamento il browser lo tiene in memoria e a ogni aggiornamento
+# riscarica solo index.html (~1,4 MB invece di ~2 MB), non le librerie.
+# ⚠️ Se un giorno aggiorni React/jsPDF, RINOMINA il file (vendor-v2.js) e aggiorna il
+#    riferimento in index.html, così i browser scaricano la nuova versione.
+[[headers]]
+  for = "/assets/vendor-v1.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# index.html cambia a ogni deploy (timestamp build): niente cache lunga, sempre
+# rivalidato, così l'aggiornamento arriva subito.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
