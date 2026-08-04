@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F17 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.)
+Ultimo aggiornamento: 2026-08-04 (Correzione dati di produzione: gli SKU "Raccolta 2025" avevano il campo `annata` vuoto → il 2025 non compariva nel menù annata degli ordini. Backfill `annata="2025"` sui 7 SKU 2025 in Supabase, così Elisa può registrare l'ordine Grimaldi 500 ml. Vedi "Fatto di recente" e il nuovo punto opzionale sul form SKU. — Precedente: 2026-07-19, Pacchetti A–E e F1–F17 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.)
 
 ---
 
@@ -38,6 +38,13 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F17 IN PRODUZIONE su de
 ---
 
 ## 🟡 Opzionali / pulizia
+
+### 5. Form SKU: `annata` facoltativa → il prodotto sparisce dal menù annata degli ordini (causa a monte del fix del 2026-08-04)
+- **Cosa:** creando/modificando uno SKU in Magazzino si può salvare con il campo `annata` vuoto anche se il nome prodotto contiene l'anno ("Raccolta 2025 …"). Siccome `annateDisponibili` (`index.html` ~2232) e il default riga `annataDefaultPerFormato` (~2242) leggono SOLO il campo strutturato `annata`, uno SKU con annata vuota **non compare** nel menù annata degli ordini pur avendo giacenza → è esattamente ciò che ha bloccato Elisa sull'ordine Grimaldi (tutti e 7 gli SKU 2025 avevano annata vuota).
+- **Opzioni di hardening (da decidere insieme, tocca l'area magazzino/ordini a rischio):**
+  1. **Preventiva (consigliata):** in `saveSku` rendere `annata` obbligatoria (o proporla in automatico estraendola da "Raccolta AAAA" nel nome) con un avviso, così non si creano più SKU senza annata. Basso impatto, risolve la causa.
+  2. **Difensiva:** far sì che `annateDisponibili` includa anche l'anno ricavato dal nome prodotto ("Raccolta AAAA") come fallback. Più invasiva sul comportamento del menù (potrebbe mostrare anni inattesi) → valutare con attenzione.
+- **Stato:** solo il DATO è stato corretto (backfill 2025). Il form resta com'è: **da decidere** se e come irrigidirlo prima della raccolta 2026 (che avrà lo stesso rischio se inserita con annata vuota). Nessuna modifica al codice andrà su `main` senza ok esplicito di Patrizio.
 
 ### 80. Token di sessione / scadenza login (audit #80 — rinviato, area login)
 - Il login non ha un token di sessione con scadenza: la "sessione ricordata" resta valida a tempo indefinito nel `localStorage` del dispositivo, senza invalidazione lato server. È lo stesso nodo del punto critico #1 (auth lato client): un vero token di sessione ha senso solo insieme allo spostamento della verifica credenziali su server (Supabase Auth o Netlify Function). **Area login a rischio → non toccare da solo, va pianificato con #1.** Fino ad allora resta il comportamento attuale.
@@ -74,6 +81,12 @@ Ultimo aggiornamento: 2026-07-19 (Pacchetti A–E e F1–F17 IN PRODUZIONE su de
 ---
 
 ## ✅ Fatto di recente
+- **2026-08-04 — Correzione dati produzione: annata mancante sugli SKU "Raccolta 2025" (segnalazione di Elisa — ordine Francesco Grimaldi 500 ml).** ⚠️ Modifica ai **dati di produzione** (Supabase `app_kv/tnb-pro-v2`), NON al codice. Autorizzata esplicitamente da Patrizio (opzione "tutti i 7 SKU 2025").
+  - **Sintomo:** nel form ordine, il menù "Annata" del 500 ml mostrava solo il 2024, quindi non si poteva registrare l'ordine del sito (bottiglia 2025).
+  - **Causa reale:** il menù annata si costruisce da `annateDisponibili(dati)` (`index.html` ~2232), che legge il campo strutturato `annata` dalle voci di magazzino + lotti. Tutti e 7 gli SKU "Raccolta 2025" (100/250/500 ml, 3 L, 5 L, Olio/Aceto 20 ml) avevano l'anno **solo nel nome prodotto** e il campo `annata` **vuoto** → il 2025 non compariva per nessun formato. Le bottiglie 2025 erano comunque in giacenza (es. 500 ml = 110 pz).
+  - **Fix:** `UPDATE` mirato su `app_kv/tnb-pro-v2` che imposta `annata="2025"` sugli elementi `magazzino` con `prodotto ILIKE 'Raccolta 2025%'` e annata vuota (idempotente), preservando l'ordine dell'array e bumpando `updated_at` (così l'optimistic-lock #2 fa ricaricare le sessioni aperte). SKU id invariati → **movimenti e giacenze intatti**.
+  - **Sicurezza verificata prima di scrivere:** gli ordini esistenti con `(formato, 2025)` (33 righe 500 ml, 27 righe 250 ml, ecc.) prima reggevano solo col fallback "formato-only" di `skuPerRiga`; ora fanno **match esatto** (migliora, non rompe). Le righe `(formato, 2024)` restano sugli SKU 2024 separati. Verifica post-scrittura: set annate = ["2024","2025"], 10 SKU totali invariati, 7/7 SKU 2025 corretti; 500 ml → 2024 (798 pz) + 2025 (110 pz).
+  - **Nota per Patrizio:** l'ordine Grimaldi va inserito seguendo i passaggi già mandati a Elisa (cliente privato, ordine "Firmato", 1×500 ml **annata 2025**, prezzo forzato 28,00 €, spedizione 9,90 €). Ora l'annata 2025 è selezionabile.
 - **2026-07-19 — Pacchetto F17 (audit #87 — peso di caricamento dell'app): IN PRODUZIONE** (merge su `main` deciso esplicitamente da Patrizio). ⚠️ Cambia la **struttura/deploy** dell'app (build); comportamento a runtime invariato.
   - Prima tutta l'app (~1,98 MB) era in un unico `index.html` che includeva anche React, ReactDOM e jsPDF (~562 KB, librerie immutabili): ogni deploy — anche per una riga — costringeva tutti a riscaricare l'intero file, librerie comprese (primo caricamento pesante su rete mobile in campo).
   - Ora le librerie sono in **`assets/vendor-v1.js`** (referenziato con `<script src>`), servito da Netlify con **cache lunga immutabile** (`netlify.toml`): dopo il primo caricamento il browser lo tiene in memoria e a ogni aggiornamento riscarica solo `index.html` (~1,4 MB invece di ~2 MB). `stamp-build.sh` riscrive solo `index.html`, quindi il vendor resta identico tra i deploy.
