@@ -13293,8 +13293,8 @@ function Magazzino({
   };
   const saveSku = () => {
     // Audit F#42: niente return muto
-    if (!form.formato || !form.prodotto) {
-      const mancanti = [!form.prodotto && "prodotto", !form.formato && "formato"].filter(Boolean).join(", ");
+    if (!form.formato || !form.prodotto || !form.annata) {
+      const mancanti = [!form.prodotto && "prodotto", !form.formato && "formato", !form.annata && "annata"].filter(Boolean).join(", ");
       if (window.tnbToast) window.tnbToast("⚠ Compila i campi obbligatori: " + mancanti, "err");
       return;
     }
@@ -14431,12 +14431,18 @@ function Magazzino({
       opts: FORMATI_VENDITA // audit F#115: lista unica
     }), /*#__PURE__*/React.createElement(Sel, {
       label: "Annata",
-      v: form.annata || "2025",
+      // Prima: `form.annata || "2025"` mostrava "2025" come pre-selezione
+      // FITTIZIA senza scriverla nello stato \u2192 salvando senza toccare il men\u00F9
+      // l'annata restava vuota (\u00E8 cos\u00EC che i 7 SKU "Raccolta 2025" sono finiti
+      // con annata assente e sono spariti dal men\u00F9 annata degli ordini).
+      // Ora il default \u00E8 vuoto ("\u2014 Seleziona \u2014") e l'annata \u00E8 obbligatoria.
+      v: form.annata || "",
       on: v => setForm(f => ({
         ...f,
         annata: v
       })),
-      opts: ["2025", "2024", "2023"]
+      req: true,
+      opts: ["2026", "2025", "2024", "2023"]
     }), /*#__PURE__*/React.createElement(Inp, {
       label: "Prezzo listino B2B (\u20AC)",
       type: "number",

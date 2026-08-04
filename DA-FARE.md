@@ -39,12 +39,14 @@ Ultimo aggiornamento: 2026-08-04 (Correzione dati di produzione: gli SKU "Raccol
 
 ## 🟡 Opzionali / pulizia
 
-### 5. Form SKU: `annata` facoltativa → il prodotto sparisce dal menù annata degli ordini (causa a monte del fix del 2026-08-04)
-- **Cosa:** creando/modificando uno SKU in Magazzino si può salvare con il campo `annata` vuoto anche se il nome prodotto contiene l'anno ("Raccolta 2025 …"). Siccome `annateDisponibili` (`index.html` ~2232) e il default riga `annataDefaultPerFormato` (~2242) leggono SOLO il campo strutturato `annata`, uno SKU con annata vuota **non compare** nel menù annata degli ordini pur avendo giacenza → è esattamente ciò che ha bloccato Elisa sull'ordine Grimaldi (tutti e 7 gli SKU 2025 avevano annata vuota).
-- **Opzioni di hardening (da decidere insieme, tocca l'area magazzino/ordini a rischio):**
-  1. **Preventiva (consigliata):** in `saveSku` rendere `annata` obbligatoria (o proporla in automatico estraendola da "Raccolta AAAA" nel nome) con un avviso, così non si creano più SKU senza annata. Basso impatto, risolve la causa.
-  2. **Difensiva:** far sì che `annateDisponibili` includa anche l'anno ricavato dal nome prodotto ("Raccolta AAAA") come fallback. Più invasiva sul comportamento del menù (potrebbe mostrare anni inattesi) → valutare con attenzione.
-- **Stato:** solo il DATO è stato corretto (backfill 2025). Il form resta com'è: **da decidere** se e come irrigidirlo prima della raccolta 2026 (che avrà lo stesso rischio se inserita con annata vuota). Nessuna modifica al codice andrà su `main` senza ok esplicito di Patrizio.
+### 5. Form SKU: annata ora OBBLIGATORIA (hardening fatto sul branch — causa a monte del fix del 2026-08-04)
+- **Cosa:** creando/modificando uno SKU in Magazzino si poteva salvare con il campo `annata` vuoto anche se il nome prodotto conteneva l'anno ("Raccolta 2025 …"). Siccome `annateDisponibili` (`index.html` ~2232) e il default riga `annataDefaultPerFormato` (~2242) leggono SOLO il campo strutturato `annata`, uno SKU con annata vuota **non compariva** nel menù annata degli ordini pur avendo giacenza → è esattamente ciò che ha bloccato Elisa sull'ordine Grimaldi (tutti e 7 gli SKU 2025 avevano annata vuota).
+- **Causa precisa individuata:** il menù Annata del form SKU aveva `v: form.annata || "2025"` → mostrava "2025" come pre-selezione **fittizia** senza scriverla nello stato; chi salvava senza toccare il menù lasciava `annata` vuota.
+- **Hardening applicato (su richiesta di Patrizio, 2026-08-04, opzione preventiva):**
+  - `saveSku` (`index.html` ~13296): `annata` aggiunta ai campi obbligatori (stesso pattern di prodotto/formato, toast "Compila i campi obbligatori: annata").
+  - Menù Annata del form (~14432): default vuoto (`form.annata || ""` → mostra "— Seleziona —"), `req: true` (asterisco rosso) e lista opzioni estesa a `["2026","2025","2024","2023"]` (così l'obbligo non blocca la futura raccolta 2026).
+- **Stato:** implementato **sul branch** `claude/ordine-grimaldi-500ml-q89cb4`. **Verifica:** bundle app superato a `node --check` (sintassi OK) + logica tracciata. ⚠️ **NON ancora su `main`**: prima del merge fare la prova in Chromium/preview (nuovo SKU senza annata → bloccato con toast; con annata → salva; modifica SKU esistente invariata) e dare l'ok esplicito, come da disciplina del progetto.
+- **Alternativa difensiva NON fatta (per memoria):** far sì che `annateDisponibili` ricavi l'anno anche dal nome "Raccolta AAAA" come fallback — più invasiva sul menù ordini (rischio di anni inattesi), scartata a favore della correzione alla fonte.
 
 ### 80. Token di sessione / scadenza login (audit #80 — rinviato, area login)
 - Il login non ha un token di sessione con scadenza: la "sessione ricordata" resta valida a tempo indefinito nel `localStorage` del dispositivo, senza invalidazione lato server. È lo stesso nodo del punto critico #1 (auth lato client): un vero token di sessione ha senso solo insieme allo spostamento della verifica credenziali su server (Supabase Auth o Netlify Function). **Area login a rischio → non toccare da solo, va pianificato con #1.** Fino ad allora resta il comportamento attuale.
@@ -81,6 +83,9 @@ Ultimo aggiornamento: 2026-08-04 (Correzione dati di produzione: gli SKU "Raccol
 ---
 
 ## ✅ Fatto di recente
+- **2026-08-04 — Hardening form SKU: annata OBBLIGATORIA (sul branch, non ancora su `main`).** Modifica al CODICE (`index.html`) in area magazzino, richiesta da Patrizio dopo il fix dei dati per prevenire il ripetersi del problema (raccolta 2026).
+  - `saveSku`: `annata` tra i campi obbligatori (toast se manca); menù Annata del form con default vuoto "— Seleziona —" (rimosso il default fittizio "2025" che non veniva scritto nello stato), asterisco di obbligatorietà e opzioni `2026/2025/2024/2023`.
+  - **Verifica:** `node --check` sul bundle app (sintassi OK) + logica tracciata. Prova UI in Chromium/preview da fare prima del merge su `main` (vedi punto opzionale 5). Nessun deploy su `main` senza ok esplicito.
 - **2026-08-04 — Correzione dati produzione: annata mancante sugli SKU "Raccolta 2025" (segnalazione di Elisa — ordine Francesco Grimaldi 500 ml).** ⚠️ Modifica ai **dati di produzione** (Supabase `app_kv/tnb-pro-v2`), NON al codice. Autorizzata esplicitamente da Patrizio (opzione "tutti i 7 SKU 2025").
   - **Sintomo:** nel form ordine, il menù "Annata" del 500 ml mostrava solo il 2024, quindi non si poteva registrare l'ordine del sito (bottiglia 2025).
   - **Causa reale:** il menù annata si costruisce da `annateDisponibili(dati)` (`index.html` ~2232), che legge il campo strutturato `annata` dalle voci di magazzino + lotti. Tutti e 7 gli SKU "Raccolta 2025" (100/250/500 ml, 3 L, 5 L, Olio/Aceto 20 ml) avevano l'anno **solo nel nome prodotto** e il campo `annata` **vuoto** → il 2025 non compariva per nessun formato. Le bottiglie 2025 erano comunque in giacenza (es. 500 ml = 110 pz).
