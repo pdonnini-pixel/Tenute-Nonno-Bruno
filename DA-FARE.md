@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-08-04 (Correzione dati di produzione: gli SKU "Raccolta 2025" avevano il campo `annata` vuoto → il 2025 non compariva nel menù annata degli ordini. Backfill `annata="2025"` sui 7 SKU 2025 in Supabase, così Elisa può registrare l'ordine Grimaldi 500 ml. Vedi "Fatto di recente" e il nuovo punto opzionale sul form SKU. — Precedente: 2026-07-19, Pacchetti A–E e F1–F17 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.)
+Ultimo aggiornamento: 2026-09-07 (Estrazione dati commerciali per il piano olio 2026/27: nuovo `docs/DOSSIER-COMMERCIALE-OLIO-2026-27.md`, sola lettura sul DB, nessuna modifica a codice o dati. Emersi due punti nuovi: il token GitHub in `app_kv/tnb_config_deploy` e i buchi dati che bloccano il piano commerciale. Vedi "Fatto di recente" e i punti 6 e 7. — Precedente: 2026-08-04, correzione dati annata SKU 2025 + hardening form SKU.)
 
 ---
 
@@ -36,6 +36,21 @@ Ultimo aggiornamento: 2026-08-04 (Correzione dati di produzione: gli SKU "Raccol
 - **Stato:** verificata (problema confermato). Remediation da pianificare con #1. Link Supabase: database-linter lint 0024 (RLS permissiva) e 0025 (bucket pubblico listabile).
 
 ---
+
+### 6. Token GitHub salvato in chiaro su `app_kv/tnb_config_deploy` — DA VALUTARE (area sicurezza, va col cantiere #1/#2)
+- **Cosa:** la riga `tnb_config_deploy` della tabella `app_kv` contiene un personal access token GitHub in chiaro, insieme a repo e branch di deploy. La tabella `app_kv` è la stessa da cui l'app legge lo stato con la chiave anon pubblicata in `index.html`, quindi con le policy RLS attuali (vedi punto 2) il token è potenzialmente leggibile da chiunque abbia quella chiave.
+- **Perché conta:** un token con permessi di scrittura sul repo consente di pushare su `main`, cioè di mandare in produzione codice arbitrario via Netlify.
+- **Da fare (decisione di Patrizio):** revocare e rigenerare il token, spostarlo fuori dal database (variabile d'ambiente Netlify o rimozione della funzione di deploy da UI), e nel frattempo restringere la policy RLS su `app_kv` almeno per quella chiave.
+- **Stato:** solo segnalato il 2026-09-07 durante l'estrazione dati. Nessuna modifica fatta.
+
+### 7. Dati mancanti che bloccano il piano commerciale 2026/27 (da chiedere a Patrizio e Irene)
+Emersi il 2026-09-07 estraendo i dati per il piano commerciale. Non sono bug: sono campi che il gestionale prevede ma che nessuno compila, e senza i quali il piano resta un esercizio a metà.
+- `produzione`: le due annate 2024 e 2025 esistono ma kg olive, litri e resa sono **vuoti**. Manca anche la stima 26/27.
+- `costiConfig`: vuoto. Nessun costo pieno per bottiglia, packaging, etichetta, frangitura. Senza questi non si calcola marginalità né prezzo minimo.
+- Listino latte 3 L e 5 L: inesistente a scaglioni, pur avendo 1.174 litri a magazzino.
+- `campioneInviato` sui prospect: 0 su 960, il campo non viene mai compilato, quindi il ritorno della campionatura non è misurabile.
+- Anagrafiche: 12 clienti su 30 senza provincia, email presente solo sul 40% dei prospect.
+- **Alert magazzino:** 1.716 litri di olio a stock contro 544 litri venduti in due annate, di cui 805 litri di annata 2024. Il 100 ml è a zero. Da portare all'attenzione di Patrizio prima delle scelte di imbottigliamento.
 
 ## 🟡 Opzionali / pulizia
 
@@ -83,6 +98,10 @@ Ultimo aggiornamento: 2026-08-04 (Correzione dati di produzione: gli SKU "Raccol
 ---
 
 ## ✅ Fatto di recente
+- **2026-09-07 — Estrazione dati commerciali per il piano olio 2026/27 (`docs/DOSSIER-COMMERCIALE-OLIO-2026-27.md`).** Solo lettura: nessuna modifica a `index.html` né ai dati di produzione.
+  - **Cosa contiene:** identikit azienda, listino con scaglioni e prezzi realmente praticati, risultati 2025 e 2026 (49 ordini validi, 17.424,64 € netti, ticket medio 355,60 €), stagionalità mensile, mix per formato e annata, classifica dei 30 clienti con concentrazione (top 3 = 60,4%) e riacquisto (7 su 30), conto vendita con scadenze, giacenze valorizzate, funnel dei 960 prospect, attività di chiamata, crediti aperti (5.281,22 €), KPI di sintesi e la lista dei dati mancanti.
+  - **Fonte:** `app_kv/tnb-pro-v2` su Supabase, che è lo stato vivo dell'app. Le tabelle normalizzate (`prospect` 2.200 righe, `clienti` 42, `ordini` 24) sono un import Excel del maggio 2026 con duplicati e **non vanno usate** per analisi: il dossier lo dice in testa.
+  - **Aperti generati:** punto 6 (token GitHub in chiaro su `app_kv`) e punto 7 (dati mancanti per il piano).
 - **2026-08-04 — Hardening form SKU: annata OBBLIGATORIA (sul branch, non ancora su `main`).** Modifica al CODICE (`index.html`) in area magazzino, richiesta da Patrizio dopo il fix dei dati per prevenire il ripetersi del problema (raccolta 2026).
   - `saveSku`: `annata` tra i campi obbligatori (toast se manca); menù Annata del form con default vuoto "— Seleziona —" (rimosso il default fittizio "2025" che non veniva scritto nello stato), asterisco di obbligatorietà e opzioni `2026/2025/2024/2023`.
   - **Verifica:** `node --check` sul bundle app (sintassi OK) + **14/14 controlli in Chromium con backend simulato** (mai il DB reale): boot Magazzino ok; nuovo SKU → annata parte vuota (niente più default fittizio 2025), etichetta con asterisco, opzione 2026 presente; salvataggio senza annata BLOCCATO col toast "Compila i campi obbligatori: annata" (che NON nomina prodotto/formato già compilati) e modal che resta aperto; con annata=2025 il salvataggio riesce e il modal si chiude; modifica di uno SKU esistente (annata già valorizzata) si salva regolarmente; zero errori JS. Prova consigliata anche sul preview Netlify prima del merge; nessun deploy su `main` senza ok esplicito.
