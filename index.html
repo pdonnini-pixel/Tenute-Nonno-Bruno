@@ -13314,8 +13314,19 @@ function Magazzino({
     // la giacenza SOLO dai movimenti. La giacenza digitata a mano nel form non deriva da alcun
     // movimento, quindi al primo movimento (es. una "riserva") il ricalcolo ripartirebbe da zero
     // e azzererebbe la disponibilità invece di sottrarre la quantità. Per coerenza emettiamo/
-    // aggiorniamo un movimento "apertura" (timestamp=0) pari al delta tra la giacenza voluta e
-    // quella ricostruita dai soli movimenti reali, esattamente come fa la migrazione v49.
+    // aggiorniamo un movimento sintetico di riconciliazione pari al delta tra la giacenza voluta
+    // e quella ricostruita dai soli movimenti reali.
+    // tkt_1789635586188 (fix): questo movimento va datato ADESSO, non timestamp=0/1970 come la
+    // migrazione v49. Con timestamp=0 la riconciliazione viene rigiocata PRIMA di tutta la
+    // storia: i clamp di ricalcolaGiacenza() su scarichi passati (es. scarico_ordine limitato
+    // alla giacenza disponibile in quel momento) si comportano diversamente perché il replay
+    // finale parte da un disponibile già maggiorato dal delta, mentre `calc` qui sotto è
+    // calcolato SENZA alcuna apertura. Il risultato finale (giacenzaCoerente) può quindi
+    // divergere dal valore digitato, e ripetere l'operazione ricalcola sempre lo stesso delta
+    // sbagliato: non converge mai (ticket "Rettifiche" di Irene). Datando la riconciliazione
+    // ad oggi, il replay rigioca prima TUTTA la storia reale esattamente come in `calc` (stessi
+    // clamp, nessuna alterazione retroattiva), e il delta si applica DOPO: il valore finale
+    // coincide sempre con quello desiderato.
     const movTutti = dati.movimenti || [];
     const movRealiSku = movTutti.filter(mv => (mv.skuId || mv.magId) === skuId && mv.tipo !== "apertura");
     const calc = ricalcolaGiacenza(movRealiSku);
@@ -13328,27 +13339,29 @@ function Magazzino({
     // Rimuovi eventuali aperture precedenti dello SKU, poi reinseriscine una aggiornata se serve.
     let movimenti = movTutti.filter(mv => !((mv.skuId || mv.magId) === skuId && mv.tipo === "apertura"));
     if (hasDelta) {
+      const dataRiconciliazione = todayStr();
       movimenti = [{
         id: uid(),
         tipo: "apertura",
         qta: 0,
         stati: delta,
-        data: "1970-01-01",
+        data: dataRiconciliazione,
         nota: isNew ? "Apertura giacenza iniziale SKU" : "Riconciliazione giacenza manuale SKU",
         ordineId: null,
         lottoId: null,
         auto: true,
         skuId: skuId,
         magId: skuId,
-        timestamp: 0
+        // tkt_1789635586188: timestamp odierno (non più 0) — vedi commento sopra.
+        timestamp: timestampPerData(dataRiconciliazione, movTutti)
       }, ...movimenti];
     }
-    // Audit F#18: NON salvare la giacenza digitata così com'è. Il replay è non-lineare
-    // per via dei clamp: se lo storico contiene uno scarico maggiore di quanto poi
-    // disponibile, l'apertura+delta non riesce a raggiungere il valore voluto e il
-    // numero salvato divergeva dal log, "sparendo da solo" al primo movimento
-    // successivo. Salviamo SEMPRE la giacenza ricalcolata dal log (apertura+movimenti);
-    // se non coincide col valore digitato, avvisiamo l'utente.
+    // Audit F#18 (aggiornato da tkt_1789635586188): NON salvare la giacenza digitata così
+    // com'è, ma quella ricostruita dal log (apertura+movimenti) — con la riconciliazione
+    // ora datata ad oggi (vedi sopra) i due valori dovrebbero sempre coincidere; questo
+    // resta comunque un controllo di sicurezza: se per qualsiasi motivo divergessero
+    // ancora (es. valore desiderato negativo azzerato dal sanitize finale), avvisiamo
+    // l'utente invece di salvare in silenzio un numero diverso da quello digitato.
     const giacenzaCoerente = ricalcolaGiacenza(movimenti.filter(mv => (mv.skuId || mv.magId) === skuId));
     const scostamento = STATI_MAG_ORDINE.some(k => (Number(giacenzaDesiderata[k]) || 0) !== (Number(giacenzaCoerente[k]) || 0));
     const sku = { ...form, id: skuId, giacenza: giacenzaCoerente };
