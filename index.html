@@ -707,7 +707,7 @@ function HBarChartSVG({
     }, fmtFn ? fmtFn(d[valKey]) : d[valKey]));
   }));
 }
-</script><script>// TNB-BUILD-20260629-v69-sidebar-icone-divisori
+</script><script>// TNB-BUILD-20260918-v70-rettifiche-sotto-zero
 window.__TNB_BUILD__ = "2026-06-29 12:24"; // data/ora di pubblicazione di questa versione (aggiornare ad ogni deploy)
 // ═══════════════════════════════════════════════════════════════════════════
 // v48.3 (build v64) — Report drill-down: niente più dettaglio ripetuto. Cliccando
@@ -2139,6 +2139,25 @@ const ricalcolaGiacenza = (movimenti) => {
   // Sanitize finale: nessun valore negativo (apertura potrebbe lasciare temporanei negativi).
   Object.keys(g).forEach(k => { g[k] = Math.max(0, g[k] || 0); });
   return g;
+};
+
+// tkt_1789721815680: verifica che una rettifica non porti il disponibile sotto zero.
+// ricalcolaGiacenza somma le rettifiche senza clamp e azzera solo a fine replay:
+// una rettifica negativa oltre la giacenza lasciava un valore negativo "nascosto"
+// (a video 0) su cui si sommavano le rettifiche successive. Qui si rigioca lo
+// storico dello SKU e, per ogni rettifica negativa dalla nuova in poi, si controlla
+// il disponibile subito prima. Ritorna null se ok, altrimenti { data, disponibile }.
+const rettificaSottoZero = (movimentiSku, nuovoMv) => {
+  const tsOf = mv => (typeof mv.timestamp === "number" ? mv.timestamp : new Date(mv.data || 0).getTime()) || 0;
+  const tutti = [...(movimentiSku || []), nuovoMv].sort((a, b) => tsOf(a) - tsOf(b));
+  const tsNuovo = tsOf(nuovoMv);
+  for (let i = 0; i < tutti.length; i++) {
+    const mv = tutti[i];
+    if (mv.tipo !== "rettifica" || (Number(mv.qta) || 0) >= 0 || tsOf(mv) < tsNuovo) continue;
+    const prima = ricalcolaGiacenza(tutti.slice(0, i)).disponibile;
+    if (prima + (Number(mv.qta) || 0) < 0) return { data: mv.data, disponibile: prima, mv };
+  }
+  return null;
 };
 
 // Ricostruisce la giacenza alla fine del giorno `dataLimite` (YYYY-MM-DD).
@@ -13139,6 +13158,16 @@ function Magazzino({
       timestamp: timestampPerData(dataMov, dati.movimenti),
       inseritoTs: Date.now()
     };
+    // tkt_1789721815680: blocca le rettifiche che porterebbero il disponibile sotto zero.
+    const movSku = (dati.movimenti || []).filter(x => (x.skuId || x.magId) === rettForm.magId);
+    const sottoZero = rettificaSottoZero(movSku, mv);
+    if (sottoZero) {
+      const msg = sottoZero.mv === mv
+        ? `Rettifica non registrata: al ${sottoZero.data} risultano ${sottoZero.disponibile} pz disponibili, puoi scalarne al massimo ${sottoZero.disponibile}.`
+        : `Rettifica non registrata: farebbe scendere sotto zero una rettifica successiva (${sottoZero.data}). Controlla le date o la quantità.`;
+      if (window.tnbToast) window.tnbToast(msg, "err");
+      return;
+    }
     setDati(d => {
       const movimentiTot = [mv, ...(d.movimenti || [])];
       return {

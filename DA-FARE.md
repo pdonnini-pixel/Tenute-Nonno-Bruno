@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-09-17 (Magazzino, fix tkt_1789635586188: la riconciliazione della giacenza digitata a mano nel form SKU era datata 1970 e non convergeva mai sul valore inserito. Ora è datata al giorno corrente. **IN PRODUZIONE**: merge su `main` autorizzato da Patrizio dopo i test, 21/21 controlli end to end in Chromium con backend simulato più controllo negativo sul codice pre-fix. Vedi "Fatto di recente". Precedente: 2026-08-04, correzione dati annata SKU 2025 e annata obbligatoria nel form SKU.)
+Ultimo aggiornamento: 2026-09-18 (Magazzino, fix tkt_1789721815680: le rettifiche negative oltre la giacenza lasciavano un valore negativo nascosto su cui si sommavano le rettifiche successive. Ora `saveRettifica` blocca la rettifica con un toast; dati delle due latte corretti in Supabase. **IN PRODUZIONE** su richiesta di Patrizio. Vedi "Fatto di recente". Precedente: 2026-09-17, fix tkt_1789635586188 riconciliazione giacenza SKU datata a oggi.)
 
 Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccolta 2025" avevano il campo `annata` vuoto → il 2025 non compariva nel menù annata degli ordini. Backfill `annata="2025"` sui 7 SKU 2025 in Supabase, così Elisa può registrare l'ordine Grimaldi 500 ml. Vedi "Fatto di recente" e il nuovo punto opzionale sul form SKU. — Precedente: 2026-07-19, Pacchetti A–E e F1–F17 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.
 
@@ -85,6 +85,14 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 ---
 
 ## ✅ Fatto di recente
+
+### 2026-09-18 — tkt_1789721815680 «SKU sballata» (magazzino)
+- **Causa:** `ricalcolaGiacenza` somma le `rettifica` senza clamp e azzera solo a fine replay. Le rettifiche -4 (latta 5L 2024, `wnzr3hgq`) e -7 (latta 3L 2025, `7o7ru01a`) del 17/09, fatte con giacenza 0, avevano lasciato -4 e -7 nascosti: il +43 e il +104 del 18/09 davano 39 e 97.
+- **Codice:** nuovo helper `rettificaSottoZero(movimentiSku, nuovoMv)` subito dopo `ricalcolaGiacenza`; `saveRettifica` lo chiama prima di salvare e blocca con toast se la rettifica (o una rettifica negativa successiva, in caso di retrodatazione) porterebbe il disponibile sotto zero. `ricalcolaGiacenza` NON modificata: storico e altri flussi invariati. Build marker v70.
+- **Dati:** backup in `app_kv` chiave `backup-tnb-pro-v2-20260918-pre-tkt1789721815680`; aggiunte due rettifiche di correzione (+4 su `wnzr3hgq`, +7 su `7o7ru01a`, nota «correzione tkt_1789721815680») → 43 e 104 come inteso da Irene. Verificato che nessun altro SKU abbia oggi un disponibile negativo nascosto (`cqfhimx0` era passato a -1 ma Irene aveva già compensato, 56 coerente).
+- **Verifica:** `node --check` su tutti gli script inline + 9/9 test Node sulla logica (casi reali, retrodatazione, SKU con apertura).
+- Il backup in `app_kv` si può cancellare dopo la conferma di Irene.
+
 - **2026-09-17 — Fix convergenza della giacenza digitata nel form SKU (tkt_1789635586188): IN PRODUZIONE** (merge su `main` autorizzato esplicitamente da Patrizio dopo i test). Area magazzino (event sourcing), correzione a comportamento invariato nei casi già corretti.
   - **Sintomo (ticket "Rettifiche" di Irene):** si digita una giacenza nel form SKU, si salva, compare il toast "giacenza adeguata ai movimenti esistenti" e il numero salvato è diverso da quello scritto. Riprovando esce sempre lo stesso valore sbagliato: non converge mai.
   - **Causa:** `saveSku` emetteva il movimento sintetico di riconciliazione (`tipo: "apertura"`) con `data: "1970-01-01"` e `timestamp: 0`, come la migrazione v49. Così il delta veniva rigiocato PRIMA di tutta la storia reale, mentre `calc` (da cui il delta si ricava) è calcolato senza alcuna apertura. I clamp di `ricalcolaGiacenza` sugli scarichi passati (es. `scarico_ordine` limitato al disponibile del momento) si comportano diversamente nei due replay, quindi il risultato finale divergeva dal valore digitato e il delta ricalcolato restava identico a ogni tentativo.
