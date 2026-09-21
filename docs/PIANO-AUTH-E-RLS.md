@@ -73,6 +73,27 @@ così la produzione non viene toccata finché non è tutto verificato.
   o si leggono dal profilo Auth).
 - La "sessione ricordami" (#80) diventa il token Auth con refresh gestito da Supabase.
 
+**Passo 2-bis: recupero e cambio password (self-service)**
+- Link "Password dimenticata?" nel form di login: l'app chiede l'email e chiama
+  `supabase.auth.resetPasswordForEmail(email, { redirectTo })`. Supabase manda una mail
+  con un link a tempo; al rientro nell'app l'evento `PASSWORD_RECOVERY` apre il form
+  "nuova password", che salva con `supabase.auth.updateUser({ password })`.
+- Stesso `updateUser` per il **cambio password volontario** da dentro il gestionale
+  (serve anche al cambio obbligatorio al primo accesso previsto dal Passo 1).
+- **Reset amministrativo:** il SuperAdmin può far ripartire il link di recupero per un
+  collega, dalla dashboard Supabase oppure con l'admin API dentro una Netlify Function.
+  La `service_role` key resta solo lato server, mai nel bundle.
+- **Configurazione Supabase necessaria:** URL di redirect autorizzati (dominio Netlify di
+  produzione e, se serve, i preview), template email in italiano, e soprattutto un **SMTP
+  proprio**. Il mailer di cortesia di Supabase ha limiti molto bassi e non regge un uso
+  reale: va collegato un mittente sul dominio `tenutenonnobruno.it` (Resend, Brevo,
+  SendGrid o l'SMTP della posta aziendale) con SPF e DKIM a posto.
+- **Vincolo:** senza un indirizzo email valido per ogni account il recupero non esiste.
+  Oggi nell'array `USERS` solo Irene ha una email. Questo si incrocia col punto 1 del §4.
+- **Fino al go-live di Supabase Auth non c'è recupero possibile:** le password vivono nel
+  sorgente, quindi l'unico "recupero" è aprire il codice e leggerle (o cambiarle con un
+  deploy). È una ragione in più per non lasciare il cantiere auth in sospeso a lungo.
+
 **Passo 3 — Layer dati con token autenticato**
 - `window.storage` usa il token della sessione Auth invece della anon key per
   `app_kv` e per gli upload firma/DDT.
@@ -91,6 +112,9 @@ così la produzione non viene toccata finché non è tutto verificato.
 
 **Passo 5 — Verifica end-to-end (staging)**
 - Login/logout di ogni ruolo; permessi corretti per ruolo.
+- Recupero password: richiesta dal login, arrivo della mail, link scaduto e link già
+  usato (devono fallire con un messaggio chiaro), cambio riuscito, vecchia password non
+  più valida.
 - Salvataggio, conflitto tra due dispositivi, offline+retry, boot da cache.
 - Upload/lettura firma e DDT (URL firmati).
 - Generazione PDF e invio email invariati.
@@ -107,9 +131,13 @@ così la produzione non viene toccata finché non è tutto verificato.
 
 1. **Elenco utenti definitivi** e ruoli (chi è superadmin/admin/tester/commerciale).
 2. **Email e password iniziali** per ogni account (le password non staranno nel codice).
+   Serve un indirizzo **personale e raggiungibile** per ciascuno: è quello su cui
+   arriverà il link di recupero password.
 3. Ok a **una breve finestra di go-live** in cui tutti dovranno ri-accedere.
 4. Conferma che posso operare sul progetto Supabase `NonnoBruno` (branch di staging
    prima, produzione solo al go-live).
+5. Scelta del **mittente email** per i link di recupero (Resend, Brevo, SendGrid o
+   l'SMTP della posta aziendale) e accesso al DNS di `tenutenonnobruno.it` per SPF/DKIM.
 
 ---
 
@@ -121,6 +149,7 @@ così la produzione non viene toccata finché non è tutto verificato.
 | Utenti chiusi fuori al go-live | Account creati e testati prima; comunicazione; rollback pronto |
 | Regressioni su conflitto/offline/PDF | Si riusa la verifica del Pacchetto A + test end-to-end del Passo 5 |
 | Perdita accessi firme/DDT (bucket privato) | Gli URL firmati sono già nel codice (`getSignedUrl`): si testano nel Passo 5 |
+| Link di recupero che non arrivano (spam, limiti del mailer) | SMTP proprio con dominio verificato (SPF/DKIM) invece del mailer di cortesia; prova di recapito su ogni casella nel Passo 5 |
 
 ---
 

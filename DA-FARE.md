@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-09-18 (Magazzino, fix tkt_1789721815680: le rettifiche negative oltre la giacenza lasciavano un valore negativo nascosto su cui si sommavano le rettifiche successive. Ora `saveRettifica` blocca la rettifica con un toast; dati delle due latte corretti in Supabase. **IN PRODUZIONE** su richiesta di Patrizio. Vedi "Fatto di recente". Precedente: 2026-09-17, fix tkt_1789635586188 riconciliazione giacenza SKU datata a oggi.)
+Ultimo aggiornamento: 2026-09-21 (Aggiunto il punto **1b. Recupero password**: oggi non esiste alcun modo di rientrare per chi dimentica la password, e la soluzione sta nel cantiere auth, nuovo **Passo 2-bis** di `docs/PIANO-AUTH-E-RLS.md`. Nessuna modifica al codice dell'app. Precedente: 2026-09-18 (Magazzino, fix tkt_1789721815680: le rettifiche negative oltre la giacenza lasciavano un valore negativo nascosto su cui si sommavano le rettifiche successive. Ora `saveRettifica` blocca la rettifica con un toast; dati delle due latte corretti in Supabase. **IN PRODUZIONE** su richiesta di Patrizio. Vedi "Fatto di recente". Precedente: 2026-09-17, fix tkt_1789635586188 riconciliazione giacenza SKU datata a oggi.))
 
 Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccolta 2025" avevano il campo `annata` vuoto → il 2025 non compariva nel menù annata degli ordini. Backfill `annata="2025"` sui 7 SKU 2025 in Supabase, così Elisa può registrare l'ordine Grimaldi 500 ml. Vedi "Fatto di recente" e il nuovo punto opzionale sul form SKU. — Precedente: 2026-07-19, Pacchetti A–E e F1–F17 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.
 
@@ -27,6 +27,13 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 - **Problema:** username/password (`superadmin/tnb2026!`, `admin/azienda2026`, `irene/irene2026`) sono nel bundle e la verifica avviene nel browser → chiunque apra il sorgente legge le credenziali e può bypassare il login. Il codice stesso lo ammette (~riga 19859).
 - **Fix corretto:** spostare la verifica lato server (Supabase Auth, oppure una Netlify Function). **Cambia l'architettura del login → non toccare senza test end-to-end.**
 - **Stato:** deciso di NON toccare finché non pianificato insieme.
+
+### 1b. Recupero password: non esiste (nuovo, 2026-09-21)
+- **Problema:** chi dimentica la password non ha nessun modo di rientrare da solo. Non c'è un link "password dimenticata", non c'è cambio password dall'interfaccia, e la schermata Gestione Utenti lo dice apertamente ("per modificare password o aggiungere utenti contatta il Super Admin"). L'unico recupero possibile oggi è leggere l'array `USERS` nel sorgente, oppure cambiare la password e rifare un deploy.
+- **Perché non si risolve prima di #1:** un recupero vero ha bisogno di un'identità lato server e di una casella email per utente. Con le credenziali nel bundle qualsiasi "recupero" sarebbe finto (il browser non può verificare niente e le password restano comunque pubbliche nel sorgente).
+- **Dove sta la soluzione:** nel cantiere auth, **Passo 2-bis** di `docs/PIANO-AUTH-E-RLS.md`: `resetPasswordForEmail` di Supabase Auth, form "nuova password" al rientro, cambio password volontario, reset amministrativo per il SuperAdmin.
+- **Da decidere (serve Patrizio):** l'email personale di ciascun utente (oggi solo Irene ne ha una nel codice) e il mittente SMTP per le mail di recupero, con SPF/DKIM sul dominio `tenutenonnobruno.it`. Il mailer di cortesia di Supabase non regge l'uso reale.
+- **Stato:** annotato, **non implementato**. Va con #1 e #2, non da solo.
 
 ### 2. RLS Supabase — VERIFICATA il 2026-07-19: policy troppo permissive (CRITICO, va con #1)
 - **Dove:** progetto Supabase `njwtfmiviijszzxschll` (NonnoBruno) + bucket `tnb-firme`.
