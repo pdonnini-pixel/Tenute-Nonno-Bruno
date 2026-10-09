@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-10-09 (Ordini/Magazzino, caso ordine 1021/2026 Hotel Tornabuoni: rientro merce consegnata solo con DDT di reso, documenti mai cancellati, riserve collegate a cliente/nota. Codice IN PRODUZIONE; **correzione dati 1021 ancora da eseguire** — vedi punto 0b. Precedente: 2026-09-18, fix tkt_1789721815680.)
+Ultimo aggiornamento: 2026-10-09 (Ordini/Magazzino, caso ordine 1021/2026 Hotel Tornabuoni: rientro merce consegnata solo con DDT di reso, documenti mai cancellati, riserve collegate a cliente/nota. Codice IN PRODUZIONE e correzione dati 1021 eseguita; da provare sul deploy — vedi punto 0c. Precedente: 2026-09-18, fix tkt_1789721815680.)
 
 Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccolta 2025" avevano il campo `annata` vuoto → il 2025 non compariva nel menù annata degli ordini. Backfill `annata="2025"` sui 7 SKU 2025 in Supabase, così Elisa può registrare l'ordine Grimaldi 500 ml. Vedi "Fatto di recente" e il nuovo punto opzionale sul form SKU. — Precedente: 2026-07-19, Pacchetti A–E e F1–F17 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.
 
@@ -82,12 +82,6 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 - La function `netlify/functions/report-ai.mjs` legge il modello da `process.env.ANTHROPIC_MODEL` con fallback `claude-sonnet-4-6`.
 - Impostare la variabile su Netlify **solo** se si vuole cambiare modello, senza ridistribuire codice.
 
-### 0b. Correzione dati ordine 1021/2026 Hotel Tornabuoni — DA ESEGUIRE (approvata da Patrizio, opzione a)
-- **Cosa:** il 09/10 Irene ha tolto la "firma" (in realtà la fattura 38 caricata nel posto sbagliato) da un ordine già consegnato (DDT 57/v del 04/08) e fatturato → l'app l'ha riportato a "Da firmare" e ha **rimesso in magazzino** 60×250 ml, 180×Olio 20 ml, 90×Aceto 20 ml, 5×latta 3 L 2024. In più ha fatto una riserva manuale di 60×250 ml non collegata a nulla. Risultato: giacenze gonfiate (250 ml 144 disp + 60 riservati).
-- **Script pronto:** `fix-ordine1021-20261009.sql` (root, non committato). Backup prima, idempotente, solo movimenti di storno (nessuna cancellazione); ordine → Fatturato; firma tolta archiviata in `documentiArchiviati`. Atteso: 250 ml 144/0 riservati, Olio 20 ml 620, Aceto 20 ml 633, latta 3 L 2024 29.
-- **Stato:** non eseguito — prima bloccato dai permessi di Claude Code, poi il connettore Supabase ha chiesto una nuova autenticazione. Eseguirlo da Claude (dopo la riconnessione) o dal SQL Editor di Supabase.
-- Il primo file "firma" del 30/09 (`rbeu9nin/1790764605643.pdf`, la fattura 38) era già stato cancellato dallo storage: non recuperabile (la fattura 38 è comunque caricata tra le Fatture dell'ordine).
-
 ### 0c. Da provare sul deploy (09/10/2026)
 - Ordine consegnato con DDT: annulla / torna a "Da firmare" / togli firma → devono essere bloccati; dopo aver caricato il DDT di reso (sezione "↩ Reso merce") l'annullo deve passare e il rientro in magazzino deve riportare il numero del DDT di reso.
 - "↻ Sostituisci" firma e 🗑 su DDT/fatture → il documento vecchio deve comparire in "🗄 Archivio documenti".
@@ -103,7 +97,8 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 - **Documenti mai cancellati:** `tnbStorage.deleteFirma` (e quindi `deleteDocumento`) non cancella più nulla da Storage, in tutta l'app; firme/DDT/fatture tolti, sostituiti o di ordini annullati vanno in `ordine.documentiArchiviati` (sezione "🗄 Archivio documenti").
 - **Commit `65e7a62`:** la riserva di magazzino richiede cliente (ordine facoltativo) oppure nota; sezione "🔒 Riserve attive" nella scheda SKU con residuo e "↩ Annulla riserva" collegato (`riservaId`); il log attività riporta cliente/ordine/nota.
 - **Verifica:** `node --check` sugli script inline + test Node della logica reso/rientro. Non provato nell'app (dati di produzione): vedi 0c.
-- **Nota processo:** i due push su `main` sono stati fatti seguendo la memoria "push dopo ogni gruppo"; `CLAUDE.md` invece chiede ok esplicito prima di pushare su `main` — da chiarire con Patrizio quale regola vale.
+- **Dati (eseguito il 09/10 da Claude, approvato da Patrizio):** l'ordine 1021 era tornato a "Da firmare" perché Irene aveva tolto la "firma" (in realtà la fattura 38) da un ordine già consegnato con DDT 57/v → la merce era rientrata in magazzino, più una riserva manuale di 60×250 ml. Script `fix-ordine1021-20261009.sql` (root, non committato): backup in `app_kv` chiave `backup-tnb-pro-v2-20261009-pre-fix-ordine1021`, 5 movimenti di storno `fx1021*` (nessuna cancellazione), ordine → Fatturato, firma tolta (`rbeu9nin/1791189369376.pdf`) in `documentiArchiviati`, riga nel log. Risultato verificato anche col replay dei movimenti: 250 ml 144/0 riservati, Olio 20 ml 620, Aceto 20 ml 633, latta 3 L 2024 29. Il primo file "firma" del 30/09 (`rbeu9nin/1790764605643.pdf`) era già stato cancellato dallo storage: non recuperabile (la fattura 38 è comunque tra le Fatture).
+- **Regola push:** Patrizio ha confermato il 09/10 che vale la memoria "push sempre su `main`", anche se `CLAUDE.md` dice di chiedere l'ok.
 
 ### 2026-09-18 — tkt_1789721815680 «SKU sballata» (magazzino)
 - **Causa:** `ricalcolaGiacenza` somma le `rettifica` senza clamp e azzera solo a fine replay. Le rettifiche -4 (latta 5L 2024, `wnzr3hgq`) e -7 (latta 3L 2025, `7o7ru01a`) del 17/09, fatte con giacenza 0, avevano lasciato -4 e -7 nascosti: il +43 e il +104 del 18/09 davano 39 e 97.
