@@ -2139,6 +2139,21 @@ const ricalcolaGiacenza = (movimenti) => {
   return g;
 };
 
+// Regola proprietà 09/10/2026: riserve con residuo ancora riservato per uno SKU.
+// Una riserva viene "consumata" dagli annulli collegati (riserva_annullata con riservaId).
+const riserveAttiveSku = (movimenti, skuId) => {
+  const mov = (movimenti || []).filter(mv => (mv.skuId || mv.magId) === skuId);
+  const rilasciato = {};
+  mov.forEach(mv => {
+    if (mv.tipo === "riserva_annullata" && mv.riservaId) rilasciato[mv.riservaId] = (rilasciato[mv.riservaId] || 0) + (Number(mv.qta) || 0);
+  });
+  return mov
+    .filter(mv => mv.tipo === "riserva")
+    .map(mv => ({ ...mv, residuo: (Number(mv.qta) || 0) - (rilasciato[mv.id] || 0) }))
+    .filter(mv => mv.residuo > 0)
+    .sort((a, b) => String(a.data || "").localeCompare(String(b.data || "")));
+};
+
 // tkt_1789721815680: verifica che una rettifica non porti il disponibile sotto zero.
 // ricalcolaGiacenza somma le rettifiche senza clamp e azzera solo a fine replay:
 // una rettifica negativa oltre la giacenza lasciava un valore negativo "nascosto"
@@ -13390,6 +13405,20 @@ function Magazzino({
       return;
     }
     if (!form.qta || Number(form.qta) <= 0) { if (window.tnbToast) window.tnbToast('⚠ La quantità deve essere maggiore di 0', 'err'); return; }
+    // Regola proprietà 09/10/2026: una riserva deve essere collegata a un cliente
+    // oppure avere una nota che spieghi per chi/perché si riserva la merce.
+    if (form.tipo === "riserva" && !form.clienteId && !String(form.nota || "").trim()) {
+      if (window.tnbToast) window.tnbToast('⛔ Per riservare merce scegli il cliente (e se c\'è l\'ordine) oppure scrivi una nota che spieghi per chi è la riserva.', 'err');
+      return;
+    }
+    // Un annullo riserva collegato non può liberare più del residuo di quella riserva.
+    if (form.tipo === "riserva_annullata" && form.riservaId) {
+      const rAtt = riserveAttiveSku(dati.movimenti, form.magId).find(r => r.id === form.riservaId);
+      if (rAtt && Number(form.qta) > rAtt.residuo) {
+        if (window.tnbToast) window.tnbToast('⛔ Questa riserva ha ancora ' + rAtt.residuo + ' pz: non puoi annullarne ' + Number(form.qta) + '.', 'err');
+        return;
+      }
+    }
     // Regola proprietà: i movimenti di entrata/uscita richiedono numero DDT + documento archiviato.
     if (movRichiedeDDT(form.tipo)) {
       if (!String(form.ddtNum || "").trim()) { if (window.tnbToast) window.tnbToast('⛔ Numero DDT obbligatorio per questo movimento (entrata/uscita merce).', 'err'); return; }
@@ -13433,6 +13462,8 @@ function Magazzino({
       qta: Number(form.qta),
       data: dataMov,
       ordineId: form.ordineId || null,
+      clienteId: form.clienteId || null,
+      riservaId: form.riservaId || null,
       lottoId: form.lottoId || null,
       ddtNum: movRichiedeDDT(form.tipo) ? String(form.ddtNum || "").trim() : (form.ddtNum || null),
       // Audit F#144: il ternario aveva i due rami identici — semplificato a
@@ -13459,7 +13490,10 @@ function Magazzino({
         )
       };
     });
-    if (logAction) logAction(`Mov. magazzino: ${TIPI_MOV.find(t => t.v === form.tipo)?.l || form.tipo}`, "magazzino", `${sku?.prodotto} ${sku?.formato} ${sku?.annata} — ${form.qta} pz`);
+    const _clMov = form.clienteId ? (dati.clienti || []).find(c => c.id === form.clienteId) : null;
+    const _ordMov = form.ordineId ? (dati.ordini || []).find(o => o.id === form.ordineId) : null;
+    const _perMov = [_clMov ? "cliente " + (_clMov.insegna || _clMov.ragioneSociale) : null, _ordMov ? "ordine " + (_ordMov.numero || _ordMov.id) : null, String(form.nota || "").trim() || null].filter(Boolean).join(" · ");
+    if (logAction) logAction(`Mov. magazzino: ${TIPI_MOV.find(t => t.v === form.tipo)?.l || form.tipo}`, "magazzino", `${sku?.prodotto} ${sku?.formato} ${sku?.annata} — ${form.qta} pz` + (_perMov ? ` — ${_perMov}` : ""));
     // Audit F#42: conferma esplicita del salvataggio (come già per le rettifiche)
     if (window.tnbToast) window.tnbToast(`✅ Movimento registrato: ${Number(form.qta)} pz — ${sku?.prodotto || ""} ${sku?.formato || ""} ${sku?.annata || ""}`);
     setModal(null);
@@ -13985,7 +14019,44 @@ function Magazzino({
           fontSize: 10,
           color: C.grigio400
         }
-      }, "pezzi")))), !readonly && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      }, "pezzi")))), (g.riservato || 0) > 0 && (() => {
+        // Regola proprietà 09/10/2026: ogni riserva deve dire PER CHI (cliente/ordine)
+        // o PERCHÉ (nota), e deve essere visibile qui con il residuo ancora riservato.
+        const riserveAttive = riserveAttiveSku(dati.movimenti, m.id);
+        return /*#__PURE__*/React.createElement("div", {
+          style: { marginBottom: 12, padding: "10px 12px", background: "#e8f0fb", border: "1px solid #b9cde8", borderRadius: 8 }
+        }, /*#__PURE__*/React.createElement("div", {
+          style: { fontSize: 11, fontWeight: 700, color: "#1565c0", marginBottom: 6, letterSpacing: .5 }
+        }, "🔒 RISERVE ATTIVE (" + (g.riservato || 0) + " pz)"),
+        riserveAttive.length === 0
+          ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600, fontStyle: "italic" } }, "Nessun dettaglio: riserva registrata prima dell'obbligo di cliente/nota.")
+          : riserveAttive.map(r => {
+              const cl = r.clienteId ? (dati.clienti || []).find(c => c.id === r.clienteId) : null;
+              const ord = r.ordineId ? (dati.ordini || []).find(o => o.id === r.ordineId) : null;
+              const chi = [cl ? (cl.insegna || cl.ragioneSociale) : null, ord ? "ordine " + (ord.numero || ord.id) : null].filter(Boolean).join(" · ");
+              return /*#__PURE__*/React.createElement("div", {
+                key: r.id,
+                style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12, padding: "5px 0", borderTop: "1px solid #d3e0f2" }
+              },
+                /*#__PURE__*/React.createElement("b", { style: { color: "#1565c0", minWidth: 52 } }, r.residuo + " pz"),
+                /*#__PURE__*/React.createElement("div", { style: { flex: "1 1 200px", minWidth: 0 } },
+                  /*#__PURE__*/React.createElement("div", { style: { fontWeight: 600 } }, chi || "Nessun cliente"),
+                  r.nota && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.grigio600 } }, r.nota),
+                  /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.grigio400 } }, "dal " + fmtD(r.data))
+                ),
+                !readonly && /*#__PURE__*/React.createElement(Btn, {
+                  ch: "↩ Annulla riserva",
+                  sz: "sm",
+                  v: "sec",
+                  onClick: e => {
+                    e.stopPropagation();
+                    setForm({ tipo: "riserva_annullata", magId: m.id, data: todayStr(), qta: r.residuo, riservaId: r.id, clienteId: r.clienteId || null, ordineId: r.ordineId || null, nota: "Annullo riserva del " + fmtD(r.data) + (chi ? " — " + chi : "") });
+                    setModal("mov");
+                  }
+                })
+              );
+            }));
+      })(), !readonly && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 11,
           fontWeight: 700,
@@ -14509,8 +14580,25 @@ function Magazzino({
         ...f,
         data: v
       }))
+    })), form.tipo === "riserva" && /*#__PURE__*/React.createElement("div", {
+      style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }
+    }, /*#__PURE__*/React.createElement(Sel, {
+      label: "Cliente (per chi è la riserva)",
+      v: form.clienteId || "",
+      on: v => setForm(f => ({ ...f, clienteId: v || null, ordineId: null })),
+      opts: [{ v: "", l: "— nessuno (scrivi una nota) —" }, ...(dati.clienti || [])
+        .map(c => ({ v: c.id, l: c.insegna || c.ragioneSociale || c.id }))
+        .sort((a, b) => String(a.l).localeCompare(String(b.l)))]
+    }), /*#__PURE__*/React.createElement(Sel, {
+      label: "Ordine (facoltativo)",
+      v: form.ordineId || "",
+      disabled: !form.clienteId,
+      on: v => setForm(f => ({ ...f, ordineId: v || null })),
+      opts: [{ v: "", l: "— nessun ordine —" }, ...(dati.ordini || [])
+        .filter(o => o.clienteId === form.clienteId && o.stato !== "annullato")
+        .map(o => ({ v: o.id, l: (o.numero || o.id) + " · " + (STATO_ORDINE[o.stato]?.l || o.stato) + (o.data ? " · " + fmtD(o.data) : "") }))]
     })), /*#__PURE__*/React.createElement(Inp, {
-      label: "Nota (ordine collegato, spedizioniere...)",
+      label: form.tipo === "riserva" ? "Nota (obbligatoria se non scegli il cliente)" : "Nota (ordine collegato, spedizioniere...)",
       v: form.nota || "",
       on: v => setForm(f => ({
         ...f,
