@@ -258,14 +258,12 @@ window.tnbStorage = {
     const data = await resp.json();
     return SUPA_URL + '/storage/v1' + data.signedURL;
   },
+  // Regola proprietà (09/10/2026): i documenti non si cancellano mai.
+  // Cancellazione fisica da Storage disattivata: il file resta sempre recuperabile.
+  // (deleteDocumento passa di qui: vale per firme, DDT, fatture e ogni altro allegato.)
   deleteFirma: async function(path) {
-    try {
-      const resp = await _fetchWithTimeout(
-        SUPA_URL + '/storage/v1/object/' + SUPA_BUCKET + '/' + path,
-        { method: 'DELETE', headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY } }, 45000
-      );
-      return resp.ok;
-    } catch (_) { return false; }
+    if (path) console.info('[tnbStorage] documento conservato (cancellazione disattivata):', path);
+    return false;
   },
   // v48-pre11: helper generico per upload documenti (DDT/Fatture) sullo stesso bucket tnb-firme.
   // prefix = "ddt" | "fattura" | "firma" (legacy uploadFirma usa path piatto)
@@ -2513,6 +2511,47 @@ const _nettoScaricoOrdine = (movimenti, ordineId) => {
 // avere scarichi netti a suo carico.
 const STATI_ORDINE_CON_SCARICO = ["firmato", "consegnato", "fatturato"];
 
+// Regola proprietà (09/10/2026, caso ordine 1021/2026 Hotel Tornabuoni):
+// 1) se la merce di un ordine è uscita con un DDT, NON può rientrare in magazzino
+//    (annullo / ritorno a "Da firmare") senza un DDT di reso allegato all'ordine;
+//    in assenza del DDT di reso l'operazione è bloccata.
+// 2) i documenti non si cancellano mai: quelli tolti da un ordine finiscono in
+//    `documentiArchiviati` (il file resta su Storage, vedi tnbStorage.deleteFirma).
+const _ddtArrOrdine = ord => Array.isArray(ord && ord.ddt) ? ord.ddt : (ord && ord.ddt ? [ord.ddt] : []);
+const ordineHaDdtConsegna = (ord) => !!ord && (
+  _ddtArrOrdine(ord).length > 0 ||
+  String(ord.ddtNote || "").trim().length > 0 ||
+  (ord.documentiArchiviati || []).some(d => d && d.tipoDoc === "ddt")
+);
+// DDT di reso caricato e non ancora usato per un rientro merce.
+const ddtResoDisponibile = (ord) => ((ord && ord.ddtReso) || []).find(r => r && !r.usatoIl) || null;
+const richiedeDdtReso = (ord, nuovoStato) => !!ord && !ord.pregresso &&
+  STATI_ORDINE_CON_SCARICO.includes(ord.stato) && !STATI_ORDINE_CON_SCARICO.includes(nuovoStato) &&
+  ordineHaDdtConsegna(ord);
+// true = operazione consentita; false = bloccata (con toast esplicativo).
+const checkDdtReso = (ord, nuovoStato) => {
+  if (!richiedeDdtReso(ord, nuovoStato) || ddtResoDisponibile(ord)) return true;
+  const num = (ddtFromOrdine(ord).ddtNum || "").trim();
+  if (window.tnbToast) window.tnbToast("⛔ La merce di questo ordine è già uscita" + (num ? " con DDT " + num : " con DDT") +
+    ". Per farla rientrare in magazzino carica prima il DDT di reso (sezione “Reso merce” dell'ordine). Senza DDT di reso l'operazione non è consentita.", "err");
+  return false;
+};
+// Aggiunge documenti all'archivio dell'ordine (mai cancellati).
+const archiviaDocumentiOrdine = (ord, docs, tipoDoc, motivo, utente) => {
+  const now = new Date().toISOString();
+  const nuovi = (docs || []).filter(d => d && d.path).map(d => ({
+    ...d, tipoDoc, archiviatoIl: now, archiviatoDa: utente || "sconosciuto", motivo: motivo || ""
+  }));
+  return [...((ord && ord.documentiArchiviati) || []), ...nuovi];
+};
+const archiviaTuttiDocumentiOrdine = (ord, motivo, utente) => {
+  let arch = archiviaDocumentiOrdine(ord, ord && ord.firma ? [ord.firma] : [], "firma", motivo, utente);
+  arch = archiviaDocumentiOrdine({ documentiArchiviati: arch }, (ord && ord.firmaAllegati) || [], "firma_allegato", motivo, utente);
+  arch = archiviaDocumentiOrdine({ documentiArchiviati: arch }, _ddtArrOrdine(ord), "ddt", motivo, utente);
+  arch = archiviaDocumentiOrdine({ documentiArchiviati: arch }, (ord && ord.fatture) || [], "fattura", motivo, utente);
+  return arch;
+};
+
 // Hook unico di transizione magazzino su cambio stato ordine.
 // Da chiamare dentro setDati(d => applicaTransizioneOrdineMagazzino(d, ordine, vecchioStato)).
 // Idempotente sul NETTO scarichi−annulli per ordineId (audit B#15/#19):
@@ -2529,6 +2568,7 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
   let newMov = Array.isArray(prevDati.movimenti) ? prevDati.movimenti : [];
   const skuToccati = new Set();
   let cambiato = false;
+  let resoUsato = null;
   // Auto-scarico all'ingresso negli stati con scarico (se non c'è già un netto attivo)
   if (!eraAttivo && saraAttivo) {
     const netto = _nettoScaricoOrdine(newMov, ordine.id);
@@ -2566,10 +2606,18 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
     if (daAnnullare.length > 0) {
       const dataAnn = todayStr();
       const ts0 = Date.now();
-      const ddtRefAnn = ddtFromOrdine(ordine);
-      const notaAnn = nuovoStato === "annullato"
+      // Regola proprietà 09/10/2026: il rientro di merce già consegnata usa il DDT di reso.
+      resoUsato = ddtResoDisponibile(ordine);
+      const ddtRefAnn = resoUsato
+        ? { ddtNum: String(resoUsato.numero || "").trim() || resoUsato.nomeOriginale || "DDT reso", ddtDoc: resoUsato }
+        : ddtFromOrdine(ordine);
+      if (!resoUsato && richiedeDdtReso({ ...ordine, stato: vecchioStato }, nuovoStato)) {
+        console.warn("[magazzino] rientro ordine " + (ordine.numero || ordine.id) + " senza DDT di reso: guard UI aggirata");
+      }
+      const notaAnn = (nuovoStato === "annullato"
         ? `Auto: annullo ordine ${ordine.numero || ordine.id}`
-        : `Auto: ripristino magazzino ordine ${ordine.numero || ordine.id} (tornato "Da firmare")`;
+        : `Auto: ripristino magazzino ordine ${ordine.numero || ordine.id} (tornato "Da firmare")`) +
+        (resoUsato ? ` · DDT reso ${ddtRefAnn.ddtNum}` : "");
       const annulli = daAnnullare.map((r, i) => ({
         id: uid(),
         tipo: "annullo_ordine",
@@ -2596,7 +2644,15 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
       ? { ...m, giacenza: ricalcolaGiacenza(newMov.filter(mv => (mv.skuId || mv.magId) === m.id)) }
       : m
   );
-  return { ...prevDati, movimenti: newMov, magazzino: newMag };
+  // Il DDT di reso usato per questo rientro viene marcato: un rientro successivo
+  // (dopo una nuova consegna) richiederà un nuovo DDT di reso.
+  const usatoIl = new Date().toISOString();
+  const newOrdini = resoUsato && skuToccati.size > 0
+    ? (prevDati.ordini || []).map(o => o.id !== ordine.id ? o : {
+        ...o, ddtReso: (o.ddtReso || []).map(r => r.id === resoUsato.id ? { ...r, usatoIl } : r)
+      })
+    : prevDati.ordini;
+  return { ...prevDati, ordini: newOrdini, movimenti: newMov, magazzino: newMag };
 };
 
 // Audit F#100: aliquota IVA in un unico punto (prima 0.04 era ricalcolata
@@ -10379,6 +10435,7 @@ function Ordini({
   const [uploadingFirma, setUploadingFirma] = useState(false);
   const [openingFirma, setOpeningFirma] = useState(false);
   const [uploadingDdt, setUploadingDdt] = useState(false);
+  const [uploadingReso, setUploadingReso] = useState(false);
   const [uploadingFattura, setUploadingFattura] = useState(false);
   const [uploadingFirmaExtra, setUploadingFirmaExtra] = useState(false);
   const [formErrors, setFormErrors] = useState({});
@@ -10713,6 +10770,8 @@ function Ordini({
         !ordine.pregresso && !_checkDocPerConsegna(ordine)) {
       return;
     }
+    // Regola proprietà 09/10/2026: merce uscita con DDT → rientro solo con DDT di reso.
+    if (ordinePrev && !checkDdtReso({ ...ordine, stato: vecchioStato }, ordine.stato)) return;
     // v49-mag1: check stock applicato quando l'ordine deve "consumare" magazzino:
     // (a) stato da_firmare: verifica disponibilità prima di accettare l'ordine
     // (b) audit F#35: OGNI ingresso in uno stato con scarico (firmato/consegnato/
@@ -10881,36 +10940,33 @@ function Ordini({
   // Variante per il modal aperto (modifica form locale invece di setDati)
   const updateStatoForm = (nuovoStato, opts) => {
     opts = opts || {};
-    if (!form.stato || form.stato === nuovoStato) return;
+    if (!form.stato || form.stato === nuovoStato) return false;
+    // Regola proprietà 09/10/2026: merce uscita con DDT → rientro solo con DDT di reso.
+    if (!checkDdtReso(form, nuovoStato)) return false;
     const now = new Date().toISOString();
     const vecchio = form.stato;
-    // Best-effort cleanup allegati su Storage se passa ad annullato.
-    // Audit F#36: i documenti referenziati dai movimenti restano su Storage.
-    if (nuovoStato === "annullato" && window.tnbStorage) {
-      if (form.firma && form.firma.path) window.tnbStorage.deleteFirma(form.firma.path).catch(_ => {});
-      (Array.isArray(form.ddt) ? form.ddt : (form.ddt ? [form.ddt] : [])).forEach(d => {
-        if (d && d.path && !docReferenziatoDaMovimenti(dati.movimenti, d.path)) window.tnbStorage.deleteDocumento(d.path).catch(_ => {});
-      });
-      (form.fatture || []).forEach(fat => {
-        if (fat && fat.path && !docReferenziatoDaMovimenti(dati.movimenti, fat.path)) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
-      });
-    }
+    const utente = (currentUser && currentUser.username) || "sconosciuto";
+    // Regola proprietà: i documenti non si cancellano mai. All'annullamento firma,
+    // DDT e fatture passano nell'archivio documenti dell'ordine.
     setForm(f => ({
       ...f,
       stato: nuovoStato,
       statoLog: [...(f.statoLog || []), {
         stato: nuovoStato,
         data: now,
-        utente: (currentUser && currentUser.username) || "sconosciuto",
+        utente,
         auto: !!opts.auto,
         trigger: opts.trigger || "manual",
         prev: vecchio
       }],
+      documentiArchiviati: (nuovoStato === "annullato") ? archiviaTuttiDocumentiOrdine(f, "Ordine annullato", utente) : f.documentiArchiviati,
       firma: (nuovoStato === "annullato") ? null : f.firma,
+      firmaAllegati: (nuovoStato === "annullato") ? [] : f.firmaAllegati,
       ddt: (nuovoStato === "annullato") ? [] : f.ddt,
       fatture: (nuovoStato === "annullato") ? [] : f.fatture
     }));
     if (window.tnbToast) window.tnbToast("Stato → " + (STATO_ORDINE[nuovoStato]?.l || nuovoStato));
+    return true;
   };
   // FIX (auto) tkt_1782399543952: conferma consegna/fatturazione persistente.
   // Il wizard di transizione chiamava solo updateStatoForm, che aggiorna SOLO lo
@@ -10979,19 +11035,13 @@ function Ordini({
   const annullaOrdineDiretto = (oid, opts) => {
     opts = opts || {};
     if (!oid) { updateStatoForm("annullato", { trigger: opts.trigger || "annulla_diretto" }); setModal(null); setFormErrors({}); return; }
+    // Regola proprietà 09/10/2026: merce uscita con DDT → annullo solo con DDT di reso.
+    const ordCheck = (dati.ordini || []).find(o => o.id === oid);
+    if (ordCheck && !checkDdtReso(ordCheck, "annullato")) return;
+    const utenteAnn = (currentUser && currentUser.username) || "sconosciuto";
     setDati(d => {
       const ord = (d.ordini || []).find(o => o.id === oid);
       if (!ord) return d;
-      if (window.tnbStorage) {
-        // Audit F#36: i documenti referenziati dai movimenti restano su Storage.
-        if (ord.firma && ord.firma.path) window.tnbStorage.deleteFirma(ord.firma.path).catch(_ => {});
-        (Array.isArray(ord.ddt) ? ord.ddt : (ord.ddt ? [ord.ddt] : [])).forEach(dd => {
-          if (dd && dd.path && !docReferenziatoDaMovimenti(d.movimenti, dd.path)) window.tnbStorage.deleteDocumento(dd.path).catch(_ => {});
-        });
-        (ord.fatture || []).forEach(fat => {
-          if (fat && fat.path && !docReferenziatoDaMovimenti(d.movimenti, fat.path)) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
-        });
-      }
       const vecchio = ord.stato;
       const now = new Date().toISOString();
       const ordineAnn = {
@@ -11005,7 +11055,9 @@ function Ordini({
           trigger: opts.trigger || "annulla_diretto",
           prev: vecchio
         }],
+        documentiArchiviati: archiviaTuttiDocumentiOrdine(ord, "Ordine annullato", utenteAnn),
         firma: null,
+        firmaAllegati: [],
         ddt: [],
         fatture: []
       };
@@ -11031,21 +11083,27 @@ function Ordini({
     const ridurraStato = STATI_RICHIEDONO_FIRMA.includes(form.stato);
     const labelAttuale = STATO_ORDINE[form.stato]?.l || form.stato;
     const msg = ridurraStato
-      ? "Rimuovere la firma da questo ordine? L'ordine tornerà allo stato “Da firmare” (attualmente “" + labelAttuale + "”) perché senza firma non è autorizzato. Al salvataggio dell'ordine lo scarico magazzino verrà ripristinato (le quantità tornano disponibili). Il file verrà cancellato dallo storage."
-      : "Rimuovere la firma da questo ordine? Il file verrà cancellato dallo storage.";
+      ? "Togliere la firma da questo ordine? L'ordine tornerà allo stato “Da firmare” (attualmente “" + labelAttuale + "”) perché senza firma non è autorizzato. Al salvataggio dell'ordine lo scarico magazzino verrà ripristinato (le quantità tornano disponibili). Il file resta nell'archivio documenti dell'ordine."
+      : "Togliere la firma da questo ordine? Il file resta nell'archivio documenti dell'ordine.";
+    // Regola proprietà 09/10/2026: con merce già uscita (DDT) la firma non si toglie
+    // senza DDT di reso. Per correggere un file sbagliato si usa "↻ Sostituisci".
+    if (ridurraStato && richiedeDdtReso(form, "da_firmare") && !ddtResoDisponibile(form)) {
+      if (window.tnbToast) window.tnbToast("⛔ Non puoi togliere la firma: la merce di questo ordine è già uscita con DDT. Se il file caricato è sbagliato usa “↻ Sostituisci” (il vecchio resta in archivio). Per far rientrare la merce serve prima il DDT di reso.", "err");
+      return;
+    }
     window.tnbConfirm(msg, function() {
-      if (oldPath) window.tnbStorage.deleteDocumento(oldPath).catch(_=>{});
-      setForm(f => ({ ...f, firma: null }));
-      if (ridurraStato) updateStatoForm("da_firmare", { trigger: "rollback_firma_rimossa" });
-      else if (window.tnbToast) window.tnbToast("Firma rimossa");
-    }, { title: "Conferma rimozione firma", okLabel: "Rimuovi", danger: true });
+      const utente = (currentUser && currentUser.username) || "sconosciuto";
+      if (ridurraStato && !updateStatoForm("da_firmare", { trigger: "rollback_firma_rimossa" })) return;
+      setForm(f => ({ ...f, firma: null, documentiArchiviati: archiviaDocumentiOrdine(f, f.firma ? [f.firma] : [], "firma", "Firma tolta dall'ordine", utente) }));
+      if (!ridurraStato && window.tnbToast) window.tnbToast("Firma spostata nell'archivio documenti");
+    }, { title: "Conferma rimozione firma", okLabel: "Togli e archivia", danger: true });
   };
   const removeFirmaAllegato = (idx) => {
     const arr = Array.isArray(form.firmaAllegati) ? form.firmaAllegati : [];
     const item = arr[idx];
-    window.tnbConfirm("Rimuovere questo foglio dal documento firmato? Il file verra cancellato dallo storage.", function() {
-      if (item && item.path) window.tnbStorage.deleteDocumento(item.path).catch(_=>{});
-      setForm(f => ({ ...f, firmaAllegati: (f.firmaAllegati || []).filter((_, i) => i !== idx) }));
+    window.tnbConfirm("Togliere questo foglio dal documento firmato? Il file resta nell'archivio documenti dell'ordine.", function() {
+      const utente = (currentUser && currentUser.username) || "sconosciuto";
+      setForm(f => ({ ...f, firmaAllegati: (f.firmaAllegati || []).filter((_, i) => i !== idx), documentiArchiviati: archiviaDocumentiOrdine(f, item ? [item] : [], "firma_allegato", "Foglio tolto dall'ordine", utente) }));
       if (window.tnbToast) window.tnbToast("Foglio rimosso");
     }, { title: "Conferma rimozione", okLabel: "Rimuovi", danger: true });
   };
@@ -11058,10 +11116,10 @@ function Ordini({
     const labelAttuale = STATO_ORDINE[form.stato]?.l || form.stato;
     const msg = ridurraStato
       ? "Rimuovere l'ultimo DDT? L'ordine tornerà allo stato “Firmato” (attualmente “" + labelAttuale + "”) perché non resterà alcuna prova di consegna (né file né nota manuale). Suggerimento: aggiungi prima una nota manuale per mantenere lo stato “" + labelAttuale + "”."
-      : "Rimuovere questo DDT?";
+      : "Togliere questo DDT? Il file resta nell'archivio documenti dell'ordine.";
     window.tnbConfirm(msg, function() {
-      if (item && item.path) window.tnbStorage.deleteDocumento(item.path).catch(_=>{});
-      setForm(f => ({ ...f, ddt: (f.ddt || []).filter((_, i) => i !== idx) }));
+      const utente = (currentUser && currentUser.username) || "sconosciuto";
+      setForm(f => ({ ...f, ddt: (f.ddt || []).filter((_, i) => i !== idx), documentiArchiviati: archiviaDocumentiOrdine(f, item ? [item] : [], "ddt", "DDT tolto dall'ordine", utente) }));
       if (ridurraStato) updateStatoForm("firmato", { trigger: "rollback_ddt_rimosso" });
       else if (window.tnbToast) window.tnbToast("DDT rimosso");
     }, { title: "Conferma rimozione DDT", okLabel: "Rimuovi", danger: true });
@@ -11074,10 +11132,10 @@ function Ordini({
     const ridurraStato = restanti === 0 && form.stato === "fatturato" && !noteResidue;
     const msg = ridurraStato
       ? "Rimuovere l'ultima fattura? L'ordine tornerà allo stato “Consegnato” perché non resterà alcuna prova di fatturazione (né file né nota manuale). Suggerimento: aggiungi prima una nota manuale per mantenere lo stato “Fatturato”."
-      : "Rimuovere questa fattura?";
+      : "Togliere questa fattura? Il file resta nell'archivio documenti dell'ordine.";
     window.tnbConfirm(msg, function() {
-      if (item && item.path) window.tnbStorage.deleteDocumento(item.path).catch(_=>{});
-      setForm(f => ({ ...f, fatture: (f.fatture || []).filter((_, i) => i !== idx) }));
+      const utente = (currentUser && currentUser.username) || "sconosciuto";
+      setForm(f => ({ ...f, fatture: (f.fatture || []).filter((_, i) => i !== idx), documentiArchiviati: archiviaDocumentiOrdine(f, item ? [item] : [], "fattura", "Fattura tolta dall'ordine", utente) }));
       if (ridurraStato) updateStatoForm("consegnato", { trigger: "rollback_fattura_rimossa" });
       else if (window.tnbToast) window.tnbToast("Fattura rimossa");
     }, { title: "Conferma rimozione fattura", okLabel: "Rimuovi", danger: true });
@@ -12086,7 +12144,7 @@ function Ordini({
           sz: "sm",
           style: { marginLeft: "auto" },
           onClick: () => window.tnbConfirm(
-            "Annullare definitivamente l'ordine? Se è presente una firma allegata verrà cancellata da Storage.",
+            "Annullare definitivamente l'ordine? Firma e documenti allegati passano nell'archivio documenti dell'ordine (non vengono cancellati).",
             () => annullaOrdineDiretto(form.id, { trigger: "btn_annulla" }),
             { title: "Conferma annullamento", okLabel: "Annulla ordine", danger: true }
           )
@@ -12142,13 +12200,15 @@ function Ordini({
                 const nuovoStato = wasUnsigned ? "firmato" : form.stato;
                 setForm(f => ({
                   ...f,
+                  // Regola proprietà: la firma sostituita resta nell'archivio documenti.
+                  documentiArchiviati: f.firma ? archiviaDocumentiOrdine(f, [f.firma], "firma", "Firma sostituita", (currentUser && currentUser.username) || "sconosciuto") : f.documentiArchiviati,
                   firma: { ...result, uploadedAt: now },
                   stato: nuovoStato,
                   statoLog: wasUnsigned
                     ? [...(f.statoLog || []), { stato: nuovoStato, data: now, utente: (currentUser && currentUser.username) || "sconosciuto", auto: true, trigger: "upload_firma", prev: f.stato }]
                     : (f.statoLog || [])
                 }));
-                if (window.tnbToast) window.tnbToast(wasUnsigned ? "✅ Firma caricata · stato → Firmato" : "✅ Firma sostituita");
+                if (window.tnbToast) window.tnbToast(wasUnsigned ? "✅ Firma caricata · stato → Firmato" : "✅ Firma sostituita (la precedente è nell'archivio documenti)");
               } catch (err) {
                 console.error("[Firma] upload error:", err);
                 if (window.tnbToast) window.tnbToast("⚠ Upload firma fallito: " + (err && err.message ? err.message : err), "err");
@@ -12271,6 +12331,98 @@ function Ordini({
                 }, "🗑")
               ))
             )
+      )
+    ),
+    // ─── RESO MERCE — DDT di reso (regola proprietà 09/10/2026) ───
+    // Visibile quando la merce è uscita con DDT: per farla rientrare in magazzino
+    // (annullo / ritorno a "Da firmare") serve un DDT di reso. Salvato subito in `dati`.
+    form.id && !form.pregresso && STATI_ORDINE_CON_SCARICO.includes(form.stato) && ordineHaDdtConsegna(form) && /*#__PURE__*/React.createElement("div", {
+      style: { width: "100%", padding: "12px 14px", background: "#fff8f0", borderRadius: 8, marginBottom: 10, border: "1px solid #f0d8b8" }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8, flexWrap: "wrap" } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#303432", letterSpacing: 0.6 } }, "↩ RESO MERCE — DDT DI RESO"),
+        /*#__PURE__*/React.createElement("label", {
+          style: { display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px", border: "1px dashed #303432", borderRadius: 6, fontSize: 11, fontWeight: 600, color: "#303432", cursor: uploadingReso ? "wait" : "pointer", background: "#fff", opacity: uploadingReso ? 0.6 : 1 }
+        },
+          uploadingReso ? "⏳ Carico..." : "+ Carica DDT di reso",
+          /*#__PURE__*/React.createElement("input", {
+            type: "file",
+            accept: "image/jpeg,image/png,image/webp,image/heic,application/pdf",
+            disabled: uploadingReso,
+            style: { display: "none" },
+            onChange: async (e) => {
+              const file = e.target.files && e.target.files[0];
+              if (!file) return;
+              const numero = (window.prompt("Numero del DDT di reso (es. 12/r):", "") || "").trim();
+              if (!numero) {
+                if (window.tnbToast) window.tnbToast("⚠ Indica il numero del DDT di reso", "err");
+                e.target.value = "";
+                return;
+              }
+              setUploadingReso(true);
+              try {
+                const result = await window.tnbStorage.uploadDocumento(form.id, file, "ddt-reso");
+                const entry = { id: uid(), ...result, numero, data: todayStr(), caricatoDa: (currentUser && currentUser.username) || "sconosciuto" };
+                setForm(f => ({ ...f, ddtReso: [...(f.ddtReso || []), entry] }));
+                setDati(d => ({ ...d, ordini: (d.ordini || []).map(o => o.id === form.id ? { ...o, ddtReso: [...(o.ddtReso || []), entry] } : o) }));
+                if (logAction) logAction("DDT di reso caricato", "ordini", (form.numero || form.id) + " — DDT reso " + numero);
+                if (window.tnbToast) window.tnbToast("✅ DDT di reso " + numero + " caricato: ora puoi annullare l'ordine o riportarlo a “Da firmare”");
+              } catch (err) {
+                console.error("[DDT reso] upload error:", err);
+                if (window.tnbToast) window.tnbToast("⚠ Upload DDT di reso fallito: " + (err && err.message ? err.message : err), "err");
+              } finally {
+                setUploadingReso(false);
+                e.target.value = "";
+              }
+            }
+          })
+        )
+      ),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: "#8a6d3b", marginBottom: (form.ddtReso || []).length ? 8 : 0 } },
+        "La merce di questo ordine è uscita con DDT: può rientrare in magazzino (annullo o ritorno a “Da firmare”) solo dopo aver caricato il DDT di reso."),
+      (form.ddtReso || []).length > 0 && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+        (form.ddtReso || []).map((r, idx) => /*#__PURE__*/React.createElement("div", {
+          key: r.id || idx,
+          style: { display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#fff", border: "1px solid #e0e0d8", borderRadius: 6, fontSize: 12 }
+        },
+          /*#__PURE__*/React.createElement("span", null, "↩"),
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+            "DDT reso " + (r.numero || "—") + (r.data ? " del " + fmtD(r.data) : ""),
+            /*#__PURE__*/React.createElement("span", { style: { color: r.usatoIl ? "#2e7d32" : "#8a6d3b", marginLeft: 6, fontSize: 10, fontWeight: 600 } },
+              r.usatoIl ? "· merce rientrata il " + fmtD(r.usatoIl.slice(0, 10)) : "· pronto per il rientro")
+          ),
+          /*#__PURE__*/React.createElement("button", {
+            type: "button",
+            onClick: () => window.tnbStorage.openDocumento(r),
+            style: { padding: "3px 8px", border: "1px solid #303432", background: "#fff", color: "#303432", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer" }
+          }, "👁")
+        ))
+      )
+    ),
+    // ─── ARCHIVIO DOCUMENTI — documenti tolti/sostituiti/annullati (mai cancellati) ───
+    form.id && ((form.documentiArchiviati || []).length > 0 || (form.stato === "annullato" && (form.ddtReso || []).length > 0)) && /*#__PURE__*/React.createElement("details", {
+      style: { width: "100%", padding: "10px 14px", background: "#f7f7f3", borderRadius: 8, marginBottom: 10, border: "1px solid #e0e0d8" }
+    },
+      /*#__PURE__*/React.createElement("summary", { style: { fontSize: 11, fontWeight: 700, color: "#303432", letterSpacing: 0.6, cursor: "pointer" } },
+        "🗄 ARCHIVIO DOCUMENTI (" + ((form.documentiArchiviati || []).length + (form.stato === "annullato" ? (form.ddtReso || []).length : 0)) + ")"),
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginTop: 8 } },
+        [...(form.documentiArchiviati || []), ...(form.stato === "annullato" ? (form.ddtReso || []).map(r => ({ ...r, tipoDoc: "ddt_reso", motivo: "DDT di reso " + (r.numero || "") })) : [])].map((d, idx) => /*#__PURE__*/React.createElement("div", {
+          key: (d.id || d.path || "") + idx,
+          style: { display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#fff", border: "1px solid #e0e0d8", borderRadius: 6, fontSize: 12 }
+        },
+          /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, fontWeight: 700, color: "#666", minWidth: 62, textTransform: "uppercase" } },
+            ({ firma: "Firma", firma_allegato: "Foglio", ddt: "DDT", fattura: "Fattura", ddt_reso: "DDT reso" })[d.tipoDoc] || d.tipoDoc || "Doc"),
+          /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+            /*#__PURE__*/React.createElement("div", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 } }, d.nomeOriginale || d.path),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: "#888" } },
+              (d.motivo || "") + (d.archiviatoIl ? " · " + fmtD(d.archiviatoIl.slice(0, 10)) : "") + (d.archiviatoDa ? " · " + d.archiviatoDa : ""))
+          ),
+          /*#__PURE__*/React.createElement("button", {
+            type: "button",
+            onClick: () => window.tnbStorage.openDocumento(d),
+            style: { padding: "3px 8px", border: "1px solid #303432", background: "#fff", color: "#303432", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer" }
+          }, "👁")
+        ))
       )
     ),
     // ─── DDT — visibile se stato consegnato o fatturato (N documenti) ───
@@ -12632,24 +12784,17 @@ function Ordini({
         const cl = (dati.clienti || []).find(c => c.id === form.clienteId) || {};
         const label = (cl.insegna || cl.ragioneSociale || "—") + " · " + (form.numero || form.id);
         window.tnbConfirm(
-          "Annullare l'ordine " + label + "? L'ordine verrà marcato come “Annullato” (e firma/DDT/fatture allegati saranno rimossi). L'ordine resta in archivio.",
+          "Annullare l'ordine " + label + "? L'ordine verrà marcato come “Annullato”; firma/DDT/fatture passano nell'archivio documenti dell'ordine (non vengono cancellati).",
           function() {
             // FIX (auto): persistenza diretta dell'annullamento.
             // Il vecchio flusso (updateStatoForm + setTimeout saveOrdine) usava una closure
             // sul `form` precedente e veniva bloccato dalla validazione di saveOrdine
             // (es. ordini €0 senza modalitaPagamento), quindi l'annullamento non veniva mai salvato.
             const oid = form.id;
-            // Cleanup best-effort allegati su Storage.
-            // Audit F#36: i documenti referenziati dai movimenti (Archivio DDT) restano.
-            if (window.tnbStorage) {
-              if (form.firma && form.firma.path) window.tnbStorage.deleteFirma(form.firma.path).catch(_ => {});
-              (Array.isArray(form.ddt) ? form.ddt : (form.ddt ? [form.ddt] : [])).forEach(d => {
-                if (d && d.path && !docReferenziatoDaMovimenti(dati.movimenti, d.path)) window.tnbStorage.deleteDocumento(d.path).catch(_ => {});
-              });
-              (form.fatture || []).forEach(fat => {
-                if (fat && fat.path && !docReferenziatoDaMovimenti(dati.movimenti, fat.path)) window.tnbStorage.deleteDocumento(fat.path).catch(_ => {});
-              });
-            }
+            // Regola proprietà 09/10/2026: merce uscita con DDT → annullo solo con DDT di reso.
+            const ordCheck = (dati.ordini || []).find(o => o.id === oid);
+            if (ordCheck && !checkDdtReso(ordCheck, "annullato")) return;
+            const utenteAnn = (currentUser && currentUser.username) || "sconosciuto";
             setDati(d => {
               const ord = (d.ordini || []).find(o => o.id === oid);
               if (!ord) return d;
@@ -12666,7 +12811,9 @@ function Ordini({
                   trigger: "annulla_modal",
                   prev: vecchio
                 }],
+                documentiArchiviati: archiviaTuttiDocumentiOrdine(ord, "Ordine annullato", utenteAnn),
                 firma: null,
+                firmaAllegati: [],
                 ddt: [],
                 fatture: []
               };
@@ -12875,9 +13022,8 @@ function Ordini({
                       /*#__PURE__*/React.createElement("button", {
                         type: "button",
                         onClick: () => {
-                          const path = d.path;
-                          if (path) window.tnbStorage.deleteDocumento(path).catch(_=>{});
-                          setForm(f => ({ ...f, ddt: (f.ddt || []).filter((_, i) => i !== idx) }));
+                          const utente = (currentUser && currentUser.username) || "sconosciuto";
+                          setForm(f => ({ ...f, ddt: (f.ddt || []).filter((_, i) => i !== idx), documentiArchiviati: archiviaDocumentiOrdine(f, [d], "ddt", "DDT tolto dall'ordine", utente) }));
                         },
                         style: { padding: "3px 8px", border: "1px solid #c0392b", background: "#fff", color: "#c0392b", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer" }
                       }, "🗑")
@@ -12945,9 +13091,8 @@ function Ordini({
                       /*#__PURE__*/React.createElement("button", {
                         type: "button",
                         onClick: () => {
-                          const path = fat.path;
-                          if (path) window.tnbStorage.deleteDocumento(path).catch(_=>{});
-                          setForm(f => ({ ...f, fatture: (f.fatture || []).filter((_, i) => i !== idx) }));
+                          const utente = (currentUser && currentUser.username) || "sconosciuto";
+                          setForm(f => ({ ...f, fatture: (f.fatture || []).filter((_, i) => i !== idx), documentiArchiviati: archiviaDocumentiOrdine(f, [fat], "fattura", "Fattura tolta dall'ordine", utente) }));
                         },
                         style: { padding: "3px 8px", border: "1px solid #c0392b", background: "#fff", color: "#c0392b", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer" }
                       }, "🗑")
