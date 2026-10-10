@@ -88,6 +88,11 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 - Magazzino → Riserva: senza cliente e senza nota deve bloccare; la riserva deve comparire in "🔒 Riserve attive" con il tasto "↩ Annulla riserva".
 - Limite noto: le riserve fatte prima del 09/10 non hanno cliente/riservaId e compaiono come "registrata prima dell'obbligo".
 
+### 0d. Ticket #210103 e #128640 da segnare "Risolto" (10/10/2026)
+- Fix online dalle 08:47 del 10/10 (commit `f370520`, verificato sul sito che il deploy contiene il codice nuovo). In produzione i ticket `tkt_1791610210103` e `tkt_1791608128640` sono ancora "aperto" (letto su Supabase in sola lettura).
+- Da fare dall'app come SuperAdmin: Ticket, "🔧 Risolvi" con nota. Claude non ha potuto farlo: nella sessione cloud non c'era Chrome, e scriverli direttamente nel blob `tnb-pro-v2` vuol dire riscrivere dati di produzione, cosa che richiede l'ok di Patrizio.
+- Note proposte. #210103: «Il controllo sul numero ordine non conta più gli ordini annullati: l'ordine 1025/2026 ora si salva e passa a fatturato.» #128640: «Sui ticket risolti chi li ha aperti ha di nuovo i pulsanti "Confermo, chiudi il ticket" e "Non risolto, riapri".»
+
 ---
 
 ## ✅ Fatto di recente
