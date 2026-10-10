@@ -10695,9 +10695,12 @@ function Ordini({
     }
     // Audit F#122: numero ordine inserito a mano (pregressi) — unicità obbligatoria
     // (i numeri finiscono su conferme, DDT e fatture).
-    if (form.numero && String(form.numero).trim()) {
+    // tkt_210103: come nextNum e la riapertura (F#73), gli annullati non
+    // consumano la numerazione: non contano come duplicati e un ordine
+    // annullato non viene controllato.
+    if (form.stato !== "annullato" && form.numero && String(form.numero).trim()) {
       const numNorm = String(form.numero).trim();
-      const dupNum = (dati.ordini || []).find(o => o.id !== form.id && String(o.numero || "").trim() === numNorm);
+      const dupNum = (dati.ordini || []).find(o => o.id !== form.id && o.stato !== "annullato" && String(o.numero || "").trim() === numNorm);
       if (dupNum) errs.numero = `Numero ordine "${numNorm}" già usato da un altro ordine`;
     }
     if (Object.keys(errs).length > 0) {
@@ -19005,6 +19008,26 @@ function TicketDashboard(props) {
                 onClick: function() { deleteTicket(t.id); },
                 style: { padding: "5px 12px", borderRadius: 6, border: "1px solid " + C.grigio200, background: "#fff", color: C.grigio400, fontSize: 11, cursor: "pointer", marginLeft: "auto" }
               }, "🗑")
+            ),
+            // tkt_128640: chi ha aperto il ticket conferma la soluzione o lo riapre
+            // (dopo F#82 non aveva più pulsanti sui ticket risolti).
+            !isSuperadmin && t.stato === "risolto" && CE("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+              CE("button", {
+                onClick: function() {
+                  updateTicket(t.id, { stato: "chiuso" });
+                  if (logAction) logAction("Conferma risoluzione ticket", "ticket", t.titolo || t.descrizione || t.id);
+                  window.tnbToast("⬜ Ticket chiuso, grazie della conferma");
+                },
+                style: { padding: "5px 12px", borderRadius: 6, border: "1px solid #4caf50", background: "#e8f5e9", color: "#2e7d32", fontSize: 11, fontWeight: 600, cursor: "pointer" }
+              }, "✅ Confermo, chiudi il ticket"),
+              CE("button", {
+                onClick: function() {
+                  updateTicket(t.id, { stato: "aperto", noteFix: "", risoltoIl: null });
+                  if (logAction) logAction("Riapre ticket non risolto", "ticket", t.titolo || t.descrizione || t.id);
+                  window.tnbToast("🔴 Ticket riaperto: scrivi nei commenti cosa non va");
+                },
+                style: { padding: "5px 12px", borderRadius: 6, border: "1px solid #ff9800", background: "#fff3e0", color: "#e65100", fontSize: 11, fontWeight: 600, cursor: "pointer" }
+              }, "🔄 Non risolto, riapri")
             )
           );
         })
