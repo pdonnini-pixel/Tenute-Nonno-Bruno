@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-10-10 (ticket #210103 numero ordine "già usato" da un annullato e #128640 pulsanti di conferma per chi apre i ticket: IN PRODUZIONE, vedi "Fatto di recente". Precedente: 2026-10-09, Ordini/Magazzino, caso ordine 1021/2026 Hotel Tornabuoni: rientro merce consegnata solo con DDT di reso, documenti mai cancellati, riserve collegate a cliente/nota. Codice IN PRODUZIONE e correzione dati 1021 eseguita; da provare sul deploy — vedi punto 0c. Precedente: 2026-09-18, fix tkt_1789721815680.)
+Ultimo aggiornamento: 2026-10-12 (riserve collegate a un ordine consumate in automatico alla firma, dalle prove di Irene: IN PRODUZIONE. Precedente: 2026-10-10, ticket #210103 numero ordine "già usato" da un annullato e #128640 pulsanti di conferma per chi apre i ticket: IN PRODUZIONE, vedi "Fatto di recente". Precedente: 2026-10-09, Ordini/Magazzino, caso ordine 1021/2026 Hotel Tornabuoni: rientro merce consegnata solo con DDT di reso, documenti mai cancellati, riserve collegate a cliente/nota. Codice IN PRODUZIONE e correzione dati 1021 eseguita; da provare sul deploy — vedi punto 0c. Precedente: 2026-09-18, fix tkt_1789721815680.)
 
 Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccolta 2025" avevano il campo `annata` vuoto → il 2025 non compariva nel menù annata degli ordini. Backfill `annata="2025"` sui 7 SKU 2025 in Supabase, così Elisa può registrare l'ordine Grimaldi 500 ml. Vedi "Fatto di recente" e il nuovo punto opzionale sul form SKU. — Precedente: 2026-07-19, Pacchetti A–E e F1–F17 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.
 
@@ -82,7 +82,7 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 - La function `netlify/functions/report-ai.mjs` legge il modello da `process.env.ANTHROPIC_MODEL` con fallback `claude-sonnet-4-6`.
 - Impostare la variabile su Netlify **solo** se si vuole cambiare modello, senza ridistribuire codice.
 
-### 0c. Da provare sul deploy (09/10/2026)
+### 0c. Da provare sul deploy (09/10/2026, richiesto a Irene di riprovare il 12/10 insieme alle riserve consumate dall'ordine)
 - Ordine consegnato con DDT: annulla / torna a "Da firmare" / togli firma → devono essere bloccati; dopo aver caricato il DDT di reso (sezione "↩ Reso merce") l'annullo deve passare e il rientro in magazzino deve riportare il numero del DDT di reso.
 - "↻ Sostituisci" firma e 🗑 su DDT/fatture → il documento vecchio deve comparire in "🗄 Archivio documenti".
 - Magazzino → Riserva: senza cliente e senza nota deve bloccare; la riserva deve comparire in "🔒 Riserve attive" con il tasto "↩ Annulla riserva".
@@ -96,6 +96,12 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 ---
 
 ## ✅ Fatto di recente
+
+### 2026-10-12 — Riserve collegate all'ordine consumate alla firma (IN PRODUZIONE)
+- **Origine:** prove di Irene del 10/10 su Enrico Travelli (email a Patrizio). Riserva di 3 × 500 ml 2025 collegata all'ordine 1025/2026, poi firma: lo scarico toglieva altri 3 dal disponibile e la riserva restava attiva (100 disp, 3 ris, 103 tot), quindi i pezzi uscivano due volte. Verificato sui movimenti reali in Supabase (sola lettura): tutti i passaggi di Irene erano corretti e i suoi numeri coincidono con il log.
+- **Fix:** nuovo helper `consumaRiserveOrdine`, chiamato da `applicaTransizioneOrdineMagazzino` quando nasce lo scarico. Chiude le riserve attive con `ordineId` uguale all'ordine, fino alla quantità scaricata, con un `riserva_annullata` automatico (riservaId, nota «Auto: riserva del … consumata dall'ordine …») datato subito prima degli scarichi, così il replay non fa clamp. `verificaDisponibilitaOrdine` conta come disponibili per l'ordine i pezzi riservati per lui. Le riserve legate solo al cliente o ad altri ordini non si toccano (chiusura manuale come prima).
+- **Verifica:** `node --check` su tutti gli script; 11/11 controlli sulle funzioni reali del bundle in Chromium (caso Irene 103/0; annullo successivo 106/0; riserve di altri ordini e solo cliente intatte; riserva più grande dell'ordine lascia il residuo; magazzino tutto riservato per l'ordine: firma consentita e scarico pieno; riserva di un altro ordine blocca ancora; ordine senza riserve invariato; firma, togli firma, ri-firma senza doppio consumo); test di interfaccia del 10/10 ancora 13/13. Nessun dato di produzione modificato.
+- **Limite noto:** le riserve fatte prima di oggi e già "sovrapposte" a uno scarico non si correggono da sole (oggi non ce ne sono di attive con ordine firmato: quella di Irene è stata annullata a mano).
 
 ### 2026-10-10 — Ticket di Irene #210103 (ordini) e #128640 (ticket) (IN PRODUZIONE)
 - **#210103, «ordine 1025/2026 già usato in un altro ordine» (priorità alta).** Causa: `nextNum` ignora gli ordini annullati (tkt_1781163213633), quindi un ordine nuovo può riprendere il numero di uno annullato; il controllo di unicità in `saveOrdine` (audit F#122, `dupNum`) contava invece anche gli annullati e bloccava ogni salvataggio successivo dell'ordine nuovo, per esempio il "Salva ordine" dopo il passaggio a fatturato. Fix: `dupNum` ignora gli ordini annullati e il controllo è saltato se l'ordine stesso è annullato (stessa logica della riapertura F#73, che riassegna il numero se nel frattempo è stato preso). Due ordini *attivi* con lo stesso numero restano bloccati.

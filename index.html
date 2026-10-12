@@ -2298,7 +2298,9 @@ const verificaDisponibilitaOrdine = (ordine, magazzino, movimenti, escludiOrdine
     const cache = (sku.giacenza && sku.giacenza.disponibile) || 0;
     if (!Array.isArray(movimenti)) return cache;
     const mvSku = movimenti.filter(mv => (mv.skuId || mv.magId) === sku.id &&
-      !(escludiOrdineId && mv.ordineId === escludiOrdineId && (mv.tipo === "scarico_ordine" || mv.tipo === "annullo_ordine")));
+      !(escludiOrdineId && mv.ordineId === escludiOrdineId && (mv.tipo === "scarico_ordine" || mv.tipo === "annullo_ordine" ||
+        // i pezzi riservati PER questo ordine sono disponibili per lui
+        mv.tipo === "riserva" || mv.tipo === "riserva_annullata")));
     return ricalcolaGiacenza(mvSku).disponibile || 0;
   };
   const richiesteSku = new Map();
@@ -2574,6 +2576,42 @@ const archiviaTuttiDocumentiOrdine = (ord, motivo, utente) => {
 //   (vale anche per un ordine annullato e poi riaperto: gli scarichi vengono rigenerati)
 // - uscita dagli stati "con scarico" (annullato O retrocesso a da_firmare, es. per
 //   rimozione firma) con netto > 0 → genera annullo_ordine per il netto residuo per SKU
+// Prova Irene 10/10/2026: quando un ordine scarica la merce, le riserve attive
+// collegate a QUELL'ordine (riserva.ordineId) si chiudono fino alla quantità
+// scaricata, con un riserva_annullata che porta il riservaId. I movimenti sono
+// datati subito PRIMA degli scarichi: il replay libera i pezzi riservati e poi
+// li scarica, senza clamp. Le riserve legate solo al cliente restano manuali.
+const consumaRiserveOrdine = (movimenti, ordine, scarichi) => {
+  if (!ordine || !ordine.id || !Array.isArray(scarichi) || scarichi.length === 0) return [];
+  const perSku = new Map();
+  scarichi.forEach(s => perSku.set(s.skuId, (perSku.get(s.skuId) || 0) + (Number(s.qta) || 0)));
+  const out = [];
+  perSku.forEach((qScar, skuId) => {
+    let resto = qScar;
+    riserveAttiveSku(movimenti, skuId).filter(r => r.ordineId === ordine.id).forEach(r => {
+      if (resto <= 0) return;
+      const q = Math.min(resto, r.residuo);
+      resto -= q;
+      out.push({
+        id: uid(),
+        tipo: "riserva_annullata",
+        qta: q,
+        data: todayStr(),
+        nota: `Auto: riserva del ${fmtD(r.data)} consumata dall'ordine ${ordine.numero || ordine.id}`,
+        riservaId: r.id,
+        clienteId: r.clienteId || ordine.clienteId || null,
+        ordineId: ordine.id,
+        auto: true,
+        skuId: skuId,
+        magId: skuId
+      });
+    });
+  });
+  const tsMin = Math.min(...scarichi.map(s => Number(s.timestamp) || Date.now()));
+  out.forEach((m, i) => { m.timestamp = tsMin - out.length + i; });
+  return out;
+};
+
 const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
   if (!prevDati || !ordine || !ordine.id) return prevDati;
   const nuovoStato = ordine.stato;
@@ -2592,7 +2630,10 @@ const applicaTransizioneOrdineMagazzino = (prevDati, ordine, vecchioStato) => {
       // Audit E#20: passa i movimenti per la ripartizione FIFO per lotto
       const scarichi = generaMovimentiOrdine(ordine, prevDati.magazzino, newMov);
       if (scarichi.length > 0) {
-        newMov = [...scarichi, ...newMov];
+        // Prova Irene 10/10/2026: le riserve collegate a questo ordine vengono
+        // consumate dallo scarico (prima restavano attive e i pezzi uscivano due volte).
+        const consumi = consumaRiserveOrdine(newMov, ordine, scarichi);
+        newMov = [...scarichi, ...consumi, ...newMov];
         scarichi.forEach(s => skuToccati.add(s.skuId));
         cambiato = true;
       }
