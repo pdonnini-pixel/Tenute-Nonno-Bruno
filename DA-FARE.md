@@ -88,11 +88,6 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 - Magazzino → Riserva: senza cliente e senza nota deve bloccare; la riserva deve comparire in "🔒 Riserve attive" con il tasto "↩ Annulla riserva".
 - Limite noto: le riserve fatte prima del 09/10 non hanno cliente/riservaId e compaiono come "registrata prima dell'obbligo".
 
-### 0d. Ticket #210103 e #128640 da segnare "Risolto" (10/10/2026)
-- Fix online dalle 08:47 del 10/10 (commit `f370520`, verificato sul sito che il deploy contiene il codice nuovo). In produzione i ticket `tkt_1791610210103` e `tkt_1791608128640` sono ancora "aperto" (letto su Supabase in sola lettura).
-- Da fare dall'app come SuperAdmin: Ticket, "🔧 Risolvi" con nota. Claude non ha potuto farlo: nella sessione cloud non c'era Chrome, e scriverli direttamente nel blob `tnb-pro-v2` vuol dire riscrivere dati di produzione, cosa che richiede l'ok di Patrizio.
-- Note proposte. #210103: «Il controllo sul numero ordine non conta più gli ordini annullati: l'ordine 1025/2026 ora si salva e passa a fatturato.» #128640: «Sui ticket risolti chi li ha aperti ha di nuovo i pulsanti "Confermo, chiudi il ticket" e "Non risolto, riapri".»
-
 ---
 
 ## ✅ Fatto di recente
@@ -109,6 +104,7 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 - **#128640, nessun pulsante sui ticket risolti per chi li ha aperti (priorità bassa).** Dopo F#82 la gestione era solo del SuperAdmin. In `TicketDashboard`, per chi non è superadmin e per i ticket "risolto", due pulsanti: «Confermo, chiudi il ticket» (stato chiuso) e «Non risolto, riapri» (stato aperto, `noteFix` vuoto, `risoltoIl` null); entrambe le azioni vanno nel Registro attività. Pulsanti del SuperAdmin invariati.
 - **Nota:** il commit `3a05656` citato nel brief non esisteva nel repo (né in locale né su origin): fix riapplicati da zero.
 - **Verifica:** `node --check` su tutti gli script inline; **13/13 controlli in Chromium con Supabase simulato** (mai il DB reale): ordine 1025/2026 annullato + ordine 1025/2026 consegnato → passaggio a fatturato e "Salva ordine" senza errore, stato fatturato scritto sul server; salvataggio dell'ordine annullato ok; terzo ordine attivo con lo stesso numero ancora bloccato; Irene (tester) vede i due pulsanti sui ticket risolti e non quelli del SuperAdmin, la conferma chiude, la riapertura azzera nota e data; SuperAdmin con Chiudi/Riapri come prima; zero errori JS. Controllo negativo sul bundle pre-fix: il salvataggio resta bloccato dall'errore di numero.
+- **Chiusura:** i ticket risultano segnati risolti da un processo «AutoFix» il 10/10 e **chiusi da Irene il 12/10 alle 12:27 (ora di Roma)** con il nuovo pulsante «Confermo, chiudi il ticket» (Registro attività, azione «Conferma risoluzione ticket»): prova che il fix #128640 funziona in produzione. Nessuna scrittura manuale su Supabase necessaria. Irene avvisata nel thread email il 12/10.
 - **Regola di lavoro (Patrizio, 10/10/2026):** Claude si occupa in modo stabile di ticket, bug e piccole modifiche del gestionale, con fix, merge su `main` e chiusura del ticket senza chiedere conferma. Si ferma e chiede solo per login/autenticazione, RLS Supabase, generazione PDF e modifiche che cancellano o riscrivono dati di produzione.
 
 ### 2026-10-09 — Ordine 1021/2026 Hotel Tornabuoni: rientri merce, documenti, riserve (IN PRODUZIONE)
