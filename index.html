@@ -13455,6 +13455,16 @@ function Magazzino({
       if (window.tnbToast) window.tnbToast('⛔ Per riservare merce scegli il cliente (e se c\'è l\'ordine) oppure scrivi una nota che spieghi per chi è la riserva.', 'err');
       return;
     }
+    // Prova Irene 13/10/2026 (ordine 1021): una riserva collegata a un ordine che ha
+    // GIÀ scaricato la merce (firmato/consegnato/fatturato) non verrebbe mai consumata
+    // e toglierebbe dal disponibile pezzi già usciti. Si riserva solo PRIMA della firma.
+    if (form.tipo === "riserva" && form.ordineId) {
+      const ordRis = (dati.ordini || []).find(o => o.id === form.ordineId);
+      if (ordRis && !ordRis.pregresso && STATI_ORDINE_CON_SCARICO.includes(ordRis.stato)) {
+        if (window.tnbToast) window.tnbToast('⛔ L\'ordine ' + (ordRis.numero || ordRis.id) + ' è già “' + (STATO_ORDINE[ordRis.stato]?.l || ordRis.stato) + '”: la sua merce è già stata scaricata dal magazzino, quindi non c\'è nulla da riservare. La riserva si fa prima della firma, su ordini “Da firmare”.', 'err');
+        return;
+      }
+    }
     // Un annullo riserva collegato non può liberare più del residuo di quella riserva.
     if (form.tipo === "riserva_annullata" && form.riservaId) {
       const rAtt = riserveAttiveSku(dati.movimenti, form.magId).find(r => r.id === form.riservaId);

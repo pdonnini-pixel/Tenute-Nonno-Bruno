@@ -3,7 +3,7 @@
 > Registro delle attività aperte / decisioni in sospeso per **Tenute Nonno Bruno — Gestionale Pro**.
 > Aggiornare a ogni sessione (vedi regola di verifica in `CLAUDE.md`).
 
-Ultimo aggiornamento: 2026-10-12 (riserve collegate a un ordine consumate in automatico alla firma, dalle prove di Irene: IN PRODUZIONE. Precedente: 2026-10-10, ticket #210103 numero ordine "già usato" da un annullato e #128640 pulsanti di conferma per chi apre i ticket: IN PRODUZIONE, vedi "Fatto di recente". Precedente: 2026-10-09, Ordini/Magazzino, caso ordine 1021/2026 Hotel Tornabuoni: rientro merce consegnata solo con DDT di reso, documenti mai cancellati, riserve collegate a cliente/nota. Codice IN PRODUZIONE e correzione dati 1021 eseguita; da provare sul deploy — vedi punto 0c. Precedente: 2026-09-18, fix tkt_1789721815680.)
+Ultimo aggiornamento: 2026-10-13 (riserva bloccata se l'ordine collegato ha già scaricato la merce, dalle prove di Irene sul 1021: IN PRODUZIONE; 4 riserve sul 1021 da far annullare a Irene, vedi 0d. Precedente: 2026-10-12 (riserve collegate a un ordine consumate in automatico alla firma, dalle prove di Irene: IN PRODUZIONE. Precedente: 2026-10-10, ticket #210103 numero ordine "già usato" da un annullato e #128640 pulsanti di conferma per chi apre i ticket: IN PRODUZIONE, vedi "Fatto di recente". Precedente: 2026-10-09, Ordini/Magazzino, caso ordine 1021/2026 Hotel Tornabuoni: rientro merce consegnata solo con DDT di reso, documenti mai cancellati, riserve collegate a cliente/nota. Codice IN PRODUZIONE e correzione dati 1021 eseguita; da provare sul deploy — vedi punto 0c. Precedente: 2026-09-18, fix tkt_1789721815680.)
 
 Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccolta 2025" avevano il campo `annata` vuoto → il 2025 non compariva nel menù annata degli ordini. Backfill `annata="2025"` sui 7 SKU 2025 in Supabase, così Elisa può registrare l'ordine Grimaldi 500 ml. Vedi "Fatto di recente" e il nuovo punto opzionale sul form SKU. — Precedente: 2026-07-19, Pacchetti A–E e F1–F17 IN PRODUZIONE su decisione esplicita di Patrizio. **Audit esaurito lato codice**: resta solo il **cantiere backend/auth** — #1 (auth lato server) + remediation RLS #2 + #40 (salvataggio incrementale + tabella log dedicata), tutti insieme, piano in `docs/PIANO-AUTH-E-RLS.md`, in attesa degli utenti/email da Patrizio.
 
@@ -88,9 +88,17 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 - Magazzino → Riserva: senza cliente e senza nota deve bloccare; la riserva deve comparire in "🔒 Riserve attive" con il tasto "↩ Annulla riserva".
 - Limite noto: le riserve fatte prima del 09/10 non hanno cliente/riservaId e compaiono come "registrata prima dell'obbligo".
 
+### 0d. Riserve di prova sull'ordine 1021/2026 — le annulla Irene (deciso da Patrizio il 13/10)
+- Il 13/10 Irene ha riservato per l'ordine 1021 (già Fatturato, merce uscita ad agosto): 60×250 ml (`uyvsnpos`), 180×Olio 20 ml (`mg04w3lq`), 90×Aceto 20 ml (`vwbb1i7p`), 5×latta 3 L **2025** (`7o7ru01a`, l'ordine ha la 2024). Non si consumano perché l'ordine non scarica più. Disponibili sottostimati finché non le annulla con "↩ Annulla riserva": attesi 144 / 620 / 633 / 49.
+- Sull'ordine 1021 la casella "Documento firmato" contiene il PDF del DDT 57/v (caricato da Irene il 13/10): da sostituire con il vero ordine firmato quando c'è.
+
 ---
 
 ## ✅ Fatto di recente
+
+### 2026-10-13 — Riserva bloccata su ordini che hanno già scaricato (IN PRODUZIONE)
+- **Origine:** prova di Irene sul 1021 (email a Patrizio): riserve collegate a un ordine già Fatturato restavano attive, anche togliendo e rimettendo il DDT (Fatturato→Firmato non genera scarichi).
+- **Fix:** `saveMov` rifiuta la riserva se l'ordine collegato è firmato/consegnato/fatturato (non pregresso), con toast esplicativo. Solo `node --check`, non provato nell'app.
 
 ### 2026-10-12 — Riserve collegate all'ordine consumate alla firma (IN PRODUZIONE)
 - **Origine:** prove di Irene del 10/10 su Enrico Travelli (email a Patrizio). Riserva di 3 × 500 ml 2025 collegata all'ordine 1025/2026, poi firma: lo scarico toglieva altri 3 dal disponibile e la riserva restava attiva (100 disp, 3 ris, 103 tot), quindi i pezzi uscivano due volte. Verificato sui movimenti reali in Supabase (sola lettura): tutti i passaggi di Irene erano corretti e i suoi numeri coincidono con il log.
