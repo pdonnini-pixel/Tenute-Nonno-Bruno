@@ -1,10 +1,10 @@
-# Piano — Merce impegnata alla firma, scaricata alla consegna + deposito esterno
+# Piano — Merce impegnata alla firma, scaricata alla consegna + parti Nonno Bruno / Travelli
 
 Data: 14/10/2026 · Richiesto da Patrizio · Confermato nel principio da Irene (mail del 14/10, 12:00)
 
 ## Obiettivo
 
-Il **totale** a video deve essere sempre uguale a quello che c'è fisicamente, anche con ordini firmati e non ancora partiti, e anche con le bottiglie che stanno nel garage di Lucia.
+Il **totale** a video deve essere sempre uguale a quello che c'è fisicamente, anche con ordini firmati e non ancora partiti, e e diviso tra la parte Nonno Bruno e la parte Travelli.
 
 | | Oggi | Dopo |
 |---|---|---|
@@ -12,7 +12,7 @@ Il **totale** a video deve essere sempre uguale a quello che c'è fisicamente, a
 | Consegna (DDT) | nessun movimento | merce **scaricata**: esce da *Riservato* e dal totale |
 | Fattura | nessun movimento | nessun movimento |
 | Riserva manuale | serve per tenere da parte prima della firma | serve solo per gli accordi a voce prima della firma (rara) |
-| Garage di Lucia | non gestito (riserva con nota come ripiego) | stato **"In deposito"**: nel totale, non vendibile, rientrabile |
+| Merce Travelli (stesso ufficio, scaffale separato) | non gestita | **parte Travelli** dello SKU: nel totale, non vendibile negli ordini, uscite con nota e DDT interno unico a fine stagione |
 
 ---
 
@@ -53,24 +53,27 @@ Oggi un solo ordine è firmato e non consegnato: **1023/2026 Hotel Tornabuoni** 
 
 ---
 
-## Fase B — Deposito esterno (garage di Lucia)
+## Fase B — Due parti per SKU: Nonno Bruno e Travelli (aggiornata il 14/10)
+
+La merce sta tutta nell'ufficio Travelli, con scaffali separati per Nonno Bruno e per Travelli. **Non esiste un deposito esterno** (il "garage di Lucia" era un equivoco). Irene ha chiesto due magazzini distinti (mail del 14/10, 16:33).
 
 ### Come funziona
 
-- Nuovo stato di giacenza **"In deposito"** accanto a Disponibile / Riservato. Conta nel totale, non è vendibile, non scade, nessun avviso.
-- **Sposta in deposito** (Disponibile → In deposito) con il nome del deposito (es. "Garage Lucia").
-- **Rientro dal deposito** (In deposito → Disponibile) se servono per vendere.
-- **Scarico dal deposito** con DDT interno, a fine stagione: esce dal totale.
-- Nella scheda SKU: "Totale 300 · di cui 120 in deposito (Garage Lucia) · a scaffale 180". Per la conta Irene confronta lo scaffale con "a scaffale".
+- Ogni SKU ha due parti: **Nonno Bruno** e **Travelli**. Il totale è la somma, cioè tutto quello che c'è nell'ufficio. Ogni parte corrisponde al suo scaffale.
+- **Carico dal DDT del frantoio:** Irene indica quante bottiglie vanno a Nonno Bruno e quante a Travelli (un DDT, due quote).
+- **Ordini:** prendono solo dalla parte Nonno Bruno (disponibile, impegno alla firma, scarico alla consegna della fase A).
+- **Uscite Travelli:** scarico dalla parte Travelli con una nota (chi, quando), senza DDT. A fine stagione il gestionale produce l'elenco/somma per SKU delle uscite Travelli, da cui si fa un **DDT interno unico**.
+- **Spostamenti:** Travelli → Nonno Bruno e viceversa, con nota, quando d'accordo si prende un formato dall'altra parte.
+- **Conta:** si contano i due scaffali separati e si confrontano con le due parti.
+- La raccolta 2025 resta com'è (tutta Nonno Bruno). La divisione parte con la raccolta 2026.
 
 ### Codice da toccare
 
-`STATI_MAG`, `STATI_MAG_ORDINE`, `ricalcolaGiacenza` (3 nuovi tipi di movimento), `TIPI_MOV`, `MOV_RICHIEDE_DDT` (lo scarico dal deposito vuole il DDT), scheda SKU e riepiloghi, `FONTE_USCITA` (controllo che non si sposti più di quanto c'è).
+- Movimenti con un campo `parte` (`nb` default / `travelli`): `ricalcolaGiacenza` calcola la giacenza per parte (lo stato oggi esistente diventa la parte NB; la parte Travelli ha disponibile proprio). Nuovi tipi: `uscita_travelli`, `spostamento_parte`. Carico con quote per parte.
+- Scheda SKU e gruppi per raccolta: mostrano NB · Travelli · Totale. Ordini, `verificaDisponibilitaOrdine`, soglie e avvisi lavorano sulla parte NB.
+- Report "Uscite Travelli" per periodo/SKU, base del DDT interno di fine stagione.
 
-**Da decidere:** un solo deposito ("Garage Lucia") o più depositi con un nome libero? (Consiglio: nome libero, costa uguale.)
-**Da decidere:** lo scarico a fine stagione è "uso proprio / omaggio"? Serve una causale per la contabilità?
-
----
+**Da confermare con Irene (solo operatività):** se il flusso le torna per come lavora (proposta inviata in bozza il 14/10).
 
 ## Come lo verifico
 
