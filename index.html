@@ -2261,24 +2261,35 @@ const skuPerRiga = (magazzino, r) => {
 
 // Audit E#29: annate derivate dai dati reali (magazzino + lotti), non hardcoded.
 // Più recente per prima; fallback storico se in anagrafica non c'è nulla.
+// Richiesta Patrizio 14/10/2026: flag "In vendita" sullo SKU. Gli SKU tolti dalla
+// vendita (es. raccolta 2024) restano in magazzino ma non vengono più proposti
+// negli ordini. Default: in vendita (campo assente = true).
+const skuInVendita = m => !!m && m.inVendita !== false;
 const annateDisponibili = (dati) => {
   const set = new Set();
-  ((dati && dati.magazzino) || []).forEach(m => { if (m.annata) set.add(String(m.annata)); });
-  ((dati && dati.lotti) || []).forEach(l => { if (l.annata) set.add(String(l.annata)); });
+  const mag = (dati && dati.magazzino) || [];
+  mag.forEach(m => { if (m.annata && skuInVendita(m)) set.add(String(m.annata)); });
+  // Lotti: solo annate che non hanno ancora SKU (nuova raccolta in produzione).
+  const annateConSku = new Set(mag.map(m => String(m.annata || "")));
+  ((dati && dati.lotti) || []).forEach(l => { if (l.annata && !annateConSku.has(String(l.annata))) set.add(String(l.annata)); });
   const arr = Array.from(set).sort().reverse();
   return arr.length ? arr : ["2025", "2024"];
 };
-// Default per una nuova riga ordine: annata più VECCHIA con disponibile > 0 per
-// il formato scelto (rotazione: prima si vende la vecchia annata); fallback
-// all'annata più recente in anagrafica.
+// Default per una nuova riga ordine (richiesta Patrizio 14/10/2026): la raccolta
+// più RECENTE in vendita per il formato scelto (es. 2026); Irene la cambia a mano
+// se serve una raccolta precedente. Fallback: annata più recente in vendita.
 const annataDefaultPerFormato = (dati, formato) => {
   const fmtN = _normSkuField(formato);
-  const conStock = ((dati && dati.magazzino) || [])
-    .filter(m => _normSkuField(m.formato) === fmtN && ((m.giacenza && m.giacenza.disponibile) || 0) > 0)
-    .map(m => String(m.annata || "")).filter(Boolean).sort();
-  if (conStock.length) return conStock[0];
+  const perFormato = ((dati && dati.magazzino) || [])
+    .filter(m => _normSkuField(m.formato) === fmtN && skuInVendita(m))
+    .map(m => String(m.annata || "")).filter(Boolean).sort().reverse();
+  if (perFormato.length) return perFormato[0];
   return annateDisponibili(dati)[0];
 };
+// Opzioni annata per una riga: le annate in vendita + quella già sulla riga
+// (un ordine vecchio su una raccolta tolta dalla vendita resta leggibile).
+const opzioniAnnataRiga = (annate, attuale) =>
+  attuale && !annate.includes(String(attuale)) ? [...annate, String(attuale)] : annate;
 
 // Verifica che il disponibile copra le richieste di tutte le righe di un ordine.
 // Aggrega le righe per SKU (più righe sullo stesso SKU sommano le qta).
@@ -8306,7 +8317,7 @@ ordineWizard && /*#__PURE__*/React.createElement(Modal, {
               /*#__PURE__*/React.createElement(Sel, {
                 v: r.annata,
                 on: function(v) { updateRiga(i, "annata", v); },
-                opts: WIZ_ANNATE.map(function(a) { return { v: a, l: a }; })
+                opts: opzioniAnnataRiga(WIZ_ANNATE, r.annata).map(function(a) { return { v: a, l: a }; })
               }),
               /*#__PURE__*/React.createElement(Inp, {
                 type: "number", min: 0, step: 1,
@@ -12012,7 +12023,7 @@ function Ordini({
     }), /*#__PURE__*/React.createElement(Sel, {
       v: r.annata,
       on: v => updRiga(i, "annata", v),
-      opts: ANNATE,
+      opts: opzioniAnnataRiga(ANNATE, r.annata),
       disabled: form.stato === "firmato" || form.stato === "consegnato" || form.stato === "fatturato"
     }), /*#__PURE__*/React.createElement(Inp, {
       type: "number",
@@ -13258,6 +13269,8 @@ function Magazzino({
     }
   };
   const [expandedId, setExpandedId] = useState(null);
+  // Richiesta Patrizio 14/10/2026: magazzino diviso per raccolta, gruppi richiudibili.
+  const [anniAperti, setAnniAperti] = useState({});
   const [filterSottoSoglia, setFilterSottoSoglia] = useState(false);
   useEffect(() => { const _navT = setTimeout(() => { if(window._tnbNav){ if(window._tnbNav.soloSottoSoglia){ setFilterSottoSoglia(true); } window._tnbNav=null; } }, 80); return () => clearTimeout(_navT); }, []); // audit F#109: cleanup del timer
   // Audit E#4: prelievo guidato — quando si sceglie uno scarico, proponi di
@@ -13844,7 +13857,8 @@ function Magazzino({
   ), dataVista && /*#__PURE__*/React.createElement("div", {
     style: { padding: "6px 12px", background: "#e3f2fd", border: "1px solid #90caf9", borderRadius: 6, fontSize: 12, color: "#1565c0", fontWeight: 600 }
   }, "📅 Visualizzazione storica: giacenze al " + fmtD(dataVista) + " (ricostruite da cronologia movimenti)"),
-  dati.magazzino.filter(m => filterSottoSoglia ? giacenzaDisp(m) <= m.soglia : true).map(m => {
+  (() => {
+  const renderSkuCard = m => {
     const gReal = m.giacenza || {};
     const g = dataVista
       ? giacenzaAllaData((dati.movimenti || []).filter(mv => (mv.skuId || mv.magId) === m.id), dataVista)
@@ -13884,7 +13898,9 @@ function Magazzino({
           fontSize: 13,
           color: C.olivaScuro
         }
-      }, m.prodotto, " ", m.formato), /*#__PURE__*/React.createElement("span", {
+      }, m.prodotto, " ", m.formato), !skuInVendita(m) && /*#__PURE__*/React.createElement("span", {
+        style: { fontSize: 10, background: "#fff3e0", color: "#e65100", border: "1px solid #ffcc80", borderRadius: 4, padding: "1px 6px", fontWeight: 700 }
+      }, "NON IN VENDITA"), /*#__PURE__*/React.createElement("span", {
         style: {
           fontSize: 11,
           background: C.grigio100,
@@ -14190,7 +14206,32 @@ function Magazzino({
         }
       }))))
     });
-  })), tab === "movimenti" && (() => {
+  };
+  const listaSku = dati.magazzino.filter(m => filterSottoSoglia ? giacenzaDisp(m) <= m.soglia : true);
+  const anni = Array.from(new Set(listaSku.map(m => String(m.annata || "—")))).sort().reverse();
+  // Aperta di default la raccolta più recente in vendita (o tutte se si filtra "sotto soglia").
+  const annoDefault = (anni.find(a => listaSku.some(m => String(m.annata || "—") === a && skuInVendita(m))) || anni[0]);
+  return anni.map(anno => {
+    const skus = listaSku.filter(m => String(m.annata || "—") === anno);
+    const aperto = filterSottoSoglia || (anniAperti[anno] !== undefined ? anniAperti[anno] : anno === annoDefault);
+    const totDisp = skus.reduce((s, m) => s + giacenzaDisp(m), 0);
+    const nSotto = skus.filter(m => giacenzaDisp(m) <= m.soglia).length;
+    const tuttiFuori = skus.every(m => !skuInVendita(m));
+    return /*#__PURE__*/React.createElement(React.Fragment, { key: "anno-" + anno },
+      /*#__PURE__*/React.createElement("div", {
+        onClick: () => setAnniAperti(a => ({ ...a, [anno]: !aperto })),
+        style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", cursor: "pointer", padding: "10px 14px", background: aperto ? "#f0f4e8" : "#fafaf8", border: "1.5px solid #e8e6e0", borderRadius: 8, fontWeight: 700, fontSize: 14, color: C.olivaScuro, opacity: tuttiFuori ? 0.75 : 1 }
+      },
+        /*#__PURE__*/React.createElement("span", { style: { fontSize: 12 } }, aperto ? "▼" : "▶"),
+        "Raccolta " + anno,
+        /*#__PURE__*/React.createElement("span", { style: { background: "#e8f5e9", color: "#2e7d32", borderRadius: 10, padding: "2px 8px", fontWeight: 600, fontSize: 11 } }, skus.length + (skus.length === 1 ? " articolo" : " articoli") + " · " + totDisp + " disp."),
+        nSotto > 0 && /*#__PURE__*/React.createElement("span", { style: { background: "#ffebee", color: "#c62828", borderRadius: 10, padding: "2px 8px", fontWeight: 600, fontSize: 11 } }, "⚠ " + nSotto + " sotto soglia"),
+        tuttiFuori && /*#__PURE__*/React.createElement("span", { style: { background: "#fff3e0", color: "#e65100", borderRadius: 10, padding: "2px 8px", fontWeight: 600, fontSize: 11 } }, "non in vendita")
+      ),
+      aperto && skus.map(renderSkuCard)
+    );
+  });
+  })()), tab === "movimenti" && (() => {
     // v49-mag1: filtri tabella movimenti + indicatori auto/manuale + link ordine/lotto
     const tuttiMovimenti = (dati.movimenti || []).map(mv => {
       const sku = dati.magazzino.find(s => s.id === (mv.skuId || mv.magId));
@@ -14788,7 +14829,13 @@ function Magazzino({
         ...f,
         soglia: Number(v)
       }))
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement("label", {
+      style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.olivaScuro, cursor: "pointer", padding: "8px 10px", background: form.inVendita === false ? "#fff3e0" : "#f1f8e9", border: "1px solid " + (form.inVendita === false ? "#ffcc80" : "#c5e1a5"), borderRadius: 6 }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: form.inVendita !== false,
+      onChange: e => setForm(f => ({ ...f, inVendita: e.target.checked }))
+    }), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, "In vendita"), " — proposto negli ordini. Togli la spunta per una raccolta chiusa: la merce resta in magazzino ma non compare più tra le annate degli ordini.")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11,
         fontWeight: 700,
