@@ -100,6 +100,12 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 
 ## ✅ Fatto di recente
 
+### 2026-10-14 — Raccolta 2024 fuori vendita, default ordini sulla raccolta più recente, magazzino per raccolta (IN PRODUZIONE)
+- **Commit `8726371`:** flag `inVendita` sugli SKU (spunta nel form SKU, badge "NON IN VENDITA"); `annateDisponibili` propone solo annate in vendita (+ annate di lotti senza SKU); `annataDefaultPerFormato` ora sceglie la raccolta **più recente** in vendita (prima la più vecchia con stock); `opzioniAnnataRiga` tiene leggibili le righe vecchie. Scheda Magazzino raggruppata per raccolta, gruppi richiudibili, aperta la più recente in vendita.
+- **Dati:** backup `backup-tnb-pro-v2-20261014-pre-2024-fuori-vendita`; i 3 SKU 2024 (500 ml 557, 3 L 29, 5 L 1) hanno `inVendita:false`: la merce resta, non è più proposta negli ordini.
+- Verifica: `node --check` + test Node delle funzioni annata sui dati reali. Gruppi per raccolta non provati nell'app.
+- Patrizio 14/10: 1023 e 1024 **sono partiti** → da portare a Consegnato con DDT (il 1024 prima a Firmato: scarica 10 latte → 3 L 2025 = 34).
+
 ### 2026-10-14 — Magazzino 2025 allineato all'inventario di Irene
 - Nella conciliazione del 02/10 Irene aveva contato anche la merce di ordini già firmati/scaricati (1021, 1022, 1023): differenze identiche al pezzo con il suo inventario reale. Backup `backup-tnb-pro-v2-20261014-pre-allineamento-inventario`; rettifiche `fx1014r2..r6` (Olio 20 ml −180, Aceto 20 ml −90, 100 ml −300, 250 ml −90, 500 ml −6); scarico delle 5 latte del 1021 spostato da 3 L 2024 a 3 L 2025 (`fx1014a1` annullo + `fx1014s1` scarico, `fx1014r1` −5 sulla 2024 che resta 29 come contata). Risultato 2025: 440 / 543 / 449 / 54 / 97 / 3 L 44 (34 dopo il 1024) / 5 L 19. Le 4 riserve sul 1021 le ha annullate Irene il 14/10.
 - Stesso giorno, correzione collegamento 1022/2026 Il Cacito: i 6×500 ml erano scaricati dalla 2024 ma l'ordine è 2025. Backup `backup-tnb-pro-v2-20261014-pre-fix-1022-annata`; `fx1014a2` annullo 2024 + `fx1014s2` scarico 2025 + `fx1014r7` −6 sulla 2024 + `fx1014r8` +6 sulla 2025 (storno di `fx1014r6`). Giacenze invariate (2024: 557, 2025: 97). Verifica completa con `ricalcolaGiacenza` dell'app su tutti gli SKU: tutte coincidono; 1021/1022/1023 scaricano esattamente le righe. Da far confermare a Irene la 500 ml 2024 (557).
