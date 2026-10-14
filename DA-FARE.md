@@ -91,7 +91,9 @@ Contesto precedente (2026-08-04): Correzione dati di produzione: gli SKU "Raccol
 ### 0d. Ordine 1024/2026 Hotel Tornabuoni (10 latte 3 L 2025, Da firmare) — in attesa di Irene
 - Irene le ha già tolte dal suo inventario reale (3 L 2025 = 34), il gestionale ne mostra 44 perché il 1024 non ha scaricato. Chiesto a Irene (14/10): se partite → Firmato/Consegnato con DDT; se solo da parte → riserva collegata al 1024. **Mai rettifica** (alla firma scaricherebbe di nuovo).
 - Sul 1021 la casella "Documento firmato" contiene il PDF del DDT 57/v: da sostituire con l'ordine firmato quando c'è.
-- Decisione aperta: "alternativa" (alla firma merce in Riservato, scarico alla consegna con DDT). Irene sembra favorevole; serve un piano prima di implementarla.
+- **Alternativa CONFERMATA da Irene (14/10, 12:00):** alla firma la merce passa in Riservato, si scarica alla consegna con DDT. Serve il piano prima di implementarla (attesa ok di Patrizio).
+- **Nuova richiesta Irene (14/10):** bottiglie raccolta 2026 nel garage di Lucia — entrano con DDT del frantoio, escono con DDT interno non prima di mag–set 2027, nel frattempo devono poter tornare in vendita. Oggi il gestionale non ha ubicazioni: proposta temporanea (nella bozza del monitor, da approvare) = riserva con nota "Garage Lucia". Va progettata insieme all'alternativa (deposito/ubicazione senza avviso "riserva scaduta").
+- Da far confermare a Irene: conta 500 ml 2024 = 557.
 - Controllo automatico del thread con Irene: task pianificato `thread-irene-magazzino` (ogni 30 min, lun–sab 7–22, sola lettura, prepara bozze; stato in ~/.claude/scheduled-tasks/thread-irene-magazzino/state.json).
 
 ---
