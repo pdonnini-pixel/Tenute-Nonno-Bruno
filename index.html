@@ -7032,6 +7032,11 @@ function Pipeline({
             }
           }
         }
+        // FIX ticket tkt_1792574847890: se la chiamata è alla data della prossima azione memorizzata
+        // o successiva, quella prossima azione è stata evasa e va rimossa (resta solo l'ultima chiamata).
+        // Un'eventuale nuova data esplicita (punto 4) la sostituisce comunque.
+        var _dataChiamata = logCallForm.dataCall || todayStr();
+        if (p.nextCall && p.nextCall.data && _dataChiamata >= p.nextCall.data && !logCallForm.prossimaCall) { updated.nextCall = null; }
         // 4) override nextCall esplicito (resta l'ultimo, come nell'ordine originale)
         if (logCallForm.prossimaCall) {
           updated.nextCall = { data: logCallForm.prossimaCall, nota: logCallForm.nota || "" };
@@ -21566,6 +21571,8 @@ function OggiAzioni({
         if (p.id !== logCallIdBrief) return p;
         let updated = { ...p, calls: [...(p.calls || []), newCall], azioni: [...(p.azioni || []), { id: uid(), tipo: logCallFormBrief.esito === "campione" ? "campionatura" : "richiamare", aperta: todayStr(), chiusa: null, nota: nota || "" }] };
         if (esito && esito.stato) updated.stato = esito.stato;
+        // FIX ticket tkt_1792574847890: chiamata alla data della prossima azione o dopo = azione evasa, la rimuovo
+        if (p.nextCall && p.nextCall.data && newCall.data >= p.nextCall.data && !logCallFormBrief.prossimaCall) { updated.nextCall = null; }
         if (logCallFormBrief.prossimaCall) updated.nextCall = { data: logCallFormBrief.prossimaCall, nota: logCallFormBrief.nota || "" };
         return updated;
       })
