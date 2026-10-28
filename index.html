@@ -14646,7 +14646,15 @@ function Magazzino({
           .sort((a, b) => String(a.dataRaccolta || "").localeCompare(String(b.dataRaccolta || "")))
           .map(l => ({ v: l.id, l: `Raccolta ${l.annata}${l.dataRaccolta ? " · " + fmtD(l.dataRaccolta) : ""}` }));
         if (obbligo) hint = "Obbligatorio: un carico senza lotto crea giacenza non tracciabile (richiami, quote lotto).";
-        else if (lotti.length === 0) hint = "Nessun lotto in anagrafica: crea prima il lotto nel modulo Produzione per tracciare il carico.";
+      }
+      // Richiesta Irene 28/10/2026: con nessun lotto selezionabile il menu vuoto sembrava
+      // un errore. Al suo posto una riga che spiega che il campo non serve.
+      if (opts.length === 0) {
+        return /*#__PURE__*/React.createElement("div", {
+          style: { fontSize: 12, color: C.grigio400, background: "#f5f5f0", borderRadius: 6, padding: "8px 10px" }
+        }, isFifo
+          ? "Lotto: nessun lotto tracciato con residuo per questo SKU, il movimento uscirà senza lotto. Non devi fare niente."
+          : "Lotto: non serve. In Produzione non ci sono lotti e la raccolta è già indicata nello SKU.");
       }
       return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Sel, {
         label: "Lotto" + (obbligo ? "" : " (facoltativo)"),
