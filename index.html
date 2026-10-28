@@ -13259,6 +13259,42 @@ function Magazzino({
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [ddtUploading, setDdtUploading] = useState(false);
+  // Richiesta Patrizio 28/10/2026: allegare il DDT a un movimento già registrato
+  // senza documento (es. carichi entrati senza DDT). Tocca solo numero e documento,
+  // quantità e giacenze restano invariate.
+  const [allegaDdt, setAllegaDdt] = useState(null); // null | { movId, ddtNum, ddtDoc }
+  const [allegaUploading, setAllegaUploading] = useState(false);
+  const handleUploadAllegaDDT = async (file) => {
+    if (!file || !allegaDdt) return;
+    setAllegaUploading(true);
+    try {
+      const mv = (dati.movimenti || []).find(m => m.id === allegaDdt.movId);
+      const doc = await window.tnbStorage.uploadDocumento("mov_" + ((mv && (mv.skuId || mv.magId)) || "sku"), file, "ddt-magazzino");
+      setAllegaDdt(a => a ? { ...a, ddtDoc: doc } : a);
+      if (window.tnbToast) window.tnbToast("📎 Documento DDT caricato");
+    } catch (e) {
+      if (window.tnbToast) window.tnbToast("⚠ Errore upload DDT: " + (e && e.message ? e.message : e), "err");
+    } finally {
+      setAllegaUploading(false);
+    }
+  };
+  const salvaAllegaDDT = () => {
+    if (!allegaDdt) return;
+    const num = String(allegaDdt.ddtNum || "").trim();
+    if (!num) { if (window.tnbToast) window.tnbToast("⛔ Scrivi il numero del DDT.", "err"); return; }
+    if (!allegaDdt.ddtDoc || !allegaDdt.ddtDoc.path) { if (window.tnbToast) window.tnbToast("⛔ Carica il documento del DDT.", "err"); return; }
+    const mv = (dati.movimenti || []).find(m => m.id === allegaDdt.movId);
+    setDati(d => ({
+      ...d,
+      movimenti: (d.movimenti || []).map(m => m.id === allegaDdt.movId ? { ...m, ddtNum: num, ddtDoc: allegaDdt.ddtDoc } : m)
+    }));
+    if (logAction && mv) {
+      const sku = (dati.magazzino || []).find(x => x.id === (mv.skuId || mv.magId));
+      logAction("DDT allegato a movimento", "magazzino", `DDT ${num} → ${(TIPI_MOV.find(t => t.v === mv.tipo) || {}).l || mv.tipo} del ${fmtD(mv.data)}, ${sku ? sku.formato + " R." + sku.annata : ""} (${mv.qta} pz)`);
+    }
+    if (window.tnbToast) window.tnbToast("✅ DDT " + num + " collegato al movimento");
+    setAllegaDdt(null);
+  };
   // Carica il documento DDT su Storage e lo aggancia al form del movimento.
   const handleUploadDDT = async (file) => {
     if (!file) return;
@@ -14477,7 +14513,13 @@ function Magazzino({
                         title: mov.ddtDoc.nomeOriginale || "Apri documento DDT",
                         style: { background: "#e3f2fd", border: "1px solid #1565c0", borderRadius: 5, padding: "4px 10px", fontSize: 11, cursor: "pointer", color: "#1565c0", fontWeight: 600 }
                       }, "🚚 Apri")
-                    : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: manca ? "#c62828" : C.grigio400, fontWeight: manca ? 700 : 400 } }, manca ? "⚠ assente" : "—")
+                    : !readonly
+                      ? /*#__PURE__*/React.createElement("button", {
+                          onClick: () => setAllegaDdt({ movId: mov.id, ddtNum: mov.ddtNum || "", ddtDoc: null }),
+                          title: "Allega il DDT a questo movimento",
+                          style: { background: "#fff3e0", border: "1px solid #e65100", borderRadius: 5, padding: "4px 10px", fontSize: 11, cursor: "pointer", color: "#e65100", fontWeight: 600 }
+                        }, "📎 Allega DDT")
+                      : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: manca ? "#c62828" : C.grigio400, fontWeight: manca ? 700 : 400 } }, manca ? "⚠ assente" : "—")
                 })
               )
             });
@@ -14564,6 +14606,38 @@ function Magazzino({
         })()
       )
     )
+  }), allegaDdt && /*#__PURE__*/React.createElement(Modal, {
+    title: "Allega DDT al movimento",
+    onClose: () => setAllegaDdt(null),
+    ch: (() => {
+      const mv = (dati.movimenti || []).find(m => m.id === allegaDdt.movId);
+      const sku = mv ? (dati.magazzino || []).find(x => x.id === (mv.skuId || mv.magId)) : null;
+      return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: C.grigio600 } },
+          mv ? `${(TIPI_MOV.find(t => t.v === mv.tipo) || {}).l || mv.tipo} del ${fmtD(mv.data)} · ${sku ? sku.prodotto + " " + sku.formato : "SKU ?"} · ${mv.qta} pz` : "Movimento non trovato",
+          /*#__PURE__*/React.createElement("br"), "Quantità e giacenze non cambiano: si aggiungono solo numero e documento."),
+        /*#__PURE__*/React.createElement(Inp, {
+          label: "Numero DDT",
+          v: allegaDdt.ddtNum || "",
+          on: v => setAllegaDdt(a => a ? { ...a, ddtNum: v } : a),
+          ph: "es. 42/2026",
+          req: true
+        }),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" } },
+          /*#__PURE__*/React.createElement("label", {
+            style: { display: "inline-flex", alignItems: "center", gap: 6, background: allegaUploading ? "#bdbdbd" : "#1565c0", color: "#fff", borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: allegaUploading ? "wait" : "pointer" }
+          }, allegaUploading ? "⏳ Caricamento…" : (allegaDdt.ddtDoc ? "🔄 Sostituisci documento" : "📎 Carica documento DDT"),
+            /*#__PURE__*/React.createElement("input", {
+              type: "file", accept: "image/*,application/pdf", disabled: allegaUploading, style: { display: "none" },
+              onChange: e => { const fl = e.target.files && e.target.files[0]; if (fl) handleUploadAllegaDDT(fl); e.target.value = ""; }
+            })),
+          allegaDdt.ddtDoc
+            ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "#2e7d32", fontWeight: 600 } }, "✅ ", allegaDdt.ddtDoc.nomeOriginale || "documento allegato")
+            : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "#c62828", fontWeight: 600 } }, "⚠ Nessun documento allegato")),
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", gap: 8 } },
+          /*#__PURE__*/React.createElement(Btn, { ch: "Annulla", v: "sec", onClick: () => setAllegaDdt(null) }),
+          /*#__PURE__*/React.createElement(Btn, { ch: "Collega DDT", onClick: salvaAllegaDDT, dis: allegaUploading || !mv })));
+    })()
   }), modal === "mov" && /*#__PURE__*/React.createElement(Modal, {
     title: "Registra Movimento",
     onClose: () => setModal(null),
@@ -14646,7 +14720,15 @@ function Magazzino({
           .sort((a, b) => String(a.dataRaccolta || "").localeCompare(String(b.dataRaccolta || "")))
           .map(l => ({ v: l.id, l: `Raccolta ${l.annata}${l.dataRaccolta ? " · " + fmtD(l.dataRaccolta) : ""}` }));
         if (obbligo) hint = "Obbligatorio: un carico senza lotto crea giacenza non tracciabile (richiami, quote lotto).";
-        else if (lotti.length === 0) hint = "Nessun lotto in anagrafica: crea prima il lotto nel modulo Produzione per tracciare il carico.";
+      }
+      // Richiesta Irene 28/10/2026: con nessun lotto selezionabile il menu vuoto sembrava
+      // un errore. Al suo posto una riga che spiega che il campo non serve.
+      if (opts.length === 0) {
+        return /*#__PURE__*/React.createElement("div", {
+          style: { fontSize: 12, color: C.grigio400, background: "#f5f5f0", borderRadius: 6, padding: "8px 10px" }
+        }, isFifo
+          ? "Lotto: nessun lotto tracciato con residuo per questo SKU, il movimento uscirà senza lotto. Non devi fare niente."
+          : "Lotto: non serve. In Produzione non ci sono lotti e la raccolta è già indicata nello SKU.");
       }
       return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Sel, {
         label: "Lotto" + (obbligo ? "" : " (facoltativo)"),
