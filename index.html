@@ -6,6 +6,10 @@ const SUPA_URL = 'https://njwtfmiviijszzxschll.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qd3RmbWl2aWlqc3p6eHNjaGxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMjg0MzksImV4cCI6MjA5MDcwNDQzOX0.jp94knI8L-e5ytwslvIuVcGGguD49OPddcamXiQ62LU';
 
 const SUPA_BUCKET = 'tnb-firme'; // nome bucket Supabase Storage — unica fonte
+// Limite file del bucket tnb-firme (file_size_limit = 5 MB, verificato il 29/10/2026).
+// Prima l'app accettava fino a 20 MB e Supabase rifiutava con errore 400 i file tra 5 e 20 MB.
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const msgFileTroppoGrande = (size) => "File troppo grande: " + (size / 1048576).toFixed(1).replace(".", ",") + " MB, il massimo è 5 MB. Se è una scansione, rifalla a risoluzione più bassa (150 dpi) o in bianco e nero, oppure comprimi il PDF.";
 const _supaHeaders = {
   'apikey': SUPA_KEY,
   'Authorization': 'Bearer ' + SUPA_KEY,
@@ -269,7 +273,7 @@ window.tnbStorage = {
   // prefix = "ddt" | "fattura" | "firma" (legacy uploadFirma usa path piatto)
   uploadDocumento: async function(ordineId, file, prefix) {
     if (!file) throw new Error("Nessun file selezionato");
-    if (file.size > 20 * 1024 * 1024) throw new Error("File troppo grande (max 20 MB)");
+    if (file.size > MAX_UPLOAD_BYTES) throw new Error(msgFileTroppoGrande(file.size));
     const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
     const ts = Date.now();
     const safePrefix = (prefix || 'doc').replace(/[^a-z0-9_-]/gi, '');
@@ -23885,7 +23889,7 @@ function MarketingPage({ dati, setDati, logAction }) {
               if (f) {
                 var ok = /\.(pdf|doc|docx|png|jpg|jpeg|pptx|xlsx)$/i.test(f.name);
                 if (!ok) { window.tnbToast("⚠ Formato non supportato. Usa PDF, DOC, DOCX, PNG, JPG, PPTX, XLSX", "err"); return; }
-                if (f.size > 20 * 1024 * 1024) { window.tnbToast("⚠ File troppo grande (max 20 MB)", "err"); return; }
+                if (f.size > MAX_UPLOAD_BYTES) { window.tnbToast("⚠ " + msgFileTroppoGrande(f.size), "err"); return; }
                 setForm(function(a) { return Object.assign({}, a, { file: f }); });
               }
             },
@@ -23895,7 +23899,7 @@ function MarketingPage({ dati, setDati, logAction }) {
               inp.onchange = function(e) {
                 var f = e.target.files[0];
                 if (f) {
-                  if (f.size > 20 * 1024 * 1024) { window.tnbToast("⚠ File troppo grande (max 20 MB)", "err"); return; }
+                  if (f.size > MAX_UPLOAD_BYTES) { window.tnbToast("⚠ " + msgFileTroppoGrande(f.size), "err"); return; }
                   setForm(function(a) { return Object.assign({}, a, { file: f }); });
                 }
               };
